@@ -48,26 +48,49 @@ describe('events', () => {
   it('numbers the events of each session 1, 2, 3 on its own', async () => {
     const s1 = await repo.openSession(db, A.username, '0903359388', AT);
     const s2 = await repo.openSession(db, A.username, 'CX-0902368685', AT);
-    await repo.appendEvent(db, s1.id, { type: 'START_REWORK' }, AT);
-    await repo.appendEvent(db, s2.id, { type: 'NO_DEFECT' }, AT);
-    await repo.appendEvent(db, s1.id, { type: 'END' }, AT);
-    await repo.appendEvent(db, s1.id, { type: 'NO_DEFECT' }, AT);
+    await repo.appendEvent(db, A.username, s1.id, { type: 'START_REWORK' }, AT);
+    await repo.appendEvent(db, A.username, s2.id, { type: 'NO_DEFECT' }, AT);
+    await repo.appendEvent(db, A.username, s1.id, { type: 'END' }, AT);
+    await repo.appendEvent(db, A.username, s1.id, { type: 'NO_DEFECT' }, AT);
 
-    expect((await repo.listEvents(db, s1.id)).map((e) => [e.seq, e.type])).toEqual([
+    expect((await repo.listEvents(db, A.username, s1.id)).map((e) => [e.seq, e.type])).toEqual([
       [1, 'START_REWORK'],
       [2, 'END'],
       [3, 'NO_DEFECT'],
     ]);
-    expect((await repo.listEvents(db, s2.id)).map((e) => e.seq)).toEqual([1]);
+    expect((await repo.listEvents(db, A.username, s2.id)).map((e) => e.seq)).toEqual([1]);
   });
 
   it('stores a defect event with its full area map entry', async () => {
     const s = await repo.openSession(db, A.username, '0903359388', AT);
     const entry = { areaId: 'A01', subAreaId: 'S01', familyId: 'F01', defectId: 'D049' } as const;
-    await repo.appendEvent(db, s.id, { type: 'DEFECT', ...entry }, AT);
-    expect(await repo.listEvents(db, s.id)).toEqual([
-      { type: 'DEFECT', ...entry, sessionId: s.id, seq: 1, at: AT },
+    await repo.appendEvent(db, A.username, s.id, { type: 'DEFECT', ...entry }, AT);
+    expect(await repo.listEvents(db, A.username, s.id)).toEqual([
+      { type: 'DEFECT', ...entry, sessionId: s.id, seq: 1, at: AT, username: A.username },
     ]);
+  });
+
+  it('writes only into the PSI’s own open session', async () => {
+    const own = await repo.openSession(db, A.username, '0903359388', AT);
+    const closed = await repo.openSession(db, A.username, 'CX-0902368685', AT);
+    await db.sessions.update(closed.id, { status: 'closed' });
+
+    await expect(
+      repo.appendEvent(db, 'psi.uji.dua', own.id, { type: 'NO_DEFECT' }, AT),
+    ).rejects.toThrow(repo.SessionNotOpenError);
+    await expect(
+      repo.appendEvent(db, A.username, closed.id, { type: 'NO_DEFECT' }, AT),
+    ).rejects.toThrow(repo.SessionNotOpenError);
+    await expect(
+      repo.appendEvent(db, A.username, 'no-such-session', { type: 'NO_DEFECT' }, AT),
+    ).rejects.toThrow(repo.SessionNotOpenError);
+    expect(await db.events.count()).toBe(0);
+  });
+
+  it('never lists another PSI’s events (AC-02.3)', async () => {
+    const s = await repo.openSession(db, A.username, '0903359388', AT);
+    await repo.appendEvent(db, A.username, s.id, { type: 'NO_DEFECT' }, AT);
+    expect(await repo.listEvents(db, 'psi.uji.dua', s.id)).toEqual([]);
   });
 });
 
@@ -106,7 +129,7 @@ describe('user scoping (AC-02.3)', () => {
   it('keeps POs, sessions, events and photos when the login is cleared (AC-02.2)', async () => {
     await repo.saveAuth(db, A);
     const { session } = await repo.addPo(db, A.username, po('0903359388'), null, AT);
-    await repo.appendEvent(db, session.id, { type: 'NO_DEFECT' }, AT);
+    await repo.appendEvent(db, A.username, session.id, { type: 'NO_DEFECT' }, AT);
     await repo.putPhoto(db, photo(session.id, 'aa'));
 
     await repo.clearAuth(db);
@@ -114,7 +137,7 @@ describe('user scoping (AC-02.3)', () => {
     expect(await repo.getAuth(db)).toBeNull();
     expect(await repo.listPos(db, A.username)).toHaveLength(1);
     expect(await repo.listOpenSessions(db, A.username)).toEqual([session]);
-    expect(await repo.listEvents(db, session.id)).toHaveLength(1);
+    expect(await repo.listEvents(db, A.username, session.id)).toHaveLength(1);
     expect(await repo.listPhotos(db, session.id)).toHaveLength(1);
   });
 });
@@ -146,7 +169,7 @@ describe('PO list', () => {
   it('removes a PO without data and refuses one with data (AC-03.4)', async () => {
     await repo.addPo(db, A.username, po('0903359388'), null, AT);
     const { session } = await repo.addPo(db, A.username, po('CX-0902368685'), null, AT);
-    await repo.appendEvent(db, session.id, { type: 'START_BGRADE' }, AT);
+    await repo.appendEvent(db, A.username, session.id, { type: 'START_BGRADE' }, AT);
 
     await repo.removePo(db, A.username, '0903359388');
     await expect(repo.removePo(db, A.username, 'CX-0902368685')).rejects.toThrow(

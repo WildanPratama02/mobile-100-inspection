@@ -102,7 +102,7 @@ async function loadUserData(db: M100Db, auth: Auth | null): Promise<UserData> {
   ]);
   const sessions: Record<string, PoSession> = {};
   for (const session of open) {
-    const events = await repo.listEvents(db, session.id);
+    const events = await repo.listEvents(db, username, session.id);
     sessions[session.po] = { session, events, state: replay(events) };
   }
   return { auth, pos, sessions, view: view ?? DEFAULT_VIEW };
@@ -185,11 +185,11 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
 
       tap: (po, command) =>
         serial(async () => {
-          requireUser();
+          const username = requireUser();
           const { session, state } = requireSession(po);
           const payload = toPayload(state, command);
           if (!payload) return false;
-          const event = await repo.appendEvent(db, session.id, payload, now());
+          const event = await repo.appendEvent(db, username, session.id, payload, now());
           set((s) => {
             const current = s.sessions[po];
             if (!current) return {};

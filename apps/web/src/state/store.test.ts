@@ -89,7 +89,7 @@ describe('persistence rule (NFR-05)', () => {
     ).rejects.toThrow('disk full');
 
     expect(store.getState().sessions).toBe(before);
-    expect(await repo.listEvents(db, before[PO.po]!.session.id)).toEqual([]);
+    expect(await repo.listEvents(db, A.username, before[PO.po]!.session.id)).toEqual([]);
   });
 
   it('shows a tap only once it is in IndexedDB', async () => {
@@ -120,7 +120,7 @@ describe('persistence rule (NFR-05)', () => {
     expect(await store.getState().tap(PO.po, { type: 'DEFECT', entry: TOE })).toBe(false);
     expect(await store.getState().tap(PO.po, { type: 'UNDO' })).toBe(false);
     expect(store.getState().sessions).toBe(before);
-    expect(await repo.listEvents(db, before[PO.po]!.session.id)).toEqual([]);
+    expect(await repo.listEvents(db, A.username, before[PO.po]!.session.id)).toEqual([]);
   });
 
   it('judges each tap against the one before it, also when taps arrive together', async () => {

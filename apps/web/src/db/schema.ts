@@ -52,6 +52,9 @@ export interface PoRow extends Po {
   addedAt: string;
 }
 
+/** One tap as stored; it carries the username like its session (doc 03 §4.4). */
+export type EventRow = SessionEvent & { username: string };
+
 /** One photo per defect of a session (AC-10.5); PSI lv.2 only (AC-10.6). */
 export interface PhotoRow {
   sessionId: string;
@@ -120,7 +123,7 @@ export class M100Db extends Dexie {
   auth!: Table<AuthRow, 'current'>;
   pos!: Table<PoRow, [string, string]>;
   sessions!: Table<Session, string>;
-  events!: Table<SessionEvent, [string, number]>;
+  events!: Table<EventRow, [string, number]>;
   photos!: Table<PhotoRow, [string, DefectId]>;
   outbox!: Table<OutboxRow, string>;
   outboxPhotos!: Table<OutboxPhotoRow, [string, DefectId]>;

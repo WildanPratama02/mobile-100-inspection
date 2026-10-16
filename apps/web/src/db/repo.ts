@@ -3,15 +3,8 @@
  * PSI never sees another's POs, sessions or screen (AC-02.3).
  */
 import { Dexie } from 'dexie';
-import type {
-  DefectId,
-  Po,
-  PoPartial,
-  Session,
-  SessionEvent,
-  SessionEventPayload,
-} from '@m100/shared';
-import type { Auth, M100Db, OutboxRow, PhotoRow, PoRow, View } from './schema';
+import type { DefectId, Po, PoPartial, Session, SessionEventPayload } from '@m100/shared';
+import type { Auth, EventRow, M100Db, OutboxRow, PhotoRow, PoRow, View } from './schema';
 
 // ---- Login (FR-01, FR-02) ----
 
@@ -135,27 +128,44 @@ export async function listOpenSessions(db: M100Db, username: string): Promise<Se
     .toArray();
 }
 
-/** A session's events in tap order. */
-export function listEvents(db: M100Db, sessionId: string): Promise<SessionEvent[]> {
+function eventsOf(db: M100Db, sessionId: string) {
   return db.events
     .where('[sessionId+seq]')
-    .between([sessionId, Dexie.minKey], [sessionId, Dexie.maxKey])
+    .between([sessionId, Dexie.minKey], [sessionId, Dexie.maxKey]);
+}
+
+/** A PSI's events of one session, in tap order. */
+export function listEvents(db: M100Db, username: string, sessionId: string): Promise<EventRow[]> {
+  return eventsOf(db, sessionId)
+    .filter((e) => e.username === username)
     .toArray();
 }
 
-/** One tap = one write of one event, numbered after the last one of its session (doc 03 §4.2). */
+export class SessionNotOpenError extends Error {
+  constructor(sessionId: string) {
+    super(`Session ${sessionId} is not an open session of this user`);
+    this.name = 'SessionNotOpenError';
+  }
+}
+
+/**
+ * One tap = one write of one event, numbered after the last one of its session (doc 03 §4.2). Only into
+ * the PSI's own open session: a sealed session never changes again (doc 03 §4.6).
+ */
 export function appendEvent(
   db: M100Db,
+  username: string,
   sessionId: string,
   payload: SessionEventPayload,
   at: string,
-): Promise<SessionEvent> {
-  return db.transaction('rw', db.events, async () => {
-    const last = await db.events
-      .where('[sessionId+seq]')
-      .between([sessionId, Dexie.minKey], [sessionId, Dexie.maxKey])
-      .last();
-    const event: SessionEvent = { ...payload, sessionId, seq: (last?.seq ?? 0) + 1, at };
+): Promise<EventRow> {
+  return db.transaction('rw', db.sessions, db.events, async () => {
+    const session = await db.sessions.get(sessionId);
+    if (session?.username !== username || session.status !== 'open') {
+      throw new SessionNotOpenError(sessionId);
+    }
+    const last = await eventsOf(db, sessionId).last();
+    const event: EventRow = { ...payload, sessionId, seq: (last?.seq ?? 0) + 1, at, username };
     await db.events.add(event);
     return event;
   });
