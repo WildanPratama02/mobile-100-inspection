@@ -1,0 +1,130 @@
+/* Mobile 100% Inspection design tokens. Generated from tokens.json; edit tokens.json, not this file. */
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:ital,wght@0,500;1,500&display=swap');
+
+:root {
+  --bg: #FFFFFF;
+  --panel: #F4F6F8;
+  --surface: #FFFFFF;
+  --surface-sunken: #EEF1F4;
+  --line: #D5DAE0;
+  --line-strong: #7E8794;
+  --ink: #0E1217;
+  --ink-2: #434C57;
+  --ink-3: #57606C;
+  --accent: #1D4ED8;
+  --on-accent: #FFFFFF;
+  --accent-soft: #DCE6FF;
+  --disabled: #C9CFD7;
+  --on-disabled: var(--ink-3);
+  --focus: var(--accent);
+  --minor: #6A4700;
+  --minor-soft: #F7E4AE;
+  --major: #8A2A04;
+  --major-soft: #F8CFB8;
+  --critical: #B3123A;
+  --on-critical: #FFFFFF;
+  --success: #0A7446;
+  --warning: #7A5000;
+  --warning-soft: #FFF0D0;
+  --danger: #B3123A;
+  --on-danger: #FFFFFF;
+  --scrim: #0E121780;
+  --shadow-overlay: 0 12px 34px rgba(14,18,23,0.28);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-full: 999px;
+  --tap-min: 44px;
+  --row-min: 50px;
+  --control-h: 52px;
+  --bar-h: 58px;
+  --font-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --fs-brand: 96px; --lh-brand: 0.88; --fw-brand: 700; --ls-brand: 0.01em;
+  --fs-action-xl: 32px; --lh-action-xl: 1; --fw-action-xl: 700; --ls-action-xl: 0.06em;
+  --fs-title: 30px; --lh-title: 1.05; --fw-title: 600; --ls-title: 0.05em;
+  --fs-action-lg: 27px; --lh-action-lg: 1; --fw-action-lg: 700; --ls-action-lg: 0.06em;
+  --fs-stat: 26px; --lh-stat: 1; --fw-stat: 700; --ls-stat: 0.01em;
+  --fs-action: 22px; --lh-action: 1; --fw-action: 700; --ls-action: 0.05em;
+  --fs-label: 15.5px; --lh-label: 1.2; --fw-label: 600; --ls-label: 0.07em;
+  --fs-caption: 13px; --lh-caption: 1.2; --fw-caption: 600; --ls-caption: 0.12em;
+  --fs-chip: 12px; --lh-chip: 1; --fw-chip: 600; --ls-chip: 0.06em;
+  --fs-field: 19px; --lh-field: 1.25; --fw-field: 500;
+  --fs-option: 16.5px; --lh-option: 1.15; --fw-option: 600;
+  --fs-body: 15px; --lh-body: 1.3; --fw-body: 400;
+  --fs-defect: 14.5px; --lh-defect: 1.22; --fw-defect: 500;
+  --fs-meta: 12.5px; --lh-meta: 1.2; --fw-meta: 400;
+  --fs-po: 15.5px; --lh-po: 1.2; --fw-po: 500;
+  --fs-code: 13px; --lh-code: 1.2; --fw-code: 500;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F1216;
+    --panel: #171B21;
+    --surface: #1F242C;
+    --surface-sunken: #161A20;
+    --line: #2E353F;
+    --line-strong: #6B7582;
+    --ink: #EEF1F5;
+    --ink-2: #B4BCC7;
+    --ink-3: #929BA7;
+    --accent: #7AA2FF;
+    --on-accent: #0B0E12;
+    --accent-soft: #1B2A52;
+    --disabled: #343B45;
+    --on-disabled: var(--ink-3);
+    --focus: var(--accent);
+    --minor: #F4C75A;
+    --minor-soft: #3A2D08;
+    --major: #FFA070;
+    --major-soft: #40200C;
+    --critical: #D3254E;
+    --on-critical: #FFFFFF;
+    --success: #47D89B;
+    --warning: #F2C35A;
+    --warning-soft: #3A2D10;
+    --danger: #FF6B8B;
+    --on-danger: #0E1217;
+    --scrim: #0000009E;
+    --shadow-overlay: 0 12px 34px rgba(0,0,0,0.6);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0F1216;
+  --panel: #171B21;
+  --surface: #1F242C;
+  --surface-sunken: #161A20;
+  --line: #2E353F;
+  --line-strong: #6B7582;
+  --ink: #EEF1F5;
+  --ink-2: #B4BCC7;
+  --ink-3: #929BA7;
+  --accent: #7AA2FF;
+  --on-accent: #0B0E12;
+  --accent-soft: #1B2A52;
+  --disabled: #343B45;
+  --on-disabled: var(--ink-3);
+  --focus: var(--accent);
+  --minor: #F4C75A;
+  --minor-soft: #3A2D08;
+  --major: #FFA070;
+  --major-soft: #40200C;
+  --critical: #D3254E;
+  --on-critical: #FFFFFF;
+  --success: #47D89B;
+  --warning: #F2C35A;
+  --warning-soft: #3A2D10;
+  --danger: #FF6B8B;
+  --on-danger: #0E1217;
+  --scrim: #0000009E;
+  --shadow-overlay: 0 12px 34px rgba(0,0,0,0.6);
+}

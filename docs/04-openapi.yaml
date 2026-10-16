@@ -1,0 +1,547 @@
+openapi: 3.1.0
+info:
+  title: Mobile 100% Inspection API
+  version: 1.1.0
+  summary: Backend for the Mobile 100% Inspection PWA (PT Parkland World Indonesia, QIP Digital Team).
+  description: |
+    Contract between the tablet PWA and the NestJS API. Behaviour, rules and examples are in
+    `04-api-contract.md`; spreadsheet mapping in `02-data-design.md`.
+    All times are ISO 8601 with offset +07:00 (WIB). All errors use `application/problem+json`.
+servers:
+  - url: https://{host}/v1
+    variables:
+      host:
+        default: m100-api.example.internal
+        description: Decided in doc 03 (hosting, PRD OQ-03).
+tags:
+  - name: system
+  - name: auth
+  - name: master-data
+  - name: po
+  - name: submissions
+security:
+  - deviceKey: []
+    bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: Liveness probe. No authentication.
+      security: []
+      responses:
+        '200':
+          description: The API process is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, const: ok }
+
+  /system/status:
+    get:
+      tags: [system]
+      operationId: getSystemStatus
+      summary: Whether Submit PO is currently possible (startup validation, doc 02 §10).
+      security:
+        - deviceKey: []
+      responses:
+        '200':
+          description: Current status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SystemStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Log a PSI in by name, factory and cell (ADR-006). Returns a bearer token.
+      security:
+        - deviceKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Logged in.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshToken
+      summary: Exchange a valid token that is close to expiry for a new one.
+      responses:
+        '200':
+          description: New token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /master-data:
+    get:
+      tags: [master-data]
+      operationId: getMasterData
+      summary: Users, factories/cells and the area map in one cacheable document (FR-13).
+      description: Needed before login, so only the device key is required. Supports ETag.
+      security:
+        - deviceKey: []
+      parameters:
+        - in: header
+          name: If-None-Match
+          schema: { type: string }
+          required: false
+      responses:
+        '200':
+          description: Current master data.
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MasterData' }
+        '304':
+          description: Unchanged since the given ETag.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /pos:
+    get:
+      tags: [po]
+      operationId: searchPos
+      summary: Search ALL_PO_MASTER by PO, article or model (FR-03).
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema: { type: string, minLength: 3, maxLength: 40 }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 20, default: 20 }
+      responses:
+        '200':
+          description: Up to `limit` matches.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 20
+                    items: { $ref: '#/components/schemas/Po' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /pos/{po}:
+    get:
+      tags: [po]
+      operationId: getPo
+      summary: One PO by its exact number.
+      parameters:
+        - in: path
+          name: po
+          required: true
+          schema: { type: string }
+          description: URL-encoded, leading zeros and prefixes kept (`0903359388`, `CX-0902368685`).
+      responses:
+        '200':
+          description: The PO.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Po' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /submissions:
+    post:
+      tags: [submissions]
+      operationId: createSubmission
+      summary: Submit a sealed session (FR-11). Idempotent by `submissionUuid`.
+      description: |
+        `multipart/form-data` with one JSON part `submission` and zero or more photo parts.
+        Each photo part's name is `photo_<DEFECT_ID>` (for example `photo_D035`).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [submission]
+              properties:
+                submission:
+                  $ref: '#/components/schemas/SubmissionRequest'
+              additionalProperties:
+                type: string
+                contentMediaType: image/jpeg
+                description: Photo parts named `photo_<DEFECT_ID>`.
+            encoding:
+              submission:
+                contentType: application/json
+      responses:
+        '201':
+          description: Written to the spreadsheet now.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubmissionResult' }
+        '200':
+          description: This UUID was already written earlier; same result returned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubmissionResult' }
+        '202':
+          description: Accepted and queued; poll GET /submissions/{submissionUuid}.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubmissionResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /submissions/{submissionUuid}:
+    get:
+      tags: [submissions]
+      operationId: getSubmission
+      summary: Status of a submission sent earlier.
+      parameters:
+        - in: path
+          name: submissionUuid
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Known submission.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubmissionResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    deviceKey:
+      type: apiKey
+      in: header
+      name: X-Device-Key
+      description: Per-tablet key provisioned at install. Identifies the tablet; revocable.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid device key or token. Codes DEVICE_KEY_INVALID, TOKEN_INVALID, TOKEN_EXPIRED.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: >-
+        Codes PO_NOT_FOUND, SUBMISSION_NOT_FOUND. SUBMISSION_NOT_FOUND on a status poll
+        means the API has no record of the UUID (for example after a restart): the client
+        resends the same submission (doc 04 section 5).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Code SUBMISSION_UUID_REUSED (same UUID, different content).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooLarge:
+      description: Code PAYLOAD_TOO_LARGE (request over 8 MB or a photo over 1 MB).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ValidationFailed:
+      description: The request breaks a rule; `errors` lists each one. Not retryable.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    RateLimited:
+      description: Code RATE_LIMITED. Retry after `Retry-After` seconds.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unavailable:
+      description: Codes SUBMIT_DISABLED, GOOGLE_UNAVAILABLE. Retryable.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    PsiLevel:
+      type: string
+      enum: [PSI lv.1, PSI lv.2]
+    InspectionType:
+      type: string
+      enum: [REWORK, B-GRADE]
+    Classification:
+      type: string
+      enum: [MINOR, MAJOR, CRITICAL]
+    DefectId:
+      type: string
+      pattern: '^D0(0[1-9]|[1-8][0-9]|9[0-8])$'
+    AreaId:
+      type: string
+      pattern: '^A(0[1-9]|1[0-2])$'
+
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri, examples: ['https://m100/errors/validation-failed'] }
+        title: { type: string }
+        status: { type: integer }
+        code:
+          type: string
+          enum:
+            - DEVICE_KEY_INVALID
+            - TOKEN_INVALID
+            - TOKEN_EXPIRED
+            - USER_NOT_FOUND
+            - CELL_NOT_FOUND
+            - PO_NOT_FOUND
+            - SUBMISSION_NOT_FOUND
+            - SUBMISSION_UUID_REUSED
+            - VALIDATION_FAILED
+            - PHOTO_MISSING
+            - PHOTO_NOT_ALLOWED
+            - PAYLOAD_TOO_LARGE
+            - RATE_LIMITED
+            - SUBMIT_DISABLED
+            - GOOGLE_UNAVAILABLE
+            - INTERNAL
+        detail: { type: string, description: 'Indonesian, ready to show to the PSI.' }
+        retryable: { type: boolean }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [path, code, message]
+            properties:
+              path: { type: string, examples: ['findings[2].qty'] }
+              code: { type: string }
+              message: { type: string }
+
+    SystemStatus:
+      type: object
+      required: [submitEnabled, checkedAt, checks]
+      properties:
+        submitEnabled: { type: boolean }
+        checkedAt: { type: string, format: date-time }
+        masterDataVersion: { type: string }
+        checks:
+          type: array
+          items:
+            type: object
+            required: [id, ok]
+            properties:
+              id: { type: string, examples: [HEADERS, DEFECT_LIST, AREA_MAP, LINK_TEMPLATES, DRIVE_ACCESS] }
+              ok: { type: boolean }
+              message: { type: string }
+
+    LoginRequest:
+      type: object
+      required: [username, level, factory, cell]
+      properties:
+        username: { type: string, examples: ['AZIZAH'] }
+        level: { $ref: '#/components/schemas/PsiLevel' }
+        factory: { type: string, examples: ['F 3'] }
+        cell: { type: string, examples: ['F3-10'] }
+
+    User:
+      type: object
+      required: [username, level]
+      properties:
+        username: { type: string }
+        level: { $ref: '#/components/schemas/PsiLevel' }
+
+    LoginResponse:
+      type: object
+      required: [token, expiresAt, user, factory, cell]
+      properties:
+        token: { type: string }
+        expiresAt: { type: string, format: date-time }
+        user: { $ref: '#/components/schemas/User' }
+        factory: { type: string }
+        cell: { type: string }
+
+    MasterData:
+      type: object
+      required: [version, fetchedAt, users, factories, areas, families, defects, map]
+      properties:
+        version: { type: string, description: 'Same value as the ETag.' }
+        fetchedAt: { type: string, format: date-time }
+        users:
+          type: array
+          items: { $ref: '#/components/schemas/User' }
+        factories:
+          type: array
+          description: Only `F <number>` factories (doc 02 §3.2).
+          items:
+            type: object
+            required: [factory, cells]
+            properties:
+              factory: { type: string, examples: ['F 3'] }
+              cells:
+                type: array
+                items: { type: string, examples: ['F3-10'] }
+        areas:
+          type: array
+          items:
+            type: object
+            required: [id, name, order, subAreas]
+            properties:
+              id: { $ref: '#/components/schemas/AreaId' }
+              name: { type: string }
+              order: { type: integer }
+              subAreas:
+                type: array
+                items:
+                  type: object
+                  required: [id, name, order]
+                  properties:
+                    id: { type: string, examples: ['SA03L'] }
+                    name: { type: string }
+                    order: { type: integer }
+        families:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id: { type: string, examples: ['F03'] }
+              name: { type: string }
+        defects:
+          type: array
+          items:
+            type: object
+            required: [id, name, classification, familyId]
+            properties:
+              id: { $ref: '#/components/schemas/DefectId' }
+              name: { type: string }
+              classification: { $ref: '#/components/schemas/Classification' }
+              familyId: { type: string }
+        map:
+          type: array
+          description: Active rows of M100_AREA_MAP.
+          items:
+            type: object
+            required: [mapId, areaId, subAreaId, familyId, defectId]
+            properties:
+              mapId: { type: string }
+              areaId: { $ref: '#/components/schemas/AreaId' }
+              subAreaId: { type: string }
+              familyId: { type: string }
+              defectId: { $ref: '#/components/schemas/DefectId' }
+
+    Po:
+      type: object
+      required: [po, article, model, destination, orderQty, podd, crd]
+      properties:
+        po: { type: string, examples: ['0903359388'] }
+        article: { type: string }
+        model: { type: string, description: 'Byte for byte from ALL_PO_MASTER (may contain U+00A0).' }
+        destination: { type: string }
+        orderQty: { type: integer }
+        podd: { type: [string, 'null'], format: date }
+        crd: { type: [string, 'null'], format: date }
+
+    Finding:
+      type: object
+      description: One area + sub-area + defect + inspection type, with its total quantity.
+      required: [inspectionType, areaId, subAreaId, defectId, qty, firstRecordedAt]
+      properties:
+        inspectionType: { $ref: '#/components/schemas/InspectionType' }
+        areaId: { $ref: '#/components/schemas/AreaId' }
+        subAreaId: { type: string }
+        familyId: { type: string }
+        defectId: { $ref: '#/components/schemas/DefectId' }
+        qty: { type: integer, minimum: 1 }
+        firstRecordedAt: { type: string, format: date-time, description: 'Breaks ties in slot order (doc 02 §6.2).' }
+
+    SubmissionRequest:
+      type: object
+      required: [submissionUuid, sealedAt, appVersion, user, factory, cell, po, counts, findings]
+      properties:
+        submissionUuid: { type: string, format: uuid }
+        sealedAt: { type: string, format: date-time }
+        appVersion: { type: string, examples: ['1.0.0'] }
+        user: { $ref: '#/components/schemas/User' }
+        factory: { type: string }
+        cell: { type: string }
+        po: { type: string }
+        partial:
+          type: [object, 'null']
+          description: PO PARTIAL (ADR-013); null when the PO isn't partial.
+          required: [number, qty]
+          properties:
+            number: { type: integer, minimum: 1, maximum: 99, description: 'Partial number: 1 = P1.' }
+            qty: { type: integer, minimum: 1 }
+        counts:
+          type: object
+          description: Number of inspections started, by type (ADR-008).
+          required: [rework, bGrade, noDefect]
+          properties:
+            rework: { type: integer, minimum: 0 }
+            bGrade: { type: integer, minimum: 0 }
+            noDefect: { type: integer, minimum: 0 }
+        findings:
+          type: array
+          items: { $ref: '#/components/schemas/Finding' }
+        photos:
+          type: array
+          description: One entry per photo part. PSI lv.2 only, one per defect (ADR-011).
+          items:
+            type: object
+            required: [defectId, part, sha256]
+            properties:
+              defectId: { $ref: '#/components/schemas/DefectId' }
+              part: { type: string, examples: ['photo_D035'] }
+              sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+
+    SubmissionResult:
+      type: object
+      required: [submissionUuid, status]
+      properties:
+        submissionUuid: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [queued, writing, written, failed]
+        diId: { type: string, pattern: '^[0-9a-f]{8}$', description: 'DATA_INSPECTION ID once written.' }
+        writtenAt: { type: string, format: date-time }
+        totals:
+          type: object
+          properties:
+            qtyInspection: { type: integer }
+            qtyAGrade: { type: integer }
+            qtyBGrade: { type: integer }
+            qtyDefect: { type: integer }
+            rft: { type: number }
+            defectRate: { type: number }
+            overflowDefects: { type: integer }
+        problem: { $ref: '#/components/schemas/Problem' }

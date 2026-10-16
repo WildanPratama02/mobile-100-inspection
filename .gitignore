@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.env
+.env.*
+!.env.example
+secrets/
+*.service-account.json
+CLAUDE.local.md
+.claude/settings.local.json

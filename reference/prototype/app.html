@@ -1,0 +1,908 @@
+<title>Mobile 100% Inspection</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout concept: landscape two-pane shop-floor tool. Home = PO list | Top 5 | result stats + one big ADD DEFECT bar.
+   Input Defect = shoe map on the left, drill-down list + history + BACK/HOME/UNDO on the right. Portrait stacks the panes. */
+:root{
+  --font-ui:'Barlow Semi Condensed','Arial Narrow',system-ui,sans-serif;
+  --font-display:'Barlow Condensed','Arial Narrow',system-ui,sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+  --bg:#D9DEE4; --panel:#E7EAEE; --surface:#FFFFFF; --surface-2:#F0F2F5; --line:#B7BFC9; --line-soft:#D0D6DD;
+  --ink:#0E1217; --ink-2:#444D58; --ink-3:#69727E; --on-ink:#FFFFFF;
+  --focus:#1D4ED8; --hit:#1D4ED8; --hit-bg:#DAE5FF;
+  --minor-fg:#6A4700; --minor-bg:#F7E4AE; --major-fg:#8A2A04; --major-bg:#F8CFB8; --crit-fg:#FFFFFF; --crit-bg:#B3123A;
+  --ok:#0A7446; --danger:#B3123A; --warn-bg:#FFF0D0; --scrim:rgba(14,18,23,.5);
+  --shoe-upper:#C3C9D1; --shoe-upper-2:#D6DBE1; --shoe-mid:#F7F8FA; --shoe-out:#2B313A; --shoe-line:#838C98; --shoe-tongue:#E1E5EA; --shoe-patch:#0E1217;
+  --shadow:0 12px 34px rgba(14,18,23,.28);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0C0F13; --panel:#171B21; --surface:#1F242C; --surface-2:#161A20; --line:#3A424D; --line-soft:#2A313A;
+  --ink:#EEF1F5; --ink-2:#B4BCC7; --ink-3:#8993A0; --on-ink:#0E1217;
+  --focus:#7AA2FF; --hit:#5B8CFF; --hit-bg:#1B2A52;
+  --minor-fg:#F4C75A; --minor-bg:#3A2D08; --major-fg:#FFA070; --major-bg:#40200C; --crit-fg:#FFFFFF; --crit-bg:#D3254E;
+  --ok:#47D89B; --danger:#FF6B8B; --warn-bg:#3A2D10; --scrim:rgba(0,0,0,.62);
+  --shoe-upper:#4A525D; --shoe-upper-2:#59626E; --shoe-mid:#8A929D; --shoe-out:#14171C; --shoe-line:#8C95A1; --shoe-tongue:#6A737F; --shoe-patch:#EEF1F5;
+  --shadow:0 12px 34px rgba(0,0,0,.6);
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0C0F13; --panel:#171B21; --surface:#1F242C; --surface-2:#161A20; --line:#3A424D; --line-soft:#2A313A;
+  --ink:#EEF1F5; --ink-2:#B4BCC7; --ink-3:#8993A0; --on-ink:#0E1217;
+  --focus:#7AA2FF; --hit:#5B8CFF; --hit-bg:#1B2A52;
+  --minor-fg:#F4C75A; --minor-bg:#3A2D08; --major-fg:#FFA070; --major-bg:#40200C; --crit-fg:#FFFFFF; --crit-bg:#D3254E;
+  --ok:#47D89B; --danger:#FF6B8B; --warn-bg:#3A2D10; --scrim:rgba(0,0,0,.62);
+  --shoe-upper:#4A525D; --shoe-upper-2:#59626E; --shoe-mid:#8A929D; --shoe-out:#14171C; --shoe-line:#8C95A1; --shoe-tongue:#6A737F; --shoe-patch:#EEF1F5;
+  --shadow:0 12px 34px rgba(0,0,0,.6);
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:15px;line-height:1.25;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;overflow:auto}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:inherit}
+button:focus-visible,[tabindex]:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:-3px}
+svg{display:block}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--font-mono);font-weight:500}
+.app{height:100%;min-height:330px;display:flex;flex-direction:column}
+.disp{font-family:var(--font-display);text-transform:uppercase;letter-spacing:.03em}
+.ico{width:1.25em;height:1.25em;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+/* chips */
+.chip{display:inline-block;font-family:var(--font-display);font-weight:600;font-size:12px;letter-spacing:.06em;line-height:1;padding:3px 6px 2px;border-radius:3px;white-space:nowrap;vertical-align:middle}
+.chip.c1{background:var(--minor-bg);color:var(--minor-fg)}
+.chip.c2{background:var(--major-bg);color:var(--major-fg)}
+.chip.c3{background:var(--crit-bg);color:var(--crit-fg)}
+.chip.role,.chip.mRW{background:var(--ink);color:var(--on-ink)}
+.chip.mBG{background:var(--hit);color:#fff}
+.chip.mode{font-size:13px;padding:4px 8px 3px}
+
+/* ---------- login ---------- */
+.login{flex:1;display:grid;grid-template-columns:1.05fr 1fr;gap:0;min-height:0;border:1px solid var(--line);background:var(--surface)}
+.brand{background:var(--ink);color:var(--on-ink);padding:clamp(18px,4vw,44px);display:flex;flex-direction:column;justify-content:space-between;gap:18px;min-width:0}
+.brand h1{margin:0;font-family:var(--font-display);font-weight:700;text-transform:uppercase;line-height:.88;font-size:clamp(38px,6.4vw,76px);letter-spacing:.01em}
+.brand h1 small{display:block;font-size:.32em;letter-spacing:.22em;font-weight:500;margin-top:.5em;opacity:.7}
+.brand ul{margin:0;padding:0;list-style:none;display:grid;gap:8px;font-size:clamp(14px,1.6vw,17px);opacity:.88}
+.brand li{display:flex;gap:10px;align-items:baseline}
+.brand li b{font-family:var(--font-display);font-weight:600;letter-spacing:.08em;min-width:7.5em;text-transform:uppercase;opacity:.65}
+.lform{padding:clamp(16px,3.5vw,40px);display:flex;flex-direction:column;gap:14px;justify-content:center;min-width:0;overflow:auto}
+.lform h2{margin:0 0 2px;font-size:22px;font-family:var(--font-display);text-transform:uppercase;letter-spacing:.04em}
+.field{display:grid;gap:4px}
+.field>span{font-family:var(--font-display);font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+.sel{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:52px;padding:8px 14px;background:var(--surface-2);border:1.5px solid var(--line);font-size:19px;font-weight:500;width:100%}
+.sel[aria-expanded="true"]{border-color:var(--ink)}
+.sel .ph{color:var(--ink-3);font-weight:400}
+.sel .ico{color:var(--ink-3)}
+.namebox{min-height:52px;padding:8px 14px;border:1.5px dashed var(--line);display:flex;align-items:center;gap:10px;font-size:19px;font-weight:600}
+.namebox .ph{color:var(--ink-3);font-weight:400}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;min-height:54px;padding:0 20px;background:var(--ink);color:var(--on-ink);font-family:var(--font-display);font-weight:700;font-size:23px;letter-spacing:.08em;text-transform:uppercase;width:100%}
+.btn[disabled]{opacity:.28;cursor:not-allowed}
+.btn.ghost{background:var(--surface);color:var(--ink);border:1.5px solid var(--ink)}
+.btn.sm{min-height:46px;font-size:18px}
+.demo{font-size:12px;color:var(--ink-3);margin-top:2px}
+
+/* ---------- home ---------- */
+.home{flex:1;min-height:0;display:grid;border:1px solid var(--line);background:var(--bg);
+  grid-template-columns:clamp(150px,19vw,214px) minmax(0,1fr) clamp(230px,29vw,330px);
+  grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-areas:"pohead info info" "polist main stats" "polist add add"}
+.pohead{grid-area:pohead;display:flex;align-items:center;justify-content:center;background:var(--surface);border-right:1px solid var(--line);border-bottom:1px solid var(--line);font-family:var(--font-display);font-size:21px;letter-spacing:.06em;text-transform:uppercase;min-height:52px}
+.info{grid-area:info;display:flex;align-items:stretch;background:var(--surface);border-bottom:1px solid var(--line);min-width:0}
+.meta{flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px 22px;padding:6px 14px;min-width:0}
+.meta div{display:flex;flex-direction:column;min-width:0}
+.meta small{font-family:var(--font-display);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+.meta b{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:20ch}
+.meta .po{font-family:var(--font-mono);font-size:14px}
+.who{display:flex;align-items:center;gap:8px;padding:0 6px 0 10px}
+.who span{font-size:13px;text-align:right;line-height:1.15;color:var(--ink-2)}
+.who span b{display:block;color:var(--ink);font-size:14px}
+.gear{width:62px;background:var(--ink);color:var(--on-ink);display:grid;place-items:center;align-self:stretch}
+.gear .ico{width:32px;height:32px;stroke-width:1.8}
+.polist{grid-area:polist;display:flex;flex-direction:column;background:var(--surface-2);border-right:1px solid var(--line);min-height:0}
+.pos{flex:1;overflow:auto;min-height:0}
+.po-item{display:block;width:100%;padding:14px 12px;font-family:var(--font-mono);font-style:italic;font-size:15.5px;border-bottom:1px solid var(--line-soft);background:var(--surface);position:relative}
+.po-item small{display:block;font-family:var(--font-ui);font-style:normal;font-size:12px;color:var(--ink-3);margin-top:3px}
+.po-item[aria-current="true"]{background:var(--ink);color:var(--on-ink)}
+.po-item[aria-current="true"] small{color:var(--on-ink);opacity:.7}
+.po-item .live{display:block;font-style:normal;font-family:var(--font-ui);font-size:11.5px;font-weight:600;color:var(--hit);margin-top:3px}
+.po-item[aria-current="true"] .live{color:var(--on-ink);opacity:.85}
+.po-item .cnt{position:absolute;right:10px;top:12px;font-style:normal;font-family:var(--font-display);font-weight:700;font-size:15px;background:var(--hit);color:#fff;border-radius:99px;min-width:24px;padding:2px 7px;text-align:center}
+.addpo{margin:10px;min-height:62px;display:grid;place-items:center;background:var(--surface);border:1.5px solid var(--line)}
+.addpo .ico{width:34px;height:34px;stroke-width:2.4}
+.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;padding:10px 10px 10px;gap:8px}
+.t5{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--ink)}
+.t5 h2{margin:0;padding:8px 12px 6px;text-align:center;font-family:var(--font-display);font-size:30px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;border-bottom:1px solid var(--ink)}
+.t5body{flex:1;overflow:auto;min-height:0}
+.t5row{display:grid;grid-template-columns:34px minmax(0,1fr) 64px auto;align-items:center;border-bottom:1px solid var(--line-soft);min-height:58px}
+.t5row>*{padding:8px 10px}
+.t5body.nophoto .t5row{grid-template-columns:34px minmax(0,1fr) 64px}
+.t5row .no{color:var(--ink-3);font-size:13px;padding-right:0;align-self:start;padding-top:12px}
+.t5row .nm{font-size:14.5px;line-height:1.22;overflow-wrap:anywhere}
+.t5row .nm small{display:block;color:var(--ink-3);font-size:12px;margin-top:3px}
+.t5row .q{font-family:var(--font-display);font-weight:700;font-size:30px;text-align:center;border-left:1px solid var(--line-soft);border-right:1px solid var(--line-soft);align-self:stretch;display:grid;place-items:center;padding:0 4px}
+.ph-btn{display:flex;align-items:center;justify-content:center;gap:6px;min-width:88px;min-height:46px;border:1.5px solid var(--ink);font-family:var(--font-display);font-weight:600;letter-spacing:.06em;font-size:15px;background:var(--surface)}
+.ph-btn.need{border-style:dashed;border-color:var(--danger);color:var(--danger)}
+.ph-btn.thumb{padding:0;overflow:hidden;width:88px;height:56px;border-color:var(--ok);position:relative}
+.ph-btn.thumb img{width:100%;height:100%;object-fit:cover}
+.ph-btn.thumb i{position:absolute;right:2px;bottom:2px;background:var(--ok);color:#fff;border-radius:99px;width:18px;height:18px;display:grid;place-items:center}
+.ph-btn.thumb i .ico{width:12px;height:12px;stroke-width:3.2}
+.t5empty{padding:28px 20px;text-align:center;color:var(--ink-3);display:grid;gap:6px;place-content:center;height:100%}
+.t5empty b{font-family:var(--font-display);font-size:22px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
+.stats{grid-area:stats;padding:10px 10px 10px 0;min-height:0;display:flex}
+.statbox{flex:1;background:var(--panel);border:1px solid var(--line);padding:12px 14px;display:flex;flex-direction:column;gap:2px;min-height:0;overflow:auto}
+.stat{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--line-soft);min-height:40px}
+.stat.col{flex-direction:column;align-items:stretch;gap:4px}
+.stat:last-of-type{border-bottom:0}
+.stat label,.stat>span:first-child{font-family:var(--font-display);font-size:15.5px;letter-spacing:.07em;text-transform:uppercase;font-weight:600;color:var(--ink-2)}
+.stat b{font-family:var(--font-display);font-size:26px;font-weight:700;letter-spacing:.01em}
+.stat b small{font-size:.55em;font-weight:600;color:var(--ink-3);margin-left:2px}
+.stepper{display:flex;align-items:center;gap:4px;justify-content:space-between}
+.stepper button{min-width:44px;min-height:42px;display:grid;place-items:center;background:var(--surface);border:1.5px solid var(--line);font-family:var(--font-display);font-weight:700;font-size:18px}
+.stepper b{flex:1;text-align:center;padding:0 4px;font-size:28px}
+.sev{flex:none;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}
+.sev div{background:var(--surface);border:1px solid var(--line-soft);padding:5px 6px;text-align:center}
+.sev b{display:block;font-family:var(--font-display);font-size:22px;line-height:1.05}
+.rate-ok{color:var(--ok)}.rate-bad{color:var(--danger)}
+.exports{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:auto;padding-top:10px}
+.exports .btn{font-size:16px;min-height:46px;padding:0 6px}
+.addrow{grid-area:add;display:flex;background:var(--surface);border-top:1px solid var(--ink);min-width:0}
+.exp{display:flex;align-items:center;justify-content:center;gap:8px;min-width:clamp(104px,14vw,150px);border-left:1px solid var(--line);font-family:var(--font-display);font-size:13px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;color:var(--ink-2)}
+.exp span{display:flex;flex-direction:column;line-height:1.05}.exp b{font-size:21px;color:var(--ink);letter-spacing:.06em}
+.exp:active{background:var(--ink);color:var(--on-ink)}.exp:active b{color:var(--on-ink)}
+.addbar{flex:1;min-height:60px;display:flex;align-items:center;justify-content:center;gap:12px;background:var(--surface);font-family:var(--font-display);font-weight:700;font-size:32px;letter-spacing:.06em;text-transform:uppercase;min-width:0}
+.addbar[disabled]{opacity:.35;cursor:not-allowed}
+.addbar:not([disabled]):active{background:var(--ink);color:var(--on-ink)}
+.home .nopo{grid-area:main/main/stats/stats}
+
+/* ---------- defect screen ---------- */
+.dscreen{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,.88fr);border:1px solid var(--line);background:var(--panel)}
+.shoe-pane{background:var(--panel);display:flex;align-items:center;justify-content:center;min-height:0;min-width:0;padding:4px;border-right:1px solid var(--line)}
+.shoe-pane svg{width:100%;height:100%;max-height:100%}
+.side{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--surface)}
+.ctx{padding:6px 10px 5px;border-bottom:1px solid var(--line);background:var(--surface-2);display:flex;flex-direction:column;gap:4px}
+.ctx .po-line{font-size:12px;color:var(--ink-3);display:flex;gap:6px 12px;flex-wrap:wrap}
+.crumbs{display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-height:26px}
+.crumb{font-family:var(--font-display);font-size:15px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;background:var(--surface);border:1px solid var(--line)}
+.crumb.cur{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+.crumbs i{color:var(--ink-3);font-style:normal}
+.pick{flex:1 1 46%;overflow:auto;min-height:90px;border-bottom:1px solid var(--ink);background:var(--surface)}
+.opt{display:flex;align-items:center;gap:10px;width:100%;min-height:50px;padding:7px 12px;border-bottom:1px solid var(--line-soft);font-size:16.5px;font-weight:600;text-transform:uppercase;line-height:1.15;overflow-wrap:anywhere;position:relative;transition:background .12s}
+.opt .grow{flex:1;min-width:0}
+.opt .sub{display:block;font-weight:400;text-transform:none;font-size:12.5px;color:var(--ink-3);margin-top:2px}
+.opt .n{font-family:var(--font-display);font-weight:600;font-size:15px;color:var(--ink-3)}
+.opt:active{background:var(--ink);color:var(--on-ink)}
+.opt:active .sub,.opt:active .n{color:var(--on-ink)}
+.opt.def{font-size:14.5px;font-weight:500;text-transform:none;padding-right:10px}
+.opt .qty{font-family:var(--font-display);font-weight:700;font-size:17px;min-width:34px;text-align:center;padding:3px 4px 1px;background:var(--hit);color:#fff;border-radius:3px}
+.opt.flash{animation:flash .5s ease-out}
+@keyframes flash{0%{background:var(--hit-bg);box-shadow:inset 6px 0 0 var(--hit)}100%{background:transparent;box-shadow:inset 0 0 0 transparent}}
+.empty-pick{height:100%;display:grid;place-content:center;gap:8px;text-align:center;padding:16px;color:var(--ink-3)}
+.empty-pick b{font-family:var(--font-display);font-size:22px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
+.hist{flex:0 0 clamp(116px,30%,260px);display:flex;flex-direction:column;min-height:0;background:var(--surface)}
+.hgrid{display:grid;grid-template-columns:32px minmax(0,1fr) auto 44px;align-items:center}
+.hh{border-bottom:1px solid var(--ink);background:var(--surface-2);font-family:var(--font-display);font-weight:600;letter-spacing:.08em;font-size:13px;text-transform:uppercase}
+.hh>*{padding:4px 8px}
+.hbody{flex:1;overflow:auto;min-height:0}
+.hrow{border-bottom:1px solid var(--line-soft);min-height:40px}
+.hrow>*{padding:5px 8px}
+.hrow .nm{font-size:13px;line-height:1.2;overflow-wrap:anywhere}
+.hrow .nm small{display:block;color:var(--ink-3);font-size:11.5px;margin-top:1px}
+.hrow .q{font-family:var(--font-display);font-weight:700;font-size:20px;text-align:right}
+.hrow .no{color:var(--ink-3);font-size:12px}
+.hrow.flash{animation:flash .6s ease-out}
+.hempty{padding:14px;color:var(--ink-3);font-size:13px;text-align:center}
+.bar{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--ink);background:var(--surface)}
+.bar button{min-height:58px;display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--font-display);font-weight:700;font-size:27px;letter-spacing:.06em;text-transform:uppercase}
+.bar button+button{border-left:1px solid var(--line)}
+.bar button:active{background:var(--ink);color:var(--on-ink)}
+.bar button[disabled]{opacity:.3}
+
+/* shoe svg */
+.pill rect{fill:var(--surface);stroke:var(--line);stroke-width:1.5;rx:7}
+.pill text{font-family:var(--font-ui);font-weight:700;font-size:15.5px;fill:var(--ink);text-anchor:middle;dominant-baseline:central;letter-spacing:.02em}
+.pill{cursor:pointer}
+.pill.sel rect{fill:var(--ink);stroke:var(--ink)}
+.pill.sel text{fill:var(--on-ink)}
+svg.off .pill,svg.off .zone{pointer-events:none}
+svg.off .pill{opacity:.4}
+svg.off .leader,svg.off .dot{opacity:.35}
+.cmd{cursor:pointer}
+.cmd rect{fill:var(--ink);rx:7}
+.cmd text{font-family:var(--font-display);font-weight:700;font-size:22px;letter-spacing:.05em;fill:var(--on-ink);text-anchor:middle;dominant-baseline:central}
+.cmd.act rect{fill:var(--hit)}.cmd.act text{fill:#fff}
+.cmd.dis{opacity:.28;pointer-events:none}
+.cmd:active rect{opacity:.8}
+.pill.gen rect{stroke-dasharray:5 4}
+.pill .bd{fill:var(--hit);stroke:var(--surface);stroke-width:2}
+.pill .bt,.pill.sel .bt{fill:#fff;font-size:12.5px;font-weight:700;font-family:var(--font-display);letter-spacing:0}
+.leader{stroke:var(--ink-2);stroke-width:1.4;fill:none}
+.leader.sel{stroke:var(--ink);stroke-width:2.2}
+.dot{fill:var(--ink-2)}
+.dot.sel{fill:var(--ink)}
+.zone{fill:transparent;cursor:pointer}
+.zone.sel{fill:var(--ink);fill-opacity:.34}
+.zone.virt{stroke:var(--ink-3);stroke-width:1.4;stroke-dasharray:4 3}
+
+/* ---------- overlays ---------- */
+.scrim{position:fixed;inset:0;background:var(--scrim);display:grid;place-items:center;padding:16px;z-index:40;overflow:auto}
+.scrim.clear{background:transparent;place-items:start end;padding:calc(env(safe-area-inset-top,0px) + 66px) max(16px,env(safe-area-inset-right,0px)) 16px 16px}
+.modal{background:var(--surface);border:1px solid var(--ink);box-shadow:var(--shadow);width:min(460px,100%);max-height:100%;display:flex;flex-direction:column;position:relative}
+.modal.wide{width:min(720px,100%)}
+.mhead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px 8px 16px;border-bottom:1px solid var(--line)}
+.mhead h3{margin:0;font-family:var(--font-display);font-size:22px;letter-spacing:.06em;text-transform:uppercase}
+.x{width:44px;height:44px;display:grid;place-items:center}
+.mbody{padding:14px 16px 16px;display:grid;gap:12px;overflow:auto;min-height:0}
+.dd{position:relative}
+.ddpanel{position:absolute;left:0;right:0;top:calc(100% + 2px);background:var(--surface);border:1.5px solid var(--ink);z-index:5;max-height:min(280px,46vh);display:flex;flex-direction:column;box-shadow:var(--shadow)}
+.ddpanel input{border:0;border-bottom:1px solid var(--line);background:var(--surface-2);padding:10px 12px;font:inherit;font-size:16px;color:var(--ink);width:100%}
+.ddlist{overflow:auto}
+.ddopt{display:flex;justify-content:space-between;align-items:baseline;gap:10px;width:100%;padding:10px 12px;min-height:48px;border-bottom:1px solid var(--line-soft);font-size:15px}
+.ddopt .mono{font-size:15px}
+.ddopt small{color:var(--ink-3);font-size:12.5px;text-align:right}
+.ddopt[disabled]{opacity:.4;cursor:not-allowed}
+.ddopt:active:not([disabled]){background:var(--ink);color:var(--on-ink)}
+.info-grid{background:var(--panel);border:1px solid var(--line);padding:6px 14px;display:grid}
+.info-grid div{display:grid;grid-template-columns:8.5em 1fr;gap:8px;padding:6px 0;border-bottom:1px solid var(--line-soft);font-size:15px}
+.info-grid div:last-child{border-bottom:0}
+.info-grid dt,.info-grid span.k{font-family:var(--font-display);font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);font-size:14px}
+.sheetgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px}
+.sheetgrid button{min-height:58px;display:grid;place-items:center;background:var(--surface-2);border:1.5px solid var(--line);font-family:var(--font-display);font-weight:700;font-size:26px}
+.sheetgrid button[aria-pressed="true"],.nikopt[aria-pressed="true"]{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+.niklist{display:grid;gap:8px}
+.nikopt{display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:58px;padding:8px 14px;background:var(--surface-2);border:1.5px solid var(--line);font-size:18px;font-weight:600}
+.nikopt small{font-weight:400;opacity:.75;font-size:14px;display:block}
+.menu{width:min(300px,100%)}
+.menu .mbody{gap:8px;padding:12px}
+.menu .id{display:grid;gap:2px}
+.menu .id b{font-size:19px}
+.menu .id span{color:var(--ink-3);font-size:13.5px}
+.menu .btn{font-size:19px;min-height:48px}
+.menu .logout{background:var(--danger);color:#fff}
+.photo-view img{width:100%;max-height:56vh;object-fit:contain;background:#000}
+.warn{background:var(--warn-bg);border:1px solid var(--line);padding:10px 12px;font-size:14.5px}
+.warn ul{margin:6px 0 0;padding-left:18px}
+.toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 14px);transform:translateX(-50%);background:var(--ink);color:var(--on-ink);padding:10px 16px;font-size:15px;font-weight:600;z-index:60;max-width:min(92vw,520px);box-shadow:var(--shadow);display:flex;gap:10px;align-items:center;pointer-events:none;animation:tin .18s ease-out}
+.toast.err{background:var(--danger);color:#fff}
+@keyframes tin{from{opacity:0;transform:translate(-50%,-8px)}to{opacity:1;transform:translate(-50%,0)}}
+
+/* ---------- portrait / narrow ---------- */
+@media (max-height:480px) and (min-aspect-ratio:1/1){
+  body{padding-block:6px}
+  .pohead{min-height:42px;font-size:18px}
+  .meta{padding:3px 10px;gap:0 16px}.meta b{font-size:13.5px;max-width:15ch}.meta small{font-size:10px}
+  .gear{width:50px}.gear .ico{width:28px;height:28px}
+  .who span{font-size:12px}.who span b{font-size:13px}
+  .po-item{padding:9px 10px;font-size:14px}.po-item small{margin-top:1px}
+  .addpo{min-height:46px;margin:6px}
+  .main{padding:6px;gap:6px}
+  .t5 h2{font-size:22px;padding:4px 8px 2px}
+  .t5row{min-height:48px}.t5row .nm{font-size:13px}.t5row .q{font-size:24px}
+  .stats{padding:6px 6px 6px 0}.statbox{padding:6px 10px}
+  .stat{min-height:32px;padding:2px 0}.stat>span:first-child{font-size:13.5px}.stat b{font-size:21px}
+  .stepper button{min-height:34px;min-width:40px}.stepper b{font-size:21px}
+  .sev b{font-size:18px}.sev div{padding:3px}
+  .addbar{min-height:46px;font-size:25px}
+  .exp b{font-size:18px}.exp{font-size:11px}
+  .warn{padding:5px 9px;font-size:12.5px}
+  .ctx{padding:4px 8px 3px;gap:2px}.crumb{font-size:13.5px}
+  .opt{min-height:44px;padding:5px 10px}.opt.def{font-size:13.5px}
+  .hist{flex-basis:clamp(96px,28%,200px)}.hrow .nm{font-size:12px}
+  .bar button{min-height:46px;font-size:21px}
+}
+@media (max-aspect-ratio:1/1),(max-width:640px){
+  .app{height:auto;min-height:100%}
+  .login{grid-template-columns:1fr}
+  .brand{padding:18px}
+  .brand ul{display:none}
+  .home{display:flex;flex-direction:column}
+  .pohead{display:none}
+  .info{flex-wrap:wrap}
+  .meta{padding:6px 10px;gap:2px 14px}
+  .meta b{max-width:16ch}
+  .polist{flex-direction:row;border-right:0;border-bottom:1px solid var(--line)}
+  .pos{display:flex;overflow-x:auto}
+  .po-item{width:auto;min-width:170px;border-bottom:0;border-right:1px solid var(--line-soft)}
+  .addpo{margin:6px;min-width:64px;min-height:0}
+  .main{padding:8px}
+  .t5{min-height:340px}
+  .stats{padding:0 8px 8px}
+  .addrow{position:sticky;bottom:0;padding-bottom:env(safe-area-inset-bottom,0px);z-index:5}
+  .exp{min-width:84px}
+  .addbar{font-size:24px;white-space:nowrap;letter-spacing:.04em}
+  .dscreen{display:flex;flex-direction:column;flex:none}
+  .shoe-pane{border-right:0;border-bottom:1px solid var(--line);aspect-ratio:640/470;width:100%;padding:0}
+  .side{min-height:0}
+  .pick{flex:none;max-height:44vh;min-height:150px}
+  .hist{flex:none;max-height:34vh;min-height:130px}
+  .bar{position:sticky;bottom:0;z-index:5;padding-bottom:env(safe-area-inset-bottom,0px)}
+  .bar button{font-size:22px;gap:4px;min-width:0}
+  .bar .ico{width:1em;height:1em}
+  .t5row{grid-template-columns:28px minmax(0,1fr) 52px auto}
+  .ph-btn{min-width:64px}
+  .ph-btn.thumb{width:64px;height:46px}
+  .ph-btn span.lbl{display:none}
+}
+@media (prefers-reduced-motion:reduce){.opt.flash,.hrow.flash,.toast{animation:none}}
+</style>
+
+<div id="app" class="app"></div>
+<div id="ov"></div>
+<input type="file" id="photoIn" accept="image/*" capture="environment" hidden>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<script>
+'use strict';
+/* ====== MAPPING DATA (from Footwear_Defect_Mapping_Database.xlsx) ====== */
+const DATA = {"areas":[{"id":"A01","name":"Toe Box","subs":[{"id":"SA01","name":"Toe Box","fams":[["F03",["D032","D033","D034","D035","D036","D037","D039","D040"]],["F01",["D027","D028","D038","D087","D088","D089"]],["F06",["D024","D043","D051","D052","D053","D054","D090","D093"]],["F11",["D047","D048"]],["F05",["D055"]],["F04",["D029","D041","D050","D094","D095"]],["F02",["D009","D010"]],["F17",["D011","D030"]],["F13",["D026","D031"]]]}]},{"id":"A02","name":"Vamp / Forefoot","subs":[{"id":"SA02","name":"Vamp / Forefoot","fams":[["F03",["D032","D033","D034","D035","D036","D037","D039","D040"]],["F01",["D027","D028","D038","D087","D088","D089"]],["F06",["D043","D051","D052","D053","D054","D090","D093"]],["F11",["D047","D048"]],["F05",["D055"]],["F04",["D029","D041","D050","D094","D095"]],["F02",["D009","D010"]],["F17",["D011","D030"]],["F13",["D026","D031"]]]}]},{"id":"A03","name":"Quarter","subs":[{"id":"SA03L","name":"Lateral Quarter","fams":[["F03",["D032","D033","D034","D035","D036","D037","D039","D040"]],["F01",["D027","D028","D038","D087","D088","D089"]],["F06",["D043","D051","D052","D053","D054","D057","D058","D090","D093"]],["F11",["D047","D048"]],["F05",["D055"]],["F04",["D029","D041","D050","D094","D095"]],["F02",["D009","D010"]],["F17",["D011","D030"]],["F13",["D026","D031"]]]},{"id":"SA03M","name":"Medial Quarter","fams":[["F03",["D032","D033","D034","D035","D036","D037","D039","D040"]],["F01",["D027","D028","D038","D087","D088","D089"]],["F06",["D043","D051","D052","D053","D054","D057","D058","D090","D093"]],["F11",["D047","D048"]],["F05",["D055"]],["F04",["D029","D041","D050","D094","D095"]],["F02",["D009","D010"]],["F17",["D011","D030"]],["F13",["D026","D031"]]]}]},{"id":"A04","name":"Heel","subs":[{"id":"SA04Q","name":"Heel Quarter","fams":[["F03",["D032","D033","D034","D035","D036","D037","D039","D040"]],["F01",["D027","D028","D038","D087","D088","D089"]],["F06",["D043","D051","D052","D053","D054","D057","D058","D090","D093"]],["F11",["D047","D048"]],["F05",["D055"]],["F04",["D029","D041","D050","D094","D095"]],["F02",["D009","D010"]],["F17",["D011","D030"]],["F13",["D026","D031"]]]},{"id":"SA04C","name":"Heel Counter / Back Tab","fams":[["F06",["D024","D057","D058"]]]}]},{"id":"A05","name":"Collar","subs":[{"id":"SA05T","name":"Collar Top Line","fams":[["F06",["D043","D053","D059","D093"]],["F04",["D041","D094","D095"]],["F02",["D009","D010"]],["F17",["D011","D030"]],["F13",["D026","D031"]]]},{"id":"SA05B","name":"Collar Binding","fams":[["F03",["D032","D033","D034","D035","D036","D037","D039","D040"]],["F01",["D027","D028","D038","D087","D088","D089"]],["F06",["D054","D090"]],["F11",["D047","D048"]],["F05",["D055"]],["F04",["D029","D050"]]]},{"id":"SA05L","name":"Collar Lining","fams":[["F04",["D022"]],["F07",["D012","D013","D014"]]]},{"id":"SA05S","name":"Slip-on Entrance","fams":[["F09",["D086"]]]}]},{"id":"A06","name":"Tongue","subs":[{"id":"SA06T","name":"Tongue Body","fams":[["F03",["D032","D033","D034","D035","D036","D037","D039","D040"]],["F01",["D027","D028","D038","D087","D088","D089"]],["F06",["D043","D053","D054","D090","D093"]],["F11",["D047","D048"]],["F05",["D055","D056"]],["F04",["D029","D041","D050","D094","D095"]],["F02",["D009","D010"]],["F17",["D011","D030"]],["F13",["D026","D031"]]]},{"id":"SA06L","name":"Tongue Lining","fams":[["F04",["D022"]],["F07",["D012","D013","D014"]]]}]},{"id":"A07","name":"Eyestay / Lace","subs":[{"id":"SA07E","name":"Eyestay","fams":[["F03",["D032","D033","D034","D035","D036","D037","D039","D040"]],["F01",["D027","D028","D038","D087","D088","D089"]],["F06",["D043","D054","D090","D093"]],["F11",["D047","D048"]],["F05",["D055","D056"]],["F04",["D029","D041","D050","D094","D095"]],["F02",["D009","D010"]],["F17",["D011","D030"]],["F13",["D026","D031"]]]},{"id":"SA07L","name":"Lace","fams":[["F09",["D060","D061","D065","D066"]]]},{"id":"SA07T","name":"Lace Tip / Closure","fams":[["F09",["D062","D063","D064"]]]}]},{"id":"A08","name":"Inside","subs":[{"id":"SA08L","name":"Internal Lining","fams":[["F06",["D043","D093"]],["F04",["D041","D094","D095"]],["F02",["D009","D010"]],["F07",["D012","D013","D014"]],["F17",["D011","D030"]],["F13",["D026","D031","D098"]]]},{"id":"SA08S","name":"Sockliner","fams":[["F04",["D022"]],["F08",["D016","D017","D018","D019","D020","D021","D023","D025"]]]},{"id":"SA08I","name":"Insole Board","fams":[["F08",["D018","D019","D020"]]]},{"id":"SA08R","name":"Strobel / Lasting","fams":[["F03",["D015","D032","D033","D034","D035","D036","D037","D039","D040"]],["F01",["D038"]],["F08",["D025"]]]}]},{"id":"A09","name":"Branding / Treatment","subs":[{"id":"SA09B","name":"Logo / Branding","fams":[["F06",["D043","D054","D093"]],["F05",["D042"]],["F04",["D022","D029","D041","D094","D095"]],["F02",["D009","D010"]],["F17",["D011","D030"]],["F13",["D026","D031"]]]},{"id":"SA09P","name":"Print / Embroidery","fams":[["F05",["D044","D091"]],["F04",["D050"]],["F02",["D045","D046"]]]},{"id":"SA09N","name":"No-Sew","fams":[["F05",["D096"]]]},{"id":"SA09T","name":"Treatment / Painting / Pressing","fams":[["F11",["D047","D048"]],["F05",["D049","D055","D097"]]]}]},{"id":"A10","name":"Midsole","subs":[{"id":"SA10M","name":"Midsole Body","fams":[["F06",["D043","D051","D052","D079","D093"]],["F05",["D076"]],["F04",["D041","D094","D095"]],["F02",["D009","D010"]],["F10",["D075","D080"]],["F17",["D011","D030"]],["F13",["D026","D031"]]]},{"id":"SA10T","name":"Midsole Top Line","fams":[]}]},{"id":"A11","name":"Outsole / Bonding","subs":[{"id":"SA11O","name":"Outsole","fams":[["F06",["D043","D079","D093"]],["F11",["D071"]],["F05",["D076"]],["F04",["D041","D073","D094","D095"]],["F02",["D009","D010","D067","D068"]],["F10",["D074","D075","D080"]],["F17",["D011","D030"]],["F13",["D026","D031"]]]},{"id":"SA11B","name":"Bonding Interface","fams":[["F11",["D069","D070","D092"]],["F12",["D077","D078","D082","D083"]]]},{"id":"SA11S","name":"Sole Laying / Bottom Edge","fams":[["F06",["D051","D052","D081"]],["F16",["D084"]]]},{"id":"SA11T","name":"Outsole Stitching","fams":[["F03",["D032","D033","D034","D035","D036","D037","D039","D040","D072"]]]},{"id":"SA11G","name":"Buffing / Trimming","fams":[["F11",["D085"]]]}]},{"id":"A12","name":"General / QA","subs":[{"id":"SA12P","name":"Packaging","fams":[["F14",["D001","D002","D003","D008"]]]},{"id":"SA12A","name":"Accessories","fams":[["F15",["D004"]]]},{"id":"SA12L","name":"Label / Hangtag","fams":[["F14",["D006","D007"]]]},{"id":"SA12S","name":"Size / Pair Verification","fams":[["F16",["D005"]]]},{"id":"SA12F","name":"Safety / Foreign Object","fams":[["F17",["D011","D030"]]]},{"id":"SA12M","name":"Mold","fams":[["F13",["D031"]]]},{"id":"SA12X","name":"X-Ray / General QA","fams":[["F13",["D098"]]]},{"id":"SA12O","name":"Other / General","fams":[["F13",["D026"]]]}]}],"families":{"F01":"Material","F02":"Contamination","F03":"Stitching","F04":"Color","F05":"Treatment / Printing / Branding","F06":"Shape / Position / Symmetry","F07":"Lining","F08":"Sockliner / Insole","F09":"Lace / Closure / Entry","F10":"Midsole / Outsole","F11":"Cement / Priming / Buffing","F12":"Bonding / Delamination","F13":"General / QA","F14":"Packaging / Labels","F15":"Accessories","F16":"Pair / Size Verification","F17":"Safety / Foreign Object"},"defects":{"D001":{"n":"OUTER CARTON DAMAGED/DIRTY. OFF-CENTER/UN-READABLE/UN-SCANNABLE, STICKER (INCLUDE UCC128 LABEL)","c":1,"f":"F14"},"D002":{"n":"INNER BOX DAMAGED / DIRTY. OFF-CENTER/UN-READABLE/UN-SCANNABLE LABEL, STICKER (<2 dots, <2mm)","c":1,"f":"F14"},"D003":{"n":"INNER BOX DAMAGED / DIRTY (INCLUDE LABELING AND ALL PACKING MATERIALS) (>2 dots, >=2mm)","c":2,"f":"F14"},"D004":{"n":"ACCESSORIES/ATTACHMENTS MISSING OR IN BAD QUALITY","c":1,"f":"F15"},"D005":{"n":"ODD PAIR (BOTH LEFT/RIGHT SHOES IN PAIR, DIFFERENT SIZE IN ONE PAIR, SHOE SIZE NOT AS LABEL/STICKER)","c":3,"f":"F16"},"D006":{"n":"SIZE LABEL AND HANGTAG IN BAD QUALITY (PEEL OFF, UNCLEAR, ETC.) OR MISSING","c":2,"f":"F14"},"D007":{"n":"WRONG MATERIAL CONTENT LABEL OR HANGTAG (MTF/ Cancel Pos are exceptional with CFM Docs ) (> 3%)","c":3,"f":"F14"},"D008":{"n":"WRONG INNER BOX STICKER IMAGE","c":3,"f":"F14"},"D009":{"n":"CONTAMINATION (STAINS, CEMENT, etc.) (<2 dots, <2mm)","c":1,"f":"F02"},"D010":{"n":"CONTAMINATION (STAINS, CEMENT, etc.) (>2 dots, >=2mm)","c":2,"f":"F02"},"D011":{"n":"METAL PIECE/SHARP PIECE OR Any foreign item that could cause harm/injury to the consumer","c":3,"f":"F17"},"D012":{"n":"MINOR/SOFT FOLDS, WRINKLES IN LINING OR LOOSE LINING","c":1,"f":"F07"},"D013":{"n":"NOTICEABLE/MAJOR/HARD FOLDS, WRINKLES IN LINING OR LOOSE LINING","c":2,"f":"F07"},"D014":{"n":"LINING MATERIAL DAMAGED","c":2,"f":"F07"},"D015":{"n":"LINING NOT SECURED BY STROEBEL STITCHING OR LASTING","c":1,"f":"F03"},"D016":{"n":"SOCKLINER POOR QUALITY OF PRINT, EMBOSS, LOGO","c":2,"f":"F08"},"D017":{"n":"SOCKLINER OFF-SPEC (THICKNESS, LENGTH)","c":1,"f":"F08"},"D018":{"n":"POOR CEMENTING SOCKLINER TO INSOLE BOARD","c":1,"f":"F08"},"D019":{"n":"MINOR/SOFT WRINKLED SOCKLINER/INSOLE BOARD","c":1,"f":"F08"},"D020":{"n":"NOTICEABLE/MAJOR/HARD WRINKLED SOCKLINER/INSOLE BOARD","c":2,"f":"F08"},"D021":{"n":"MISSING SOCKLINER","c":2,"f":"F08"},"D022":{"n":"WRONG COLOR OF LINING, SOCKLINER, LOGO OR PRINT","c":2,"f":"F04"},"D023":{"n":"DELAMINATION SOCKLINER COVER","c":2,"f":"F08"},"D024":{"n":"WRONG SIZE OR POSITION OF HEEL COUNTER/DAMAGED OR POOR TOE BOX","c":2,"f":"F06"},"D025":{"n":"POOR SOCKLINER PLACEMENT (STROBEL STITCHING EXPOSE)","c":1,"f":"F08"},"D026":{"n":"OTHER DEFECT","c":1,"f":"F13"},"D027":{"n":"LEATHER DEFECTS (LOOSE GRAIN, PEELING, ORANGE PEEL, EDGES NOT DYED AS REQUESTED, ETC.)","c":2,"f":"F01"},"D028":{"n":"MATERIAL BROKEN/POOR MATERIAL QUALITY (TEXTILE, SYNTHETIC, MESH, ETC. )/POOR LEATHER (HAIRY, FRAYED EDGE)","c":2,"f":"F01"},"D029":{"n":"COLOR DIFFERENCE/LEATHER GRAIN DIFFERENCE BETWEEN LEFT AND RIGHT SHOE","c":2,"f":"F04"},"D030":{"n":"SHARP EDGE/POINT (for children's shoes) OR Any foreign objects that could cause ham/injury to consumer","c":3,"f":"F17"},"D031":{"n":"Mold","c":3,"f":"F13"},"D032":{"n":"WRONG STITCH LENGTH (not 9-10 stitches/inch)","c":1,"f":"F03"},"D033":{"n":"WRONG ZIG-ZAG STITCH LENGTH (not 8 stitches/inch)","c":1,"f":"F03"},"D034":{"n":"POOR STITCHING MARGIN, POOR STITCH EDGE DISTANCE (1mm < adidas edge distance's standard < 2.5mm)","c":1,"f":"F03"},"D035":{"n":"BROKEN STITCHING/LOOSE STITCHING/SKIPPED STITCHING/OPEN SEAM","c":2,"f":"F03"},"D036":{"n":"INSECURE BACK/LOCK-STITCH","c":1,"f":"F03"},"D037":{"n":"WAVY/INCONSISTENT STITCHING","c":1,"f":"F03"},"D038":{"n":"NEEDLE HOLES / CUTS","c":2,"f":"F01"},"D039":{"n":"THREAD ENDS (>2mm)","c":1,"f":"F03"},"D040":{"n":"WRONG THREAD OR WRONG COLOR","c":2,"f":"F03"},"D041":{"n":"WRONG COLOR/ COLOR DIFFERENCE","c":2,"f":"F04"},"D042":{"n":"MISSING UPPER TREATMENTS (LOGO, EMBROIDERY, PRINTING…)","c":2,"f":"F05"},"D043":{"n":"POOR SYMMETRY/OFF POSITION/WRONG SIZE","c":1,"f":"F06"},"D044":{"n":"POOR DEFINITION, NOT CLEAN, NOT CLEAR, DELAMINATION","c":2,"f":"F05"},"D045":{"n":"CONTAMINATION (Stains, printing mark) (<2 dots, <2mm)","c":1,"f":"F02"},"D046":{"n":"CONTAMINATION (Stains, printing mark) (>2 dots, >=2mm)","c":2,"f":"F02"},"D047":{"n":"OVER CEMENTING OR PRIMING ( YELLOWING OR DISCOLORATION) (<4mm length, <2mm width)","c":1,"f":"F11"},"D048":{"n":"OVER CEMENTING OR PRIMING ( YELLOWING OR DISCOLORATION) (>=4mm length, >=2mm width)","c":2,"f":"F11"},"D049":{"n":"POOR TOUCH UP/PAINTING, MARKING LINE","c":1,"f":"F05"},"D050":{"n":"COLOR CHANGE/MIGRATION/BLEEDING","c":2,"f":"F04"},"D051":{"n":"OFF CENTER TOE TO HEEL / CROOKED (<=3mm)","c":1,"f":"F06"},"D052":{"n":"OFF CENTER TOE TO HEEL / CROOKED (>3mm)","c":2,"f":"F06"},"D053":{"n":"POOR SHAPE (WRINKLES/COLLAPSING/TOE SPRING","c":2,"f":"F06"},"D054":{"n":"PATTERN VARIATION different between LEFT and RIGHT shoes (when not intended by MCS or not in VS or QA Plan)","c":3,"f":"F06"},"D055":{"n":"POOR SKIVING/X RAY/PRESSING MARKS","c":1,"f":"F05"},"D056":{"n":"TONGUE MISSPLACED, LOOSE/EYESTAY NOT ALIGNED, HOLES NOT PUNCHED PROPERLY","c":1,"f":"F05"},"D057":{"n":"MIS-MATCHING/INCORRECT MEDIAL, LATERAL QUARTER AND BACK HEIGHT (<=3mm)","c":1,"f":"F06"},"D058":{"n":"MIS-MATCHING/INCORRECT MEDIAL, LATERAL QUARTER AND BACK HEIGHT (>3mm)","c":2,"f":"F06"},"D059":{"n":"UNEVEN COLLAR TOP LINE","c":1,"f":"F06"},"D060":{"n":"LACE LENGTH OUT OF SPEC (TOO SHORT OR LONG) (<= 3cm)","c":1,"f":"F09"},"D061":{"n":"LACE LENGTH OUT OF SPEC (TOO SHORT OR LONG) (> 3cm)","c":2,"f":"F09"},"D062":{"n":"VELCRO / SPEED LACE LENGTH OUT OF SPEC (TOO SHORT OR LONG) (<= 2cm)","c":1,"f":"F09"},"D063":{"n":"VELCRO / SPEED LACE LENGTH OUT OF SPEC (TOO SHORT OR LONG) (> 2cm)","c":2,"f":"F09"},"D064":{"n":"LACE / VELCRO / SPEED LACE WRONG COLOR/SIZE, WRONG MATERIAL, DAMAGED, BROKEN OR NOT FUNCTIONING, LACE TIP LOOSING / CAN NOT GET THROUGH OR PULL OUT","c":2,"f":"F09"},"D065":{"n":"LACE / VELCRO / SPEED LACE : CONTAMINATION","c":1,"f":"F09"},"D066":{"n":"LACE / VELCRO / SPEED LACE : FRAYING","c":1,"f":"F09"},"D067":{"n":"CONTAMINATION BOTTOM (Stains) (<2 dots, <2mm)","c":1,"f":"F02"},"D068":{"n":"CONTAMINATION BOTTOM (Stains) (>2 dots, >=2mm)","c":2,"f":"F02"},"D069":{"n":"OVER CEMENTING OR PRIMING (<4mm length, <2mm width)","c":1,"f":"F11"},"D070":{"n":"OVER CEMENTING OR PRIMING (>=4mm length, >=2mm width)","c":2,"f":"F11"},"D071":{"n":"POOR TOUCH UP/PAINTING, MARKING LINE","c":1,"f":"F11"},"D072":{"n":"WRONG OR POOR OUTSOLE STITCHING (not 8-10mm/stitch)","c":1,"f":"F03"},"D073":{"n":"COLOR RELATED (WRONG COLOR, BLEEDING, MIGRATION, YELLOWING, ETC.)","c":3,"f":"F04"},"D074":{"n":"VISIBLE FILM / BLOOMING ON RUBBER","c":3,"f":"F10"},"D075":{"n":"POOR MID-/OUTSOLE QUALITY (UNEVEN TOP LINE, TRIMMING, AIR BUBBLES, SCRATCHES, WRINKLES, ETC)","c":2,"f":"F10"},"D076":{"n":"POOR TREATMENT (PAINTING, LOGO)","c":2,"f":"F05"},"D077":{"n":"COMPONENTS DELAMINATION (>4mm length and depth)","c":2,"f":"F12"},"D078":{"n":"COMPONENTS DELAMINATION (<=4mm length and depth)","c":1,"f":"F12"},"D079":{"n":"MISMATCHING, INCORRECT POSITIONING, WRONG SIZES","c":2,"f":"F06"},"D080":{"n":"DIMENSION/HARDNESS OUT OF SPEC","c":2,"f":"F10"},"D081":{"n":"OFF CENTER / INCORRECT POSITIONING (SOLE LAYING)/LONG OR SHORT OUTSOLE","c":1,"f":"F06"},"D082":{"n":"BONDING GAP (>4mm)","c":2,"f":"F12"},"D083":{"n":"BONDING GAP (<=4mm)","c":1,"f":"F12"},"D084":{"n":"WRONG BOTTOM/UPPER SIZE","c":2,"f":"F16"},"D085":{"n":"OVER BUFFING ( >1mm )","c":1,"f":"F11"},"D086":{"n":"SLIP-ON ENTRANCE","c":3,"f":"F09"},"D087":{"n":"FRAYING OUT","c":1,"f":"F01"},"D088":{"n":"BROKEN / COLOR VARIATION","c":2,"f":"F01"},"D089":{"n":"HOT MELT YARN ACCUMULATES INTO GRANULES","c":1,"f":"F01"},"D090":{"n":"UPPER PATTERN NOT SYMMETRY BETWEEN LEFT & RIGHT SHOE","c":1,"f":"F06"},"D091":{"n":"DELAMINATION/PEEL OFF/CRACKING ON PRINTING","c":2,"f":"F05"},"D092":{"n":"OVERFLOWING CEMENT (>0.5MM)","c":1,"f":"F11"},"D093":{"n":"NOT SYMMETRY BETWEEN LEFT & RIGHT SHOE","c":1,"f":"F06"},"D094":{"n":"YELLOWING/WHITENNING","c":2,"f":"F04"},"D095":{"n":"COLOR DIFFERENT","c":2,"f":"F04"},"D096":{"n":"BURN NO SEW","c":2,"f":"F05"},"D097":{"n":"WRONG PRESSING POSITION / PRESSING MARKED","c":1,"f":"F05"},"D098":{"n":"X-RAY","c":2,"f":"F13"}}};
+
+/* ====== STATIC DEMO DATA ====== */
+const USERS = [
+  {nik:'230114', name:'Siti Aminah',  role:'L1'},
+  {nik:'230287', name:'Budi Santoso', role:'L2'},
+  {nik:'190003', name:'Admin QIP',    role:'ADM'}
+];
+const ROLE = {L1:'PSI lv 1', L2:'PSI lv 2', ADM:'System Admin'};
+const FACTORIES = ['F1','F2','F3'];
+const CELLS = Array.from({length:20},(_,i)=>i+1);
+const PO_MASTER = [
+  {no:'09080568356', art:'JKH653', model:'ASTRA MOVE',   dest:'JAPAN',     qty:2400, podd:'2026-11-09', crd:'2026-11-16'},
+  {no:'09025483548', art:'JKH653', model:'ASTRA MOVE',   dest:'JAPAN',     qty:1800, podd:'2026-11-02', crd:'2026-11-09'},
+  {no:'09112240871', art:'KLM204', model:'TERRA RUN',    dest:'GERMANY',   qty:3200, podd:'2026-11-23', crd:'2026-11-30'},
+  {no:'09112240902', art:'KLM204', model:'TERRA RUN',    dest:'GERMANY',   qty:1500, podd:'2026-11-23', crd:'2026-11-30'},
+  {no:'09134410265', art:'HNR778', model:'VELO TRAINER', dest:'USA',       qty:2750, podd:'2026-12-07', crd:'2026-12-14'},
+  {no:'09134410318', art:'HNR778', model:'VELO TRAINER', dest:'AUSTRALIA', qty:960,  podd:'2026-12-07', crd:'2026-12-14'},
+  {no:'09156092744', art:'PQD312', model:'CITY GLIDE',   dest:'INDONESIA', qty:4100, podd:'2026-12-21', crd:'2026-12-28'},
+  {no:'09156092790', art:'PQD312', model:'CITY GLIDE',   dest:'CHINA',     qty:2200, podd:'2026-12-21', crd:'2026-12-28'}
+];
+
+/* ====== INDEXES ====== */
+const D = DATA.defects, FAM = DATA.families, AREAS = DATA.areas;
+const A = {}, SUB = {};
+AREAS.forEach(a=>{A[a.id]=a; a.subs.forEach(s=>{SUB[s.id]=Object.assign({area:a.id},s)})});
+const CLSN = {1:'MINOR',2:'MAJOR',3:'CRITICAL'};
+const $ = (s,r=document)=>r.querySelector(s);
+const esc = s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const chip = c=>`<span class="chip c${c}">${CLSN[c]}</span>`;
+const fmtDate = iso=>{try{return new Date(iso+'T00:00:00').toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'})}catch(e){return iso}};
+const nf = n=>Number(n).toLocaleString('id-ID');
+const ICON = {
+  gear:'<svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4" stroke-width="3.4" stroke-dasharray="3.3 3.3"/><circle cx="12" cy="12" r="6.6"/><circle cx="12" cy="12" r="2.6"/></svg>',
+  plus:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg>',
+  cam:'<svg class="ico" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+  chev:'<svg class="ico" viewBox="0 0 24 24"><path d="M5 9l7 7 7-7"/></svg>',
+  right:'<svg class="ico" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
+  check:'<svg class="ico" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  x:'<svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  undo:'<svg class="ico" viewBox="0 0 24 24"><path d="M9 7L4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 0 12" transform="translate(0 -5)"/></svg>',
+  back:'<svg class="ico" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
+  home:'<svg class="ico" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg>',
+  dl:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>'
+};
+
+/* ====== STATE ====== */
+const KEY = 'pqi.mobile.v2', KEYP = 'pqi.mobile.photos.v1';
+let P = {};               // photos: "<po>|<defectId>" -> dataURL (kept apart so a full quota never blocks defect data)
+const ui = {sheet:null, modal:null, menu:false, poOpen:false, poQ:'', poSel:null, photoKey:null, toast:null};
+let S;
+
+function pickD(sub, fam, idx){ const f=(SUB[sub]||{fams:[]}).fams.find(x=>x[0]===fam); return f&&f[1][idx]||null }
+const MODE = {RW:'REWORK', BG:'B-GRADE', ND:'NO DEFECT'};
+/* Aturan hitung: B-Grade dihitung per temuan defect ('finding'), sesuai workflow. Ganti ke 'inspection' bila QTY B-Grade harus dihitung per inspection. */
+const B_GRADE_COUNT = 'finding';
+const newPO = (m,v={})=>({...m, insp:0, a:0, rw:0, bg:0, ...v, ent:v.ent||[], cur:null, lastAct:null});
+function seed(){
+  const e = (m,s,f,i,q)=>{ const d=pickD(s,f,i); return d?{a:SUB[s].area,s,d,m,q}:null };
+  const ent = [e('RW','SA02','F11',0,5), e('RW','SA02','F03',0,3), e('BG','SA02','F01',0,2), e('RW','SA02','F11',1,1), e('RW','SA01','F06',0,1), e('BG','SA11B','F12',0,2), e('RW','SA03L','F02',0,1)].filter(Boolean);
+  return {user:null, screen:'login', login:{nik:null,factory:null,cell:null},
+    pos:[newPO(PO_MASTER[0],{insp:80,a:62,rw:10,bg:8,ent}), newPO(PO_MASTER[1])], activePo:PO_MASTER[0].no, nav:{a:null,s:null,f:null}};
+}
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY); const s = raw && JSON.parse(raw);
+    try{ P = JSON.parse(localStorage.getItem(KEYP)||'{}')||{} }catch(e){ P={} }
+    if(s && s.pos && s.login) { s.nav={a:null,s:null,f:null}; if(s.screen==='defect') s.screen='home'; return s }
+  }catch(e){}
+  return seed();
+}
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(S)) }catch(e){}
+}
+function savePhotos(){ try{ localStorage.setItem(KEYP, JSON.stringify(P)) }catch(e){ toast('Memori penuh, foto hanya tersimpan sementara',true) } }
+const curPO = ()=>S.pos.find(p=>p.no===S.activePo)||S.pos[0]||null;
+const can = {photo:()=>S.user&&(S.user.role==='L2'||S.user.role==='ADM'), mustPhoto:()=>S.user&&S.user.role==='L2'};
+
+S = load();
+
+/* ====== CALCULATIONS ====== */
+function stats(po){
+  const by={1:0,2:0,3:0}; let tot=0, bgFind=0;
+  po.ent.forEach(x=>{ tot+=x.q; by[D[x.d].c]+=x.q; if(x.m==='BG') bgFind+=x.q });
+  const insp=po.insp, b = B_GRADE_COUNT==='finding' ? bgFind : po.bg;
+  return {tot, by, insp, a:po.a, b, rate: insp>0 ? tot/insp*100 : null, pass: insp>0 ? po.a/insp*100 : null};
+}
+function top5(po){
+  const m = new Map();
+  po.ent.forEach(x=>{ const r=m.get(x.d)||{d:x.d,q:0,areas:new Set()}; r.q+=x.q; r.areas.add(A[x.a].name); m.set(x.d,r) });
+  return [...m.values()].sort((a,b)=>b.q-a.q || D[b.d].c-D[a.d].c).slice(0,5);
+}
+const curCount = (po,a)=>po.cur?po.cur.log.filter(k=>k.startsWith(a+'|')).length:0;
+const pct = v=>v==null?'—':v.toFixed(1).replace('.',',');
+
+/* ====== TOAST ====== */
+let toastT;
+function toast(msg, err){
+  clearTimeout(toastT); ui.toast={msg,err}; renderOverlay();
+  toastT=setTimeout(()=>{ui.toast=null;renderOverlay()}, err?3200:1400);
+}
+
+/* ====== RENDER ROOT ====== */
+function render(){
+  const app=$('#app');
+  if(S.screen==='login' || !S.user) app.innerHTML = loginHTML();
+  else if(S.screen==='defect' && curPO()) { app.innerHTML = defectHTML(); }
+  else app.innerHTML = homeHTML();
+  renderOverlay(); save();
+}
+
+/* ---------- login ---------- */
+function loginHTML(){
+  const L=S.login, u=USERS.find(x=>x.nik===L.nik);
+  const ok = u && L.factory && L.cell;
+  return `<div class="login">
+    <section class="brand">
+      <div class="disp" style="font-weight:600;letter-spacing:.2em;font-size:15px;opacity:.7">QIP Digital Team</div>
+      <h1>Mobile 100%<br>Inspection<small>Input defect tanpa keyboard</small></h1>
+      <ul>
+        <li><b>Input</b><span>Sentuh area, family, lalu defect. Kelas defect terisi otomatis.</span></li>
+        <li><b>Laporan</b><span>Top 5 Defect dan Defect Rate langsung terlihat oleh Leader Quality.</span></li>
+        <li><b>Export</b><span>PDF dan Excel dari halaman Home.</span></li>
+      </ul>
+    </section>
+    <div class="lform">
+      <h2>Login PSI</h2>
+      <div class="field"><span>NIK</span>
+        <button type="button" class="sel" data-act="sheet" data-v="nik">${u?`<span class="mono">${u.nik}</span>`:'<span class="ph">Pilih NIK</span>'}${ICON.chev}</button></div>
+      <div class="field"><span>Nama</span>
+        <div class="namebox">${u?`${esc(u.name)} <span class="chip role">${ROLE[u.role]}</span>`:'<span class="ph">Muncul setelah NIK dipilih</span>'}</div></div>
+      <div class="row2">
+        <div class="field"><span>Factory</span>
+          <button type="button" class="sel" data-act="sheet" data-v="factory">${L.factory?esc(L.factory):'<span class="ph">Pilih</span>'}${ICON.chev}</button></div>
+        <div class="field"><span>Cell</span>
+          <button type="button" class="sel" data-act="sheet" data-v="cell">${L.cell?String(L.cell):'<span class="ph">Pilih</span>'}${ICON.chev}</button></div>
+      </div>
+      <button type="button" class="btn" data-act="login" ${ok?'':'disabled'}>Login</button>
+      <div class="demo">Data demo: NIK, PO, dan jumlah order hanya contoh. Daftar defect memakai file mapping asli.</div>
+    </div>
+  </div>`;
+}
+
+/* ---------- home ---------- */
+function infoStrip(po){
+  const u=S.user;
+  return `<div class="info">
+    <div class="meta">
+      <div><small>PO Number</small><b class="po">${po?esc(po.no):'-'}</b></div>
+      <div><small>Artikel</small><b>${po?esc(po.art):'-'}</b></div>
+      <div><small>Model</small><b>${po?esc(po.model):'-'}</b></div>
+      <div><small>Destination</small><b>${po?esc(po.dest):'-'}</b></div>
+      <div><small>Factory/Cell</small><b>${esc(S.login.factory)}-${S.login.cell}</b></div>
+    </div>
+    <div class="who"><span><b>${esc(u.name)}</b>${ROLE[u.role]}</span></div>
+    <button class="gear" data-act="menu" aria-label="Pengaturan" aria-haspopup="true">${ICON.gear}</button>
+  </div>`;
+}
+function homeHTML(){
+  const po=curPO();
+  const polist = `<aside class="polist">
+      <div class="pos">${S.pos.map(p=>{const c=p.ent.reduce((n,x)=>n+x.q,0);return `<button class="po-item" data-act="selpo" data-v="${p.no}" aria-current="${p.no===S.activePo}">${p.no}<small>${esc(p.model)} · ${esc(p.dest)}</small>${c?`<span class="cnt">${c}</span>`:''}${p.cur?`<em class="live">Inspeksi berjalan · ${MODE[p.cur.m]}</em>`:''}</button>`}).join('')}</div>
+      <button class="addpo" data-act="addpo" aria-label="Tambah PO">${ICON.plus}</button></aside>`;
+  if(!po){
+    return `<div class="home"><div class="pohead">PO List</div>${infoStrip(null)}${polist}
+      <div class="main nopo"><div class="t5"><div class="t5empty"><b>Belum ada PO</b><span>Tekan tombol + di PO List untuk menambahkan PO.</span></div></div></div>
+      <div class="addrow"><button class="addbar" disabled>Add Defect</button></div></div>`;
+  }
+  const st=stats(po), t5=top5(po), lv2=can.photo();
+  const rows = t5.length ? t5.map((r,i)=>{
+    const key=po.no+'|'+r.d, img=P[key];
+    const ph = !lv2 ? '' : img
+      ? `<button class="ph-btn thumb" data-act="photoview" data-v="${r.d}" aria-label="Lihat foto"><img src="${img}" alt="Foto defect ${i+1}"><i>${ICON.check}</i></button>`
+      : `<button class="ph-btn ${S.user.role==='L2'?'need':''}" data-act="photo" data-v="${r.d}">${ICON.cam}<span class="lbl">Foto</span></button>`;
+    return `<div class="t5row"><div class="no num">${i+1}</div>
+      <div class="nm">${esc(D[r.d].n)}<small>${chip(D[r.d].c)} &nbsp;${esc([...r.areas].join(', '))}</small></div>
+      <div class="q num">${r.q}</div><div>${ph}</div></div>`;
+  }).join('') : `<div class="t5empty"><b>Belum ada defect</b><span>Tekan ADD DEFECT untuk mulai input.</span></div>`;
+  const missing = lv2 && S.user.role==='L2' ? t5.filter(r=>!P[po.no+'|'+r.d]).length : 0;
+  const rateCls = st.rate==null?'':(st.rate>5?'rate-bad':'rate-ok');
+  return `<div class="home">
+    <div class="pohead">PO List</div>${infoStrip(po)}${polist}
+    <section class="main">
+      <div class="t5"><h2>Top 5 Defect</h2><div class="t5body${lv2?'':' nophoto'}">${rows}</div></div>
+      ${missing?`<div class="warn" role="status"><b>${missing} foto belum ada.</b> PSI lv 2 wajib melampirkan foto pada setiap Top 5 Defect sebelum export.</div>`:''}
+    </section>
+    <section class="stats"><div class="statbox">
+      <div class="stat"><span>Qty PO Order</span><b class="num">${nf(po.qty)}</b></div>
+      <div class="stat"><span>Qty Inspection</span><b class="num">${st.insp}</b></div>
+      <div class="stat"><span>Qty Defect</span><b class="num">${st.tot}</b></div>
+      <div class="stat"><span>Qty A-Grade</span><b class="num">${st.a}</b></div>
+      <div class="stat"><span>Qty B-Grade</span><b class="num">${st.b}</b></div>
+      <div class="stat"><span>Defect Rate</span><b class="num ${rateCls}">${pct(st.rate)}<small>${st.rate==null?'':'%'}</small></b></div>
+      <div class="stat"><span>Pass Rate (RFT)</span><b class="num">${pct(st.pass)}<small>${st.pass==null?'':'%'}</small></b></div>
+    </div></section>
+    <div class="addrow"><button class="addbar" data-act="adddefect">Add Defect</button>
+      <button class="exp" data-act="export" data-v="pdf">${ICON.dl}<span>Export<b>PDF</b></span></button>
+      <button class="exp" data-act="export" data-v="xlsx">${ICON.dl}<span>Export<b>Excel</b></span></button></div>
+  </div>`;
+}
+
+/* ---------- input defect ---------- */
+const SHOE_T = {s:.8, tx:320-332*.8, ty:265-235*.8};
+const T = (x,y)=>[x*SHOE_T.s+SHOE_T.tx, y*SHOE_T.s+SHOE_T.ty];
+const PATH = {
+  out:'M140 310 L526 310 L526 316 Q524 332 496 332 L158 332 Q136 332 140 318 Z',
+  mid:'M134 266 Q128 292 140 310 L526 310 L530 294 Q522 286 500 285 L420 291 Q330 295 252 282 Q190 275 134 266 Z',
+  up:'M134 266 Q122 222 144 178 L164 156 Q176 148 190 158 Q214 192 252 193 L300 197 L418 238 Q470 252 506 268 Q532 278 530 292 Q522 286 500 285 L420 291 Q330 295 252 282 Q190 275 134 266 Z',
+  tongue:'M244 198 L258 134 Q263 122 278 125 L298 136 Q304 143 300 153 L290 205 Z',
+  heel:'M110 140 L186 140 L186 300 L110 300 Z',
+  quarter:'M186 196 L300 214 L340 232 L340 300 L186 300 Z',
+  vamp:'M340 232 L458 232 L458 300 L340 300 Z',
+  toe:'M458 215 L545 215 L545 300 L458 300 Z',
+  collar:'M148 150 L192 144 Q214 186 252 186 L304 190 L304 214 L246 210 Q196 206 160 192 Z',
+  eye:'M290 190 L424 234 L432 262 L296 218 Z',
+  inside:'M190 176 Q228 160 268 184 Q232 206 190 176 Z',
+  patch:'M392 262 L452 268 Q458 270 452 278 L396 276 Q388 274 392 262 Z'
+};
+const NODES = [
+  {id:'A06', l:['TONGUE'],            x:150, y:66,  w:106, zone:'tongue', anc:[276,148]},
+  {id:'A07', l:['EYESTAY/LACE'],      x:300, y:66,  w:150, zone:'eye',    anc:[360,222]},
+  {id:'A02', l:['VAMP'],              x:512, y:64,  w:112, zone:'vamp',   anc:[372,262]},
+  {id:'A01', l:['TOE BOX'],           x:512, y:122, w:112, zone:'toe',    anc:[505,258]},
+  {id:'A09', l:['BRANDING /','TREATMENT'], x:498, y:182, w:126, h:48, zone:'patch', anc:[452,272]},
+  {id:'A10', l:['MIDSOLE'],           x:512, y:256, w:112, zone:'mid',    anc:[488,302]},
+  {id:'A08', l:['INSIDE'],            x:14,  y:74,  w:104, zone:'inside', anc:[228,178]},
+  {id:'A05', l:['COLLAR'],            x:14,  y:136, w:104, zone:'collar', anc:[188,168]},
+  {id:'A04', l:['HEEL'],              x:14,  y:206, w:104, zone:'heel',   anc:[150,236]},
+  {id:'A11', l:['OUTSOLE /','BONDING'], x:14, y:338, w:128, h:48, zone:'out', anc:[190,322]},
+  {id:'A03', l:['QUARTER'],           x:232, y:376, w:118, zone:'quarter',anc:[262,272]},
+  {id:'A12', l:['GENERAL'],           x:512, y:436, w:112, gen:true}
+];
+const cmdBtn=(label,x,y,w,act,v,cls)=>`<g class="cmd ${cls}" data-act="${act}" data-v="${v}" role="button" tabindex="0" aria-label="${label}" aria-disabled="${/dis/.test(cls)}"><rect x="${x}" y="${y}" width="${w}" height="44"/><text x="${x+w/2}" y="${y+23}">${label}</text></g>`;
+function shoeSVG(po){
+  const sel = S.nav.a;
+  const zs = (id)=>sel && NODES.find(n=>n.id===sel)&&NODES.find(n=>n.id===sel).zone===id ? ' sel':'';
+  const zone = (id,cls='')=>`<path class="zone ${cls}${zs(id)}" d="${PATH[id]}" data-act="area" data-v="${NODES.find(n=>n.zone===id).id}" ${['out','mid','tongue','patch','inside'].includes(id)?'':'clip-path="url(#cu)"'}/>`;
+  let lace=''; for(let i=0;i<5;i++){ const x=318+i*24, y=206+i*8.6; lace+=`<path d="M${x} ${y} l9 18" />`; }
+  const shoe = `<g transform="translate(${SHOE_T.tx} ${SHOE_T.ty}) scale(${SHOE_T.s})">
+    <ellipse cx="330" cy="338" rx="210" ry="9" fill="var(--ink)" opacity=".13"/>
+    <path d="${PATH.out}" fill="var(--shoe-out)"/>
+    <path d="${PATH.mid}" fill="var(--shoe-mid)" stroke="var(--shoe-line)" stroke-width="1.5"/>
+    <path d="${PATH.up}" fill="var(--shoe-upper)" stroke="var(--shoe-line)" stroke-width="1.5"/>
+    <path d="M304 192 L424 234 Q470 248 506 266 Q480 232 440 214 L330 176 Z" fill="var(--shoe-upper-2)" opacity=".7"/>
+    <path d="${PATH.tongue}" fill="var(--shoe-tongue)" stroke="var(--shoe-line)" stroke-width="1.5"/>
+    <g fill="none" stroke="var(--shoe-line)" stroke-width="1.6" stroke-dasharray="4 3"><path d="M186 192 Q198 240 186 278"/><path d="M458 236 Q452 262 458 290"/><path d="M164 164 Q214 200 252 199 L300 203"/></g>
+    <g fill="none" stroke="var(--ink-2)" stroke-width="2.2" stroke-linecap="round">${lace}</g>
+    <path d="${PATH.patch}" fill="var(--shoe-patch)"/>
+    <clipPath id="cu"><path d="${PATH.up}"/></clipPath>
+    ${zone('heel')}${zone('quarter')}${zone('vamp')}${zone('toe')}${zone('collar')}${zone('eye')}
+    <path class="zone virt${zs('inside')}" d="${PATH.inside}" data-act="area" data-v="A08"/>
+    ${zone('tongue')}${zone('patch')}${zone('mid')}${zone('out')}
+  </g>`;
+  let lines='', pills='';
+  NODES.forEach(n=>{
+    const h=n.h||38, on = n.id===sel, cnt = curCount(po,n.id);
+    if(n.anc){
+      const [ax,ay]=T(n.anc[0],n.anc[1]);
+      const px = n.x + n.w/2, py = n.y + h/2;
+      // leave pill from the edge facing the anchor
+      let sx=px, sy=py;
+      if(Math.abs(ax-px)>Math.abs(ay-py)*1.2){ sx = ax>px? n.x+n.w : n.x; } else { sy = ay>py? n.y+h : n.y; }
+      lines += `<path class="leader${on?' sel':''}" d="M${sx} ${sy} L${ax.toFixed(1)} ${ay.toFixed(1)}"/><circle class="dot${on?' sel':''}" cx="${ax.toFixed(1)}" cy="${ay.toFixed(1)}" r="${on?5:4}"/>`;
+    }
+    const tl = n.l.length===1 ? `<text x="${n.x+n.w/2}" y="${n.y+h/2+1}">${n.l[0]}</text>`
+      : `<text x="${n.x+n.w/2}" y="${n.y+h/2-8}" style="font-size:13.5px">${n.l[0]}</text><text x="${n.x+n.w/2}" y="${n.y+h/2+9}" style="font-size:13.5px">${n.l[1]}</text>`;
+    pills += `<g class="pill${on?' sel':''}${n.gen?' gen':''}" data-act="area" data-v="${n.id}" role="button" tabindex="0" aria-label="${n.l.join(' ')}" aria-pressed="${on}">
+      <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${h}"/>${tl}
+      ${cnt?`<circle class="bd" cx="${n.x+n.w-4}" cy="${n.y+3}" r="12"/><text class="bt" x="${n.x+n.w-4}" y="${n.y+4}">${cnt}</text>`:''}</g>`;
+  });
+  const cur=po.cur, m=cur&&cur.m;
+  const cl=(k)=>cur ? (m===k?'act':'dis') : '';
+  const cmds = cmdBtn('REWORK',10,6,124,'inspstart','RW',cl('RW')) + cmdBtn('B-GRADE',144,6,124,'inspstart','BG',cl('BG')) + cmdBtn('NO DEFECT',278,6,150,'inspstart','ND',cur?'dis':'')
+    + cmdBtn('END INSPECTION',150,432,262,'inspend','',cur?'end':'end dis');
+  return `<svg class="${cur?'':'off'}" viewBox="0 0 640 490" role="group" aria-label="Pilih area sepatu" preserveAspectRatio="xMidYMid meet">${cmds}${shoe}${lines}${pills}</svg>`;
+}
+const canUndo = po=>!!(po.cur || po.lastAct==='ND');
+function navLevel(){ const n=S.nav; return !n.a?0 : !n.s?1 : !n.f?2 : 3 }
+const singleSub = a=>A[a].subs.length===1, singleFam = s=>SUB[s].fams.length===1;
+function selectArea(a){
+  const n={a,s:null,f:null};
+  if(singleSub(a)) { n.s=A[a].subs[0].id; if(singleFam(n.s)) n.f=SUB[n.s].fams[0][0]; }
+  S.nav=n;
+}
+function selectSub(s){ S.nav.s=s; S.nav.f = singleFam(s)? SUB[s].fams[0][0] : null }
+function navUp(){
+  const n=S.nav;
+  if(n.f){ n.f=null; if(singleFam(n.s)){ n.s=null; if(singleSub(n.a)) n.a=null } return true }
+  if(n.s){ n.s=null; if(singleSub(n.a)) n.a=null; return true }
+  if(n.a){ n.a=null; return true }
+  return false;
+}
+function ctxHTML(po){
+  const n=S.nav, parts=[];
+  if(n.a){
+    parts.push({t:A[n.a].name, act:'crumb', v:'a'});
+    if(n.s && !singleSub(n.a)) parts.push({t:SUB[n.s].name, act:'crumb', v:'s'});
+    if(n.f && !singleFam(n.s)) parts.push({t:FAM[n.f], act:'crumb', v:'f'});
+  }
+  const modeChip = po.cur?`<span class="chip mode m${po.cur.m}">${MODE[po.cur.m]}</span>`:'';
+  const crumbs = parts.length ? parts.map((p,i)=>`${i?'<i>›</i>':''}<button class="crumb${i===parts.length-1?' cur':''}" data-act="${p.act}" data-v="${p.v}">${esc(p.t)}</button>`).join('') : `<span style="color:var(--ink-3);font-size:13px">${po.cur?'Belum ada area dipilih':'Inspection belum dimulai'}</span>`;
+  return `<div class="po-line">${modeChip}<span class="mono">PO ${esc(po.no)}</span><span>${esc(po.art)}</span><span>${esc(po.model)}</span></div><div class="crumbs">${crumbs}</div>`;
+}
+function pickHTML(po){
+  const n=S.nav, lv=navLevel();
+  if(!po.cur) return `<div class="empty-pick"><b>Mulai inspection</b><span>Pilih <strong>REWORK</strong>, <strong>B-GRADE</strong>, atau <strong>NO DEFECT</strong><br>untuk mengaktifkan area dan defect.</span></div>`;
+  if(lv===0) return `<div class="empty-pick"><b>Pilih area sepatu</b><span>Sentuh salah satu area pada gambar sepatu.<br>Defect yang tercatat ditandai angka biru.</span></div>`;
+  if(lv===1) return A[n.a].subs.map(s=>{
+    const nd=s.fams.reduce((k,f)=>k+f[1].length,0), cnt=po.cur.log.filter(k=>k.split('|')[1]===s.id).length;
+    return `<button class="opt" data-act="sub" data-v="${s.id}"><span class="grow">${esc(s.name)}<span class="sub">${nd} defect</span></span>${cnt?`<span class="qty chipq">${cnt}</span>`:''}${ICON.right}</button>`}).join('');
+  if(lv===2) return SUB[n.s].fams.map(([f,ds])=>{
+    const cnt=po.cur.log.filter(k=>{const q=k.split('|');return q[1]===n.s && D[q[2]].f===f}).length;
+    return `<button class="opt" data-act="fam" data-v="${f}"><span class="grow">${esc(FAM[f])}</span>${cnt?`<span class="n" style="color:var(--hit)">×${cnt}</span>`:''}<span class="n">${ds.length}</span>${ICON.right}</button>`}).join('');
+  const ds = SUB[n.s].fams.find(f=>f[0]===n.f)[1];
+  return ds.map(id=>{
+    const nq=po.cur.log.filter(k=>k===`${n.a}|${n.s}|${id}`).length;
+    return `<button class="opt def" data-act="def" data-v="${id}" data-k="${n.a}|${n.s}|${id}"><span class="grow">${esc(D[id].n)}</span>${chip(D[id].c)}${nq?`<span class="qty num">${nq}</span>`:''}</button>`}).join('');
+}
+function histHTML(po){
+  if(!po.ent.length) return `<div class="hempty">Belum ada defect tercatat untuk PO ini.</div>`;
+  return po.ent.map((x,i)=>`<div class="hgrid hrow" data-key="${x.a}|${x.s}|${x.d}|${x.m}"><div class="no num">${i+1}.</div>
+    <div class="nm">${esc(D[x.d].n)}<small>${esc(A[x.a].name)}${A[x.a].subs.length>1?' › '+esc(SUB[x.s].name):''} · ${esc(FAM[D[x.d].f])} · ${MODE[x.m]}</small></div>
+    <div>${chip(D[x.d].c)}</div><div class="q num">${x.q}</div></div>`).join('');
+}
+function defectHTML(){
+  const po=curPO();
+  return `<div class="dscreen">
+    <section class="shoe-pane" id="shoe">${shoeSVG(po)}</section>
+    <section class="side">
+      <div class="ctx" id="ctx">${ctxHTML(po)}</div>
+      <div class="pick" id="pick">${pickHTML(po)}</div>
+      <div class="hist"><div class="hgrid hh"><div>No</div><div>Defect name</div><div>Kelas</div><div style="text-align:right">Qty</div></div><div class="hbody" id="hbody">${histHTML(po)}</div></div>
+      <nav class="bar" aria-label="Navigasi input defect"><button data-act="back">${ICON.back}Back</button><button data-act="home">${ICON.home}Home</button><button data-act="undo" ${canUndo(po)?'':'disabled'} id="undoBtn">${ICON.undo}Undo</button></nav>
+    </section></div>`;
+}
+function upd(parts, flashKey){
+  const po=curPO();
+  if(parts.includes('shoe')) $('#shoe').innerHTML=shoeSVG(po);
+  if(parts.includes('ctx')) $('#ctx').innerHTML=ctxHTML(po);
+  if(parts.includes('pick')){ const p=$('#pick'); const st=p.scrollTop; p.innerHTML=pickHTML(po); p.scrollTop = parts.includes('keepscroll')?st:0 }
+  if(parts.includes('hist')){ const h=$('#hbody'); const st=h.scrollTop; h.innerHTML=histHTML(po); h.scrollTop=st;
+    if(flashKey){ const r=[...h.children].find(c=>c.dataset&&c.dataset.key===flashKey); if(r){ r.classList.add('flash'); r.scrollIntoView({block:'nearest'}) } } }
+  const u=$('#undoBtn'); if(u) u.disabled=!canUndo(po);
+  save();
+}
+function addDefect(id){
+  const po=curPO(), n=S.nav; if(!po.cur) return;
+  const m=po.cur.m, key=n.a+'|'+n.s+'|'+id+'|'+m;
+  const e=po.ent.find(x=>x.a===n.a&&x.s===n.s&&x.d===id&&x.m===m);
+  if(e) e.q++; else po.ent.push({a:n.a,s:n.s,d:id,m,q:1});
+  po.cur.log.push(n.a+'|'+n.s+'|'+id);
+  try{ navigator.vibrate&&navigator.vibrate(18) }catch(e){}
+  upd(['shoe','pick','keepscroll','hist'], key);
+  const row=$(`#pick [data-k="${n.a}|${n.s}|${id}"]`); if(row){ row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash') }
+  toast(m==='BG' ? '+1 Defect dan B-Grade' : '+1 Defect');
+}
+function undo(){
+  const po=curPO();
+  if(po.cur && po.cur.log.length){
+    const [a,s,d]=po.cur.log.pop().split('|'), m=po.cur.m;
+    const i=po.ent.findIndex(x=>x.a===a&&x.s===s&&x.d===d&&x.m===m);
+    if(i>=0){ po.ent[i].q--; if(po.ent[i].q<=0) po.ent.splice(i,1) }
+    upd(['shoe','pick','keepscroll','hist']); toast('Undo defect terakhir'); return;
+  }
+  if(po.cur){            // belum ada defect: batalkan inspection yang baru dimulai
+    po.insp--; if(po.cur.m==='RW') po.rw--; else po.bg--;
+    po.cur=null; S.nav={a:null,s:null,f:null}; render(); toast('Inspection dibatalkan'); return;
+  }
+  if(po.lastAct==='ND'){ po.insp--; po.a--; po.lastAct=null; render(); toast('No Defect dibatalkan') }
+}
+function startInsp(m){
+  const po=curPO(); if(!po||po.cur) return;
+  po.insp++; S.nav={a:null,s:null,f:null};
+  if(m==='ND'){ po.a++; po.lastAct='ND'; render(); toast('No Defect tercatat. A-Grade +1'); return }
+  if(m==='RW') po.rw++; else po.bg++;
+  po.cur={m,log:[]}; po.lastAct=null; render(); toast('Inspection '+MODE[m]+' dimulai');
+}
+function endInsp(){
+  const po=curPO(); if(!po||!po.cur) return;
+  const n=po.cur.log.length; po.cur=null; S.nav={a:null,s:null,f:null}; render();
+  toast(n?'Inspection selesai. '+n+' defect tercatat':'Inspection selesai tanpa defect');
+}
+
+/* ====== OVERLAYS ====== */
+function renderOverlay(){
+  let h='';
+  if(ui.sheet) h+=sheetHTML();
+  if(ui.modal==='addpo') h+=addPoHTML();
+  if(ui.modal==='photo') h+=photoViewHTML();
+  if(ui.modal==='block') h+=blockHTML();
+  if(ui.menu) h+=menuHTML();
+  if(ui.toast) h+=`<div class="toast${ui.toast.err?' err':''}" role="status">${esc(ui.toast.msg)}</div>`;
+  const ov=$('#ov');
+  // keep the PO search field focused while typing
+  const had = document.activeElement&&document.activeElement.id==='poq';
+  ov.innerHTML=h;
+  if(had){ const q=$('#poq'); if(q){ q.focus(); q.setSelectionRange(q.value.length,q.value.length) } }
+}
+function sheetHTML(){
+  const L=S.login, v=ui.sheet; let body='', title='';
+  if(v==='nik'){ title='Pilih NIK'; body=`<div class="niklist">${USERS.map(u=>`<button class="nikopt" data-act="opt" data-f="nik" data-v="${u.nik}" aria-pressed="${L.nik===u.nik}"><span><span class="mono">${u.nik}</span><small>${ROLE[u.role]}</small></span>${L.nik===u.nik?ICON.check:''}</button>`).join('')}</div>` }
+  if(v==='factory'){ title='Pilih Factory'; body=`<div class="sheetgrid">${FACTORIES.map(f=>`<button data-act="opt" data-f="factory" data-v="${f}" aria-pressed="${L.factory===f}">${f}</button>`).join('')}</div>` }
+  if(v==='cell'){ title='Pilih Cell'; body=`<div class="sheetgrid">${CELLS.map(c=>`<button data-act="opt" data-f="cell" data-v="${c}" aria-pressed="${L.cell==c}">${c}</button>`).join('')}</div>` }
+  return `<div class="scrim" data-act="closeov"><div class="modal" role="dialog" aria-label="${title}"><div class="mhead"><h3>${title}</h3><button class="x" data-act="closeov" aria-label="Tutup">${ICON.x}</button></div><div class="mbody">${body}</div></div></div>`;
+}
+function menuHTML(){
+  const u=S.user;
+  return `<div class="scrim clear" data-act="closeov"><div class="modal menu" role="menu"><div class="mbody">
+    <div class="id"><b>${esc(u.name)}</b><span><span class="mono">${u.nik}</span> · ${ROLE[u.role]}</span><span>Factory/Cell ${esc(S.login.factory)}-${S.login.cell}</span></div>
+    <button class="btn ghost" data-act="reset">Reset data demo</button>
+    <button class="btn logout" data-act="logout">Logout</button>
+  </div></div></div>`;
+}
+function addPoHTML(){
+  const have=new Set(S.pos.map(p=>p.no)), q=ui.poQ.trim();
+  const list = PO_MASTER.filter(p=>!q || p.no.includes(q) || p.model.toLowerCase().includes(q.toLowerCase()) || p.art.toLowerCase().includes(q.toLowerCase()));
+  const sel = PO_MASTER.find(p=>p.no===ui.poSel);
+  return `<div class="scrim" data-act="closeov"><div class="modal" role="dialog" aria-label="Tambah PO">
+    <div class="mhead"><h3>Tambah PO</h3><button class="x" data-act="closeov" aria-label="Tutup">${ICON.x}</button></div>
+    <div class="mbody">
+      <div class="dd"><button class="sel" data-act="ddtoggle" aria-expanded="${ui.poOpen}">${sel?`<span class="mono">${sel.no}</span>`:'<span class="ph">PO NUMBER</span>'}${ICON.chev}</button>
+        ${ui.poOpen?`<div class="ddpanel"><input id="poq" type="search" inputmode="numeric" placeholder="Cari PO, artikel, atau model" value="${esc(ui.poQ)}" autocomplete="off"><div class="ddlist">${list.length?list.map(p=>`<button class="ddopt" data-act="ddpick" data-v="${p.no}" ${have.has(p.no)?'disabled':''}><span class="mono">${p.no}</span><small>${esc(p.model)} · ${esc(p.dest)}${have.has(p.no)?' · sudah di list':''}</small></button>`).join(''):'<div class="hempty">PO tidak ditemukan</div>'}</div></div>`:''}</div>
+      <div class="info-grid">${[['PO Number',sel&&sel.no],['Artikel',sel&&sel.art],['Model',sel&&sel.model],['Destination',sel&&sel.dest],['Qty Order',sel&&nf(sel.qty)],['PODD',sel&&fmtDate(sel.podd)],['CRD',sel&&fmtDate(sel.crd)]].map(([k,v])=>`<div><span class="k">${k}</span><b>${v?esc(v):'<span style="color:var(--ink-3);font-weight:400">:</span>'}</b></div>`).join('')}</div>
+      <button class="btn" data-act="addpo-ok" ${sel?'':'disabled'}>Add to PO List</button>
+    </div></div></div>`;
+}
+function photoViewHTML(){
+  const po=curPO(), d=ui.photoKey, img=P[po.no+'|'+d];
+  if(!img) return '';
+  return `<div class="scrim" data-act="closeov"><div class="modal wide photo-view" role="dialog" aria-label="Foto defect">
+    <div class="mhead"><h3>Foto defect</h3><button class="x" data-act="closeov" aria-label="Tutup">${ICON.x}</button></div>
+    <div class="mbody"><div class="nm" style="font-size:14.5px">${chip(D[d].c)} ${esc(D[d].n)}</div><img src="${img}" alt="Foto bukti defect">
+    <div class="row2"><button class="btn ghost sm" data-act="photo" data-v="${d}">${ICON.cam} Ganti foto</button><button class="btn ghost sm" data-act="photodel" data-v="${d}">Hapus</button></div></div></div></div>`;
+}
+function blockHTML(){
+  const po=curPO(), miss=top5(po).filter(r=>!P[po.no+'|'+r.d]);
+  return `<div class="scrim" data-act="closeov"><div class="modal" role="alertdialog" aria-label="Foto belum lengkap">
+    <div class="mhead"><h3>Foto belum lengkap</h3><button class="x" data-act="closeov" aria-label="Tutup">${ICON.x}</button></div>
+    <div class="mbody"><div class="warn">PSI lv 2 wajib menambahkan foto pada Top 5 Defect sebelum export. Belum ada foto untuk:<ul>${miss.map(r=>`<li>${esc(D[r.d].n)}</li>`).join('')}</ul></div>
+    <button class="btn" data-act="closeov">Lengkapi foto</button></div></div></div>`;
+}
+
+/* ====== PHOTOS ====== */
+function toDataURL(file,max=960){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file), img=new Image();
+    img.onload=()=>{ const k=Math.min(1,max/Math.max(img.width,img.height)), c=document.createElement('canvas');
+      c.width=Math.max(1,Math.round(img.width*k)); c.height=Math.max(1,Math.round(img.height*k));
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg',.72)) };
+    img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('img'))}; img.src=url;
+  });
+}
+document.addEventListener('change', async e=>{
+  if(e.target.id!=='photoIn') return;
+  const f=e.target.files&&e.target.files[0]; e.target.value=''; if(!f||!ui.photoKey) return;
+  try{ const po=curPO(); P[po.no+'|'+ui.photoKey]=await toDataURL(f); savePhotos(); ui.modal=null; render(); toast('Foto tersimpan') }
+  catch(err){ toast('Foto tidak bisa dibaca. Coba ambil ulang.',true) }
+});
+
+/* ====== EXPORT ====== */
+const stamp = ()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())};
+const nowText = ()=>new Date().toLocaleString('id-ID');
+function rowsFor(po){
+  return po.ent.map((x,i)=>[i+1, MODE[x.m], A[x.a].name, SUB[x.s].name, FAM[D[x.d].f], D[x.d].n, CLSN[D[x.d].c], x.q]);
+}
+async function saveFile(filename, data){
+  let dl=null; try{ dl = window.claude && claude.use ? await claude.use('downloads') : null }catch(e){}
+  if(!dl){ toast('Download tidak tersedia di tampilan ini. Buka artifact di claude.ai.',true); return }
+  try{ await dl.save({filename, data}); toast('File dikirim: '+filename) }
+  catch(err){ if(err&&err.code==='declined') return; toast('Gagal menyimpan file ('+(err&&err.code||'error')+')',true) }
+}
+function exportXlsx(po){
+  if(!window.XLSX){ toast('Library Excel belum termuat. Cek koneksi lalu coba lagi.',true); return }
+  const st=stats(po), wb=XLSX.utils.book_new();
+  const sum=[['MOBILE 100% INSPECTION - INSPECTION RESULT'],[],
+    ['PO Number',po.no],['Artikel',po.art],['Model',po.model],['Destination',po.dest],['Factory/Cell',S.login.factory+'-'+S.login.cell],
+    ['Inspector',S.user.name+' ('+S.user.nik+', '+ROLE[S.user.role]+')'],['Dicetak',nowText()],[],
+    ['Qty PO Order',po.qty],['Qty Inspection',st.insp],['Qty Defect',st.tot],['Qty A-Grade',st.a],['Qty B-Grade',st.b],['Defect Rate (%)',st.rate==null?'':+st.rate.toFixed(2)],['Pass Rate / RFT (%)',st.pass==null?'':+st.pass.toFixed(2)],
+    ['Minor',st.by[1]],['Major',st.by[2]],['Critical',st.by[3]],[],['TOP 5 DEFECT'],['No','Defect','Kelas','Qty','Foto']];
+  top5(po).forEach((r,i)=>sum.push([i+1,D[r.d].n,CLSN[D[r.d].c],r.q,P[po.no+'|'+r.d]?'Ada':'-']));
+  const w1=XLSX.utils.aoa_to_sheet(sum); w1['!cols']=[{wch:22},{wch:70},{wch:12},{wch:8},{wch:8}];
+  const det=[['No','Tipe inspection','Area','Sub area','Defect family','Defect','Kelas','Qty'],...rowsFor(po)];
+  const w2=XLSX.utils.aoa_to_sheet(det); w2['!cols']=[{wch:5},{wch:16},{wch:20},{wch:26},{wch:28},{wch:90},{wch:10},{wch:6}];
+  XLSX.utils.book_append_sheet(wb,w1,'Summary'); XLSX.utils.book_append_sheet(wb,w2,'Defects');
+  const buf=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+  return saveFile(`M100_${po.no}_${stamp()}.xlsx`, buf);
+}
+function exportPdf(po){
+  if(!window.jspdf){ toast('Library PDF belum termuat. Cek koneksi lalu coba lagi.',true); return }
+  const {jsPDF}=window.jspdf, doc=new jsPDF({unit:'mm',format:'a4'}), st=stats(po), W=210, M=14;
+  doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.text('MOBILE 100% INSPECTION - INSPECTION RESULT',M,18);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(90); doc.text('Dicetak '+nowText()+' oleh '+S.user.name+' ('+S.user.nik+', '+ROLE[S.user.role]+')',M,24); doc.setTextColor(0);
+  doc.autoTable({startY:29, theme:'grid', styles:{fontSize:9,cellPadding:1.8}, headStyles:{fillColor:[14,18,23]}, margin:{left:M,right:M},
+    head:[['PO Number','Artikel','Model','Destination','Factory/Cell']], body:[[po.no,po.art,po.model,po.dest,S.login.factory+'-'+S.login.cell]]});
+  doc.autoTable({startY:doc.lastAutoTable.finalY+4, theme:'grid', styles:{fontSize:9,cellPadding:1.8,halign:'center'}, headStyles:{fillColor:[14,18,23]}, margin:{left:M,right:M},
+    head:[['Qty PO Order','Qty Inspection','Qty Defect','Qty A-Grade','Qty B-Grade','Defect Rate','Pass Rate (RFT)']],
+    body:[[nf(po.qty),st.insp,st.tot,st.a,st.b,st.rate==null?'-':st.rate.toFixed(1)+'%',st.pass==null?'-':st.pass.toFixed(1)+'%']]});
+  const t5=top5(po);
+  doc.autoTable({startY:doc.lastAutoTable.finalY+8, theme:'grid', styles:{fontSize:8.5,cellPadding:1.8}, headStyles:{fillColor:[14,18,23]}, margin:{left:M,right:M},
+    columnStyles:{0:{cellWidth:9},2:{cellWidth:20},3:{cellWidth:12,halign:'center'}},
+    head:[['No','TOP 5 DEFECT','Kelas','Qty']], body:t5.map((r,i)=>[i+1,D[r.d].n,CLSN[D[r.d].c],r.q])});
+  let y=doc.lastAutoTable.finalY+8; const withImg=t5.map((r,i)=>({r,i,img:P[po.no+'|'+r.d]})).filter(x=>x.img);
+  if(withImg.length){
+    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.text('Foto bukti Top 5 Defect',M,y); y+=4;
+    let x=M; const w=58,h=43;
+    withImg.forEach(o=>{
+      if(x+w>W-M+1){ x=M; y+=h+14 }
+      if(y+h+10>285){ doc.addPage(); y=16; x=M }
+      try{ doc.addImage(o.img,'JPEG',x,y,w,h) }catch(e){}
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.text(doc.splitTextToSize((o.i+1)+'. '+D[o.r.d].n,w).slice(0,2),x,y+h+3.5);
+      x+=w+4;
+    });
+    y+=h+14;
+  }
+  doc.autoTable({startY:Math.min(y,270), theme:'striped', styles:{fontSize:7.5,cellPadding:1.5}, headStyles:{fillColor:[14,18,23]}, margin:{left:M,right:M},
+    columnStyles:{0:{cellWidth:8},1:{cellWidth:15},6:{cellWidth:16},7:{cellWidth:9,halign:'center'}},
+    head:[['No','Tipe','Area','Sub area','Family','Defect','Kelas','Qty']], body:rowsFor(po)});
+  const n=doc.getNumberOfPages(); for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFontSize(8); doc.setTextColor(120); doc.text('Halaman '+i+' / '+n,W-M,291,{align:'right'}) }
+  return saveFile(`M100_${po.no}_${stamp()}.pdf`, doc.output('arraybuffer'));
+}
+
+/* ====== EVENTS ====== */
+document.addEventListener('click', e=>{
+  const t=e.target.closest('[data-act]'); if(!t) return;
+  const act=t.dataset.act, v=t.dataset.v;
+  if(t.classList.contains('scrim') && e.target!==t) return;       // backdrop click only
+  if(act==='closeov' && t.classList.contains('scrim')===false && e.target.closest('.modal') && t.tagName!=='BUTTON') return;
+  switch(act){
+    case 'sheet': ui.sheet=v; renderOverlay(); break;
+    case 'opt': { S.login[t.dataset.f]=t.dataset.f==='cell'?Number(v):v; ui.sheet=null; render(); break }
+    case 'login': { const u=USERS.find(x=>x.nik===S.login.nik); if(!u||!S.login.factory||!S.login.cell) break; S.user=u; S.screen='home'; render(); break }
+    case 'closeov': ui.sheet=null; ui.modal=null; ui.menu=false; ui.poOpen=false; ui.poQ=''; renderOverlay(); break;
+    case 'menu': ui.menu=!ui.menu; renderOverlay(); break;
+    case 'logout': ui.menu=false; S.user=null; S.screen='login'; S.login={nik:null,factory:null,cell:null}; render(); break;
+    case 'reset': { const keep=S.user, lg=S.login; try{localStorage.removeItem(KEY);localStorage.removeItem(KEYP)}catch(e){} P={}; S=seed(); S.user=keep; S.login=lg; S.screen='home'; ui.menu=false; render(); toast('Data demo dikembalikan'); break }
+    case 'selpo': S.activePo=v; render(); break;
+    case 'addpo': ui.modal='addpo'; ui.poOpen=false; ui.poQ=''; ui.poSel=null; renderOverlay(); break;
+    case 'ddtoggle': ui.poOpen=!ui.poOpen; renderOverlay(); if(ui.poOpen){ const q=$('#poq'); q&&q.focus() } break;
+    case 'ddpick': ui.poSel=v; ui.poOpen=false; ui.poQ=''; renderOverlay(); break;
+    case 'addpo-ok': { const m=PO_MASTER.find(p=>p.no===ui.poSel); if(!m) break; if(!S.pos.some(p=>p.no===m.no)) S.pos.push(newPO(m)); S.activePo=m.no; ui.modal=null; render(); toast('PO ditambahkan'); break }
+    case 'inspstart': startInsp(v); break;
+    case 'inspend': endInsp(); break;
+    case 'adddefect': S.nav={a:null,s:null,f:null}; S.screen='defect'; render(); break;
+    case 'home': S.screen='home'; S.nav={a:null,s:null,f:null}; render(); break;
+    case 'back': if(!navUp()){ S.screen='home'; render() } else upd(['ctx','pick']); break;
+    case 'undo': undo(); break;
+    case 'area': if(!curPO().cur) break; selectArea(v); upd(['shoe','ctx','pick']); break;
+    case 'sub': selectSub(v); upd(['ctx','pick']); break;
+    case 'fam': S.nav.f=v; upd(['ctx','pick']); break;
+    case 'def': addDefect(v); break;
+    case 'crumb': { const n=S.nav; if(v==='a') selectArea(n.a); else if(v==='s'){ const s=n.s; selectArea(n.a); if(!singleSub(n.a)) selectSub(s) } upd(['ctx','pick']); break }
+    case 'photo': ui.photoKey=v; $('#photoIn').click(); break;
+    case 'photoview': ui.photoKey=v; ui.modal='photo'; renderOverlay(); break;
+    case 'photodel': { const po=curPO(); delete P[po.no+'|'+v]; savePhotos(); ui.modal=null; render(); break }
+    case 'export': {
+      const po=curPO(); if(!po) break;
+      if(!po.ent.length){ toast('Belum ada defect untuk diexport',true); break }
+      if(can.mustPhoto() && top5(po).some(r=>!P[po.no+'|'+r.d])){ ui.modal='block'; renderOverlay(); break }
+      (v==='pdf'?exportPdf(po):exportXlsx(po)); break }
+  }
+});
+document.addEventListener('input', e=>{ if(e.target.id==='poq'){ ui.poQ=e.target.value; renderOverlay() } });
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape' && (ui.sheet||ui.modal||ui.menu)){ ui.sheet=null; ui.modal=null; ui.menu=false; renderOverlay() }
+  if((e.key==='Enter'||e.key===' ') && e.target.matches && e.target.matches('g.pill, g.cmd')){ e.preventDefault(); e.target.dispatchEvent(new MouseEvent('click',{bubbles:true})) }
+});
+render();
+</script>
