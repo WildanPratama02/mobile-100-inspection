@@ -1,0 +1,30 @@
+{
+  "name": "@m100/shared",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Types, counting engine, mapping loader and formatters shared by web and api",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsup": "8.5.1",
+    "vitest": "5.0.5"
+  }
+}

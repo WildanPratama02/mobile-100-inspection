@@ -1,0 +1,51 @@
+{
+  "name": "api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Mobile 100% Inspection API (NestJS)",
+  "scripts": {
+    "build": "pnpm --filter @m100/shared build && nest build",
+    "start": "node dist/main.js",
+    "start:dev": "pnpm --filter @m100/shared build && nest start --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@m100/shared": "workspace:*",
+    "@nestjs/common": "11.2.7",
+    "@nestjs/core": "11.2.7",
+    "@nestjs/platform-express": "11.2.7",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "11.0.24",
+    "@nestjs/schematics": "11.1.0",
+    "@nestjs/testing": "11.2.7",
+    "@types/jest": "30.0.0",
+    "jest": "30.5.2",
+    "ts-jest": "29.4.15"
+  },
+  "jest": {
+    "rootDir": "src",
+    "testEnvironment": "node",
+    "testRegex": ".*\\.spec\\.ts$",
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "transform": {
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "tsconfig": "<rootDir>/../tsconfig.json"
+        }
+      ]
+    },
+    "moduleNameMapper": {
+      "^@m100/shared$": "<rootDir>/../../../packages/shared/src/index.ts"
+    }
+  }
+}

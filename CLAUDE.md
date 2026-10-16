@@ -66,6 +66,12 @@ Tests: Vitest (unit), Playwright (web end-to-end), Jest (NestJS default). Node 2
 ## Commands
 
 <!-- Fill in after T0.1 scaffolds the repo. -->
+Node 22 LTS ≥ 22.13 and pnpm 10 (`packageManager` in `package.json`; `engine-strict` is on). Packages: `web`, `api`, `@m100/shared`.
+
 - `pnpm install`
-- `pnpm dev` (web), `pnpm --filter api start:dev` (api)
-- `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm e2e`
+- `pnpm e2e:install` (once per machine: Playwright's Chromium)
+- `pnpm dev` (web on `http://localhost:5173`), `pnpm --filter api start:dev` (api on `127.0.0.1:3000`, builds `@m100/shared` first)
+- `pnpm test` (Vitest in `web` and `@m100/shared`, Jest in `api`), `pnpm lint`, `pnpm typecheck`, `pnpm e2e`
+- `pnpm format` / `pnpm format:check` (Prettier)
+- `pnpm build` (shared → `packages/shared/dist`, web → `apps/web/dist`, api → `apps/api/dist`)
+- One package only: `pnpm --filter <web|api|@m100/shared> <script>`

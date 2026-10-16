@@ -1,0 +1,15 @@
+pnpm-lock.yaml
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+dev-dist/
+
+# Starter-kit inputs: kept as delivered, not reformatted
+docs/
+design-system/
+reference/
+CLAUDE.md
+README.md
+.claude/
