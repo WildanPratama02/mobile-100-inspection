@@ -98,6 +98,7 @@ docs/
 | `photos` | `[sessionId, defectId]` | JPEG blob (≤ 960 px, ≤ 1 MB), SHA-256, taken-at |
 | `outbox` | `submissionUuid` | sealed submission (§4.6) |
 | `outboxPhotos` | `[submissionUuid, defectId]` | the photo blobs of a sealed session |
+| `view` | `username` | the screen (Home or Defect), the selected PO and the Defect drill-down path, so a restart returns to the same place (doc 05 §4, §8.4, §11.5, AC-06.2); per user because tablets are shared (BR-09) |
 
 **A session is the result of reducing its event list** with the pure functions of `packages/shared`. Persisting events instead of counters makes the rules of persistence trivial: one tap = one IndexedDB write of one event, and the screen is updated from the stored result (NFR-05, AC-06.2). UNDO is an event that the reducer interprets by the four cases of FR-08. Totals, Top 5 and the findings list of FR-09 are derived, never stored.
 
