@@ -1,0 +1,92 @@
+.uikit {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-4);
+}
+
+.uikit__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.uikit h1,
+.uikit h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: var(--fw-title);
+  letter-spacing: var(--ls-title);
+  text-transform: uppercase;
+}
+
+.uikit h1 {
+  font-size: var(--fs-title);
+}
+
+.uikit h2 {
+  font-size: var(--fs-action);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.uikit__section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.uikit__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.uikit__row--end {
+  justify-content: flex-end;
+}
+
+.uikit__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.uikit__grid--map {
+  grid-template-columns: repeat(auto-fill, minmax(min(560px, 100%), 1fr));
+}
+
+.uikit__state {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+}
+
+.uikit__state > :not(.uikit__label) {
+  justify-self: stretch;
+}
+
+.uikit__row > .uikit__state > :not(.uikit__label) {
+  justify-self: start;
+}
+
+.uikit__label {
+  font-family: var(--font-display);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.uikit__photo {
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  background: var(--panel);
+  border-radius: var(--radius-md);
+}

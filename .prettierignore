@@ -10,6 +10,8 @@ dev-dist/
 docs/
 design-system/
 reference/
+# Byte-for-byte copy of design-system/tokens.css minus the font @import (checked by design-parity.test.ts)
+apps/web/src/ui/tokens.css
 CLAUDE.md
 README.md
 .claude/

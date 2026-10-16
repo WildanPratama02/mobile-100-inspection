@@ -1,0 +1,11 @@
+/* Self-hosted fonts (CLAUDE.md, doc 03 §4.1): bundled by Vite and precached, so they work offline.
+   Latin subset only; screen text is Bahasa Indonesia and English shop-floor labels. */
+@import '@fontsource/barlow-condensed/latin-500.css';
+@import '@fontsource/barlow-condensed/latin-600.css';
+@import '@fontsource/barlow-condensed/latin-700.css';
+@import '@fontsource/barlow-semi-condensed/latin-400.css';
+@import '@fontsource/barlow-semi-condensed/latin-500.css';
+@import '@fontsource/barlow-semi-condensed/latin-600.css';
+@import '@fontsource/barlow-semi-condensed/latin-700.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@import '@fontsource/ibm-plex-mono/latin-500-italic.css';

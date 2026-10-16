@@ -42,6 +42,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // App shell, self-hosted fonts and the shoe photo are precached for offline use (doc 03 §4.1).
+        globPatterns: ['**/*.{js,css,html,png,avif,woff2}'],
         navigateFallback: '/index.html',
         // API calls are never cached by the service worker (doc 03 §4.1).
         navigateFallbackDenylist: [/^\/v1\//],
