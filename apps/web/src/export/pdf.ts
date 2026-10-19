@@ -66,20 +66,22 @@ export function toPdf(report: ExportReport, assets: PdfAssets): Blob {
     doc.line(MARGIN, HEADER_BOTTOM, PAGE_W - MARGIN, HEADER_BOTTOM);
   };
 
-  const table = (options: UserOptions) =>
+  // A table's own styles add to these; autoTable would replace the whole object otherwise.
+  const table = ({ styles, headStyles, ...options }: UserOptions) =>
     autoTable(doc, {
       theme: 'grid',
       margin: { top: CONTENT_TOP, left: MARGIN, right: MARGIN, bottom: 16 },
+      didDrawPage: header,
+      ...options,
       styles: {
         font: 'helvetica',
         fontSize: 8.5,
         cellPadding: 1.6,
         textColor: INK,
         lineColor: LINE,
+        ...styles,
       },
-      headStyles: { fillColor: HEAD_FILL, textColor: INK, fontStyle: 'bold' },
-      didDrawPage: header,
-      ...options,
+      headStyles: { fillColor: HEAD_FILL, textColor: INK, fontStyle: 'bold', ...headStyles },
     });
 
   const title = (text: string, y: number) => {

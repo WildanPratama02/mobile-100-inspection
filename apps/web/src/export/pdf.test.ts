@@ -52,8 +52,19 @@ describe('toPdf (FR-12)', () => {
     expect(pdf).not.toContain('FOTO DEFECT');
   });
 
-  it('an empty session shows "Belum ada defect." (doc 05 §8.5)', async () => {
-    expect(await pdfText(REPORT_EMPTY)).toContain('Belum ada defect.');
+  it('an empty session shows "Belum ada defect." and "—" for the rates (doc 05 §8.5)', async () => {
+    const pdf = await pdfText(REPORT_EMPTY);
+    expect(pdf).toContain('Belum ada defect.');
+    // Helvetica is WinAnsi-encoded: "—" is byte 0x97 and "·" byte 0xB7. Node's "latin1" decoder above
+    // maps bytes to the same code points, so 0x97 reads back as U+0097.
+    expect(pdf).toContain('(\u0097) Tj');
+    expect(pdf).toContain('(P1 · 1.200 dari 10.002) Tj');
+  });
+
+  it('draws every table text in black, whatever the table sets itself', async () => {
+    const pdf = await pdfText(REPORT);
+    // jspdf-autotable's own body grey (80/255); only the footer is grey on purpose.
+    expect(pdf).not.toContain('0.314 g');
   });
 
   it('repeats the header on every page of a long defect list', async () => {

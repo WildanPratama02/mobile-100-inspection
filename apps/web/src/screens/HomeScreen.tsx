@@ -126,13 +126,13 @@ export function HomeScreen({ auth }: HomeScreenProps) {
   /** Doc 05 §8.5. Reads the session only, so exporting never changes it (AC-12.4). */
   const onExport = async (format: ExportFormat) => {
     if (!po || exporting.current) return;
-    const report = exportReport({ po, session, auth, mapping, now: new Date() });
-    if (report.missingPhotos.length > 0) {
-      setOpen({ kind: 'missing-photos', names: report.missingPhotos });
-      return;
-    }
     exporting.current = true;
     try {
+      const report = exportReport({ po, session, auth, mapping, now: new Date() });
+      if (report.missingPhotos.length > 0) {
+        setOpen({ kind: 'missing-photos', names: report.missingPhotos });
+        return;
+      }
       const file = await exportFile(format, report);
       if ((await saveFile(file.name, file.blob)) === 'saved') toast(`File dibuat: ${file.name}`);
     } catch (error) {

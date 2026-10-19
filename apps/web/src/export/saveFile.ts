@@ -25,6 +25,12 @@ export type ShowSaveFilePicker = (
 /** How long the download's object URL is kept, so a slow download still finds it. */
 const REVOKE_AFTER_MS = 60_000;
 
+/**
+ * The save dialog needs the tap's user activation, which Chrome lets expire after a few seconds; a large
+ * PDF can take longer to make. The dialog is then refused before it opens, and the file is downloaded.
+ */
+const PICKER_REFUSED = new Set(['SecurityError', 'NotAllowedError']);
+
 function extension(name: string): string {
   const dot = name.lastIndexOf('.');
   return dot < 0 ? '' : name.slice(dot);
@@ -33,18 +39,22 @@ function extension(name: string): string {
 export async function saveFile(name: string, blob: Blob): Promise<SaveOutcome> {
   const picker = (window as { showSaveFilePicker?: ShowSaveFilePicker }).showSaveFilePicker;
   if (picker) {
+    let handle;
     try {
-      const handle = await picker.call(window, {
+      handle = await picker.call(window, {
         suggestedName: name,
         types: [{ description: name, accept: { [blob.type]: [extension(name)] } }],
       });
+    } catch (error) {
+      if (!(error instanceof DOMException)) throw error;
+      if (error.name === 'AbortError') return 'cancelled';
+      if (!PICKER_REFUSED.has(error.name)) throw error;
+    }
+    if (handle) {
       const writable = await handle.createWritable();
       await writable.write(blob);
       await writable.close();
       return 'saved';
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled';
-      throw error;
     }
   }
 

@@ -46,11 +46,30 @@ describe('saveFile (doc 05 §8.5)', () => {
     await expect(saveFile(NAME, BLOB)).resolves.toBe('cancelled');
   });
 
-  it('passes any other failure on', async () => {
+  it('passes any other failure on, also while writing', async () => {
     (window as PickerWindow).showSaveFilePicker = () =>
       Promise.reject(new DOMException('full', 'QuotaExceededError'));
     await expect(saveFile(NAME, BLOB)).rejects.toThrow('full');
+
+    (window as PickerWindow).showSaveFilePicker = () =>
+      Promise.resolve({
+        createWritable: () =>
+          Promise.reject(new DOMException('disk', 'NoModificationAllowedError')),
+      });
+    await expect(saveFile(NAME, BLOB)).rejects.toThrow('disk');
   });
+
+  it.each(['SecurityError', 'NotAllowedError'])(
+    'downloads instead when the save dialog is refused (%s: the tap is too long ago)',
+    async (name) => {
+      (window as PickerWindow).showSaveFilePicker = () =>
+        Promise.reject(new DOMException('no activation', name));
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+      await expect(saveFile(NAME, BLOB)).resolves.toBe('saved');
+      expect(click).toHaveBeenCalledOnce();
+      expect(createObjectURL).toHaveBeenCalledWith(BLOB);
+    },
+  );
 
   it('downloads the file where there is no save dialog', async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
