@@ -58,7 +58,7 @@ function renderHome() {
 async function tap(po: string, ...commands: TapCommand[]) {
   for (const command of commands) {
     await act(async () => {
-      expect(await store.getState().tap(po, command)).toBe(true);
+      expect(await store.getState().tap(po, command)).not.toBeNull();
     });
   }
 }

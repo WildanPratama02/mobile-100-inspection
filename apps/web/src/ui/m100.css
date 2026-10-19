@@ -858,6 +858,8 @@
   width: 100%;
   height: 100%;
   overflow: visible;
+  /* The photo is never a tap target, and its transparent margin reaches past the map onto nearby buttons. */
+  pointer-events: none;
 }
 .m100-shoemap__img {
   transition: opacity 0.12s ease;

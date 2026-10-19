@@ -474,8 +474,154 @@
   gap: var(--space-2);
 }
 
+/* ---- S6 Defect (doc 05 §11.1): shoe pane ≈56% | side ≈44% ---- */
+.defect {
+  height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(0, 56fr) minmax(0, 44fr);
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.defect__shoe {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.defect__cmds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.defect__cmds > .m100-cmd {
+  padding: 0 var(--space-2);
+}
+/* The map keeps its 1000 × 720 ratio inside whatever height is left. */
+.defect__map {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  container-type: size;
+}
+.defect__map > .m100-shoemap {
+  width: min(100cqw, 100cqh * 1000 / 720);
+}
+.defect__side {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.defect__ctx {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+.defect__po {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-height: 28px;
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.defect__mono {
+  font-family: var(--font-mono);
+}
+.defect__pick {
+  flex: 1 1 46%;
+  min-height: 90px;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3);
+}
+.defect__hint {
+  min-height: 100%;
+  display: grid;
+  place-content: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--ink-3);
+}
+.defect__hint b {
+  font-family: var(--font-display);
+  font-size: var(--fs-action);
+  letter-spacing: var(--ls-action);
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.defect__hist {
+  flex: 0 0 clamp(116px, 30%, 260px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line-strong);
+  background: var(--surface);
+}
+.defect__hist-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* Three equal buttons that never push past the pane (the kit's `1fr` grows with its content). */
+.m100-bar.defect__bar {
+  grid-auto-columns: minmax(0, 1fr);
+}
+.defect__hist-empty {
+  margin: 0;
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--ink-3);
+  font-size: var(--fs-meta);
+}
+
 /* ---- Stacked: portrait or narrow ---- */
 @media (orientation: portrait), (max-width: 640px) {
+  /* Shoe map on top at its own ratio, then the list and history; the bar stays at the screen edge. */
+  .defect {
+    height: auto;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+  .defect__map {
+    container-type: normal;
+  }
+  .defect__map > .m100-shoemap {
+    width: 100%;
+  }
+  .defect__side {
+    flex: 1;
+    overflow: visible;
+  }
+  .defect__pick {
+    flex: none;
+    max-height: 44vh;
+    min-height: 150px;
+  }
+  .defect__hist {
+    flex: none;
+    max-height: 34vh;
+    min-height: 130px;
+  }
+  .defect__bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+  }
+  .m100-bar.defect__bar button {
+    font-size: 22px;
+    min-width: 0;
+  }
   .login {
     grid-template-columns: 1fr;
     grid-template-rows: auto auto auto 1fr;
@@ -607,6 +753,46 @@
     padding: 2px 0;
   }
   .home__body .m100-stat > b {
+    font-size: 21px;
+  }
+  /*
+   * The pills need a map at least 422 px tall to sit 44 px apart (docks 75/720 apart), more than this height
+   * gives. The shoe pane takes a wider share and the map uses its full width, scrolling between the command row
+   * and END INSPECTION, which stay in place (doc 05 §4). The padding keeps the top and bottom pills inside.
+   */
+  .defect {
+    grid-template-columns: minmax(0, 60fr) minmax(0, 40fr);
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+  .m100-pane.defect__shoe {
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+  .defect__map {
+    display: block;
+    overflow-y: auto;
+    padding: var(--space-2) 0 var(--space-4);
+    container-type: normal;
+  }
+  .defect__map > .m100-shoemap {
+    width: 100%;
+  }
+  .defect__cmds > .m100-cmd,
+  .defect__end {
+    font-size: 21px;
+  }
+  .defect__ctx {
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+  }
+  .defect__pick {
+    padding: var(--space-1) var(--space-2);
+  }
+  .defect__hist {
+    flex-basis: clamp(96px, 28%, 200px);
+  }
+  .m100-bar.defect__bar button {
     font-size: 21px;
   }
 }

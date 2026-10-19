@@ -39,6 +39,12 @@ export type TapCommand =
   | { type: 'END' }
   | { type: 'UNDO' };
 
+/** A recorded tap: the session before and after it, so the screen can say what the tap did. */
+export interface TapResult {
+  before: SessionState;
+  after: SessionState;
+}
+
 /** The open session of one PO with its stored events and their reduction. */
 export interface PoSession {
   session: Session;
@@ -68,8 +74,8 @@ export interface AppState {
   addPo: (po: Po, partial: PoPartial | null) => Promise<void>;
   setPartial: (po: string, partial: PoPartial | null) => Promise<void>;
   removePo: (po: string) => Promise<void>;
-  /** `false` when the tap is not allowed now (nothing is written). */
-  tap: (po: string, command: TapCommand) => Promise<boolean>;
+  /** `null` when the tap is not allowed now (nothing is written). */
+  tap: (po: string, command: TapCommand) => Promise<TapResult | null>;
   setView: (patch: Partial<View>) => Promise<void>;
 }
 
@@ -235,23 +241,20 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
           const username = requireUser();
           const { session, state } = requireSession(po);
           const payload = toPayload(state, command);
-          if (!payload) return false;
+          if (!payload) return null;
           const event = await repo.appendEvent(db, username, session.id, payload, now());
+          const after = applyEvent(state, event);
           set((s) => {
             const current = s.sessions[po];
             if (!current) return {};
             return {
               sessions: {
                 ...s.sessions,
-                [po]: {
-                  ...current,
-                  events: [...current.events, event],
-                  state: applyEvent(current.state, event),
-                },
+                [po]: { ...current, events: [...current.events, event], state: after },
               },
             };
           });
-          return true;
+          return { before: state, after };
         }),
 
       setView: (patch) =>

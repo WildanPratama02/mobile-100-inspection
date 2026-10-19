@@ -125,8 +125,8 @@ describe('persistence rule (NFR-05)', () => {
   it('writes nothing for a tap that is not allowed', async () => {
     const store = await loggedInWithPo();
     const before = store.getState().sessions;
-    expect(await store.getState().tap(PO.po, { type: 'DEFECT', entry: TOE })).toBe(false);
-    expect(await store.getState().tap(PO.po, { type: 'UNDO' })).toBe(false);
+    expect(await store.getState().tap(PO.po, { type: 'DEFECT', entry: TOE })).toBeNull();
+    expect(await store.getState().tap(PO.po, { type: 'UNDO' })).toBeNull();
     expect(store.getState().sessions).toBe(before);
     expect(await repo.listEvents(db, A.username, before[PO.po]!.session.id)).toEqual([]);
   });
@@ -139,7 +139,10 @@ describe('persistence rule (NFR-05)', () => {
       tap(PO.po, { type: 'START', inspection: 'REWORK' }),
       tap(PO.po, { type: 'DEFECT', entry: TOE }),
     ]);
-    expect(results).toEqual([true, false, true]);
+    expect(results.map((r) => r !== null)).toEqual([true, false, true]);
+    // Each result is judged against the state the tap before it left.
+    expect(results[2]?.before.active?.type).toBe('REWORK');
+    expect(results[2]?.after.active?.defects).toHaveLength(1);
     const { events, state } = store.getState().sessions[PO.po]!;
     expect(events.map((e) => e.type)).toEqual(['START_REWORK', 'DEFECT']);
     expect(state.counts.rework).toBe(1);

@@ -3,7 +3,7 @@
  * and the bottom row. Everything shown is derived from the selected PO's open session with `@m100/shared`
  * (FR-04, FR-05); nothing here counts by itself.
  *
- * Wired later: the Top 5 photo control (T1.5), ADD DEFECT (T1.4), EXPORT PDF / EXCEL (T1.6), SUBMIT PO (T1.7).
+ * Wired later: the Top 5 photo control (T1.5), EXPORT PDF / EXCEL (T1.6), SUBMIT PO (T1.7).
  */
 import { useRef, useState } from 'react';
 import {
@@ -37,6 +37,7 @@ import {
   type Classification as ChipClassification,
 } from '../ui';
 import { AddPoDialog } from './AddPoDialog';
+import { NO_PATH } from './drilldown';
 import { PartialDialog } from './PartialDialog';
 import { SettingsDialog } from './SettingsDialog';
 import './screens.css';
@@ -157,7 +158,12 @@ export function HomeScreen({ auth }: HomeScreenProps) {
           </Notice>
         ) : null}
 
-        <Button size="lg" className="home__add" disabled={!po}>
+        <Button
+          size="lg"
+          className="home__add"
+          disabled={!po}
+          onClick={() => void setView({ screen: 'defect', defectPath: NO_PATH })}
+        >
           ADD DEFECT
         </Button>
         <div className="home__exports">
