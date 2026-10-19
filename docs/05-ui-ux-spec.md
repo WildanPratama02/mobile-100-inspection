@@ -210,12 +210,12 @@ EXPORT PDF / EXPORT EXCEL create the file on the tablet from the current session
 
 | Case | Behaviour |
 |---|---|
-| Normal | The file is saved/shared through the Android share sheet or the download folder (`showSaveFilePicker` if available, otherwise a download). Toast "File dibuat: M100_0903359388_20261016.pdf". |
-| PSI lv.2 with missing Top 5 photos | A blocking `Dialog` (must answer) "Foto belum lengkap" listing the defect names missing a photo; button `Lengkapi foto` closes it. No file is made (prototype behavior, BR-04). |
+| Normal | The file is saved through the system save dialog (`showSaveFilePicker`) where the browser has one, otherwise downloaded to the download folder. Toast "File dibuat: M100_0903359388_20261016.pdf". Sharing through the Android share sheet (`navigator.share`) is **deferred** (decided at T1.6, 19 Oct 2026): the PSI shares the downloaded file from the Downloads app. |
+| PSI lv.2 with missing Top 5 photos | A blocking `Dialog` (must answer) "Foto belum lengkap" with the body "PSI lv.2 wajib menambahkan foto pada Top 5 Defect. Belum ada foto untuk:" and the defect names missing a photo (as in 13.1); button `Lengkapi foto` closes it. No file is made, for either format (prototype behavior, BR-04). |
 | Empty session | Allowed. The file shows zeros and "Belum ada defect." |
-| Export fails (storage full, user cancelled share) | Toast error "File gagal dibuat. Coba lagi." Cancelled share sheet: no toast. |
+| Export fails (storage full, write error) | Toast error "File gagal dibuat. Coba lagi." Closed save dialog: no toast. |
 
-The PDF header carries the company mark (doc 06 Logo), PO info, inspector, Factory/Cell, export time, the results, Top 5 with photos (lv.2), and the full defect list. File names: `M100_<PO>_<YYYYMMDD>.pdf` / `.xlsx` (AC-12.3).
+The PDF header on every page carries the company mark (doc 06 Logo) and "MOBILE 100% INSPECTION"; the body has the PO info, inspector, Factory/Cell, export time (WIB), the results, Top 5, the photos (lv.2) and the full defect list. The photos are every photo of a defect in the current findings: the Top 5 photos first in Top 5 order, then those of defects outside the Top 5 (AC-10.4) in slot order, each once and captioned with its defect name; a photo whose defect was undone completely is left out. The Excel file has the sheets "Ringkasan" (header, results, Top 5 with a Foto column for lv.2) and "Daftar Defect". File names: `M100_<PO>_<YYYYMMDD>.pdf` / `.xlsx`, the date in WIB (AC-12.3).
 
 ### 8.6 SUBMIT PO
 

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatCount, formatDate, formatPartial, formatRate } from './format';
+import {
+  fileDate,
+  formatCount,
+  formatDate,
+  formatDateTime,
+  formatPartial,
+  formatRate,
+} from './format';
 
 describe('formatRate (BR-02, doc 05 G5)', () => {
   it('shows "—" when the rate cannot be computed', () => {
@@ -43,5 +50,24 @@ describe('formatDate (doc 05 §9.1)', () => {
     expect(formatDate(null)).toBe('-');
     expect(formatDate('16/10/2026')).toBe('-');
     expect(formatDate('2026-02-30')).toBe('-');
+  });
+});
+
+describe('formatDateTime (WIB)', () => {
+  it('shows the moment in Asia/Jakarta as dd MMM yyyy HH.mm WIB', () => {
+    expect(formatDateTime(new Date('2026-10-19T07:05:00Z'))).toBe('19 Okt 2026 14.05 WIB');
+    expect(formatDateTime(new Date('2026-05-01T00:00:00Z'))).toBe('01 Mei 2026 07.00 WIB');
+  });
+
+  it('moves to the next day from 17.00 UTC', () => {
+    expect(formatDateTime(new Date('2026-12-31T17:30:00Z'))).toBe('01 Jan 2027 00.30 WIB');
+  });
+});
+
+describe('fileDate (AC-12.3)', () => {
+  it('gives the WIB calendar day as YYYYMMDD', () => {
+    expect(fileDate(new Date('2026-10-19T07:05:00Z'))).toBe('20261019');
+    expect(fileDate(new Date('2026-10-19T16:59:59Z'))).toBe('20261019');
+    expect(fileDate(new Date('2026-10-19T17:00:00Z'))).toBe('20261020');
   });
 });

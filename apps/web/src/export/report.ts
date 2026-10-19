@@ -1,0 +1,176 @@
+/**
+ * What EXPORT PDF and EXPORT EXCEL put in their files (FR-12, AC-12.1, doc 05 §8.5), derived from the selected
+ * PO's open session with `@m100/shared`. Both files are drawn from this one model, so they never disagree, and
+ * building it only reads: the session, its photos and Dexie stay as they were (AC-12.4).
+ */
+import {
+  APP_NAME,
+  EMPTY_SESSION,
+  fileDate,
+  findings,
+  formatDateTime,
+  formatPartial,
+  missingPhotos,
+  rankDefects,
+  takesPhotos,
+  totals,
+  type Classification,
+  type DefectId,
+  type InspectionType,
+  type MappingIndex,
+} from '@m100/shared';
+import { areaLabels } from '../app/mapping';
+import type { Auth, PoRow } from '../db/schema';
+import type { PoSession } from '../state/store';
+
+/** The header title of the PDF (ADR-010). */
+export const EXPORT_TITLE = APP_NAME.toUpperCase();
+
+/** Shown in place of the Top 5 and the defect list of an empty session (doc 05 §8.5). */
+export const NO_DEFECT_TEXT = 'Belum ada defect.';
+
+export type ResultValue =
+  | { label: string; kind: 'count'; value: number }
+  /** `null` when Qty Inspection is 0 (BR-02). */
+  | { label: string; kind: 'rate'; value: number | null };
+
+export interface Top5Line {
+  no: number;
+  defectId: DefectId;
+  name: string;
+  classification: Classification;
+  areas: string;
+  qty: number;
+  /** PSI lv.2 only; `null` for PSI lv.1, who takes no photos (AC-10.6). */
+  photo: boolean | null;
+}
+
+/** One row of the findings list (FR-09, AC-09.2): area + sub-area + defect + inspection type. */
+export interface DefectLine {
+  no: number;
+  inspectionType: InspectionType;
+  area: string;
+  subArea: string;
+  family: string;
+  defectId: DefectId;
+  name: string;
+  classification: Classification;
+  qty: number;
+}
+
+export interface ExportPhoto {
+  defectId: DefectId;
+  name: string;
+  /** Its row in TOP 5 DEFECT, or `null` for a defect outside the Top 5 (AC-10.4). */
+  top5No: number | null;
+  blob: Blob;
+}
+
+export interface ExportReport {
+  /** `M100_<PO>_<YYYYMMDD>`, without the extension (AC-12.3). */
+  fileBase: string;
+  /** Labelled values of the header: PO info, inspector, Factory/Cell, export time. */
+  info: Array<[label: string, value: string]>;
+  results: ResultValue[];
+  top5: Top5Line[];
+  defects: DefectLine[];
+  /** Every photo of a defect in the current findings, Top 5 first, each once (AC-12.2). */
+  photos: ExportPhoto[];
+  /** PSI lv.2: Top 5 defect names without a photo. Exporting is refused while any is left (BR-04). */
+  missingPhotos: string[];
+}
+
+export interface ExportInput {
+  po: PoRow;
+  session: PoSession | undefined;
+  auth: Auth;
+  mapping: MappingIndex;
+  now: Date;
+}
+
+export function exportReport({ po, session, auth, mapping, now }: ExportInput): ExportReport {
+  const state = session?.state ?? EMPTY_SESSION;
+  const attached = session?.photos ?? {};
+  const photos = takesPhotos(auth.level);
+
+  const defectOf = (id: DefectId) => {
+    const defect = mapping.defect(id);
+    if (!defect) throw new Error(`Unknown defect ${id}`);
+    return defect;
+  };
+
+  const list = findings(state);
+  // Ranked by the rules of TOP 5 DEFECT (AC-05.1); the first five are exactly what Home shows.
+  const ranked = rankDefects(list, (id) => defectOf(id).classification);
+  const top = ranked.slice(0, 5);
+  const t = totals(state);
+
+  const info: Array<[string, string]> = [
+    ['PO NUMBER', po.po],
+    ['ARTIKEL', po.article],
+    ['MODEL', po.model],
+    ['DESTINATION', po.destination],
+  ];
+  if (po.partial) info.push(['PARTIAL', formatPartial(po.partial, po.orderQty)]);
+  info.push(
+    ['INSPEKTOR', `${auth.username} (${auth.level})`],
+    ['FACTORY/CELL', auth.cell],
+    ['DICETAK', formatDateTime(now)],
+  );
+
+  return {
+    fileBase: `M100_${po.po}_${fileDate(now)}`,
+    info,
+    results: [
+      { label: 'Qty PO Order', kind: 'count', value: po.orderQty },
+      { label: 'Qty Inspection', kind: 'count', value: t.qtyInspection },
+      { label: 'Qty Defect', kind: 'count', value: t.qtyDefect },
+      { label: 'Qty A-Grade', kind: 'count', value: t.qtyAGrade },
+      { label: 'Qty B-Grade', kind: 'count', value: t.qtyBGrade },
+      { label: 'Defect Rate', kind: 'rate', value: t.defectRate },
+      { label: 'Pass Rate (RFT)', kind: 'rate', value: t.passRate },
+    ],
+    top5: top.map((row, i) => ({
+      no: i + 1,
+      defectId: row.defectId,
+      name: defectOf(row.defectId).name,
+      classification: row.classification,
+      areas: areaLabels(row.areaIds, mapping),
+      qty: row.qty,
+      photo: photos ? attached[row.defectId] !== undefined : null,
+    })),
+    defects: list.map((f, i) => {
+      const defect = defectOf(f.defectId);
+      return {
+        no: i + 1,
+        inspectionType: f.inspectionType,
+        area: mapping.area(f.areaId)?.name ?? f.areaId,
+        subArea: mapping.subArea(f.subAreaId)?.name ?? f.subAreaId,
+        family: mapping.family(f.familyId)?.name ?? f.familyId,
+        defectId: f.defectId,
+        name: defect.name,
+        classification: defect.classification,
+        qty: f.qty,
+      };
+    }),
+    // A photo of a defect that was undone completely is not part of the findings and stays out.
+    photos: ranked.flatMap((row, i) => {
+      const photo = attached[row.defectId];
+      return photo
+        ? [
+            {
+              defectId: row.defectId,
+              name: defectOf(row.defectId).name,
+              top5No: i < 5 ? i + 1 : null,
+              blob: photo.blob,
+            },
+          ]
+        : [];
+    }),
+    missingPhotos: photos
+      ? missingPhotos(top, new Set(Object.keys(attached) as DefectId[])).map(
+          (row) => defectOf(row.defectId).name,
+        )
+      : [],
+  };
+}

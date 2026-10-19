@@ -42,3 +42,37 @@ export function formatDate(date: string | null): string {
   if (at.getUTCMonth() !== m - 1 || at.getUTCDate() !== d) return '-';
   return DATE.format(at);
 }
+
+// Moments are shown in WIB, whatever time zone the tablet is set to (CLAUDE.md).
+const WIB = 'Asia/Jakarta';
+const WIB_TEXT = new Intl.DateTimeFormat('id-ID', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+  timeZone: WIB,
+});
+const WIB_DIGITS = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  timeZone: WIB,
+});
+
+function parts(format: Intl.DateTimeFormat, at: Date): Partial<Record<string, string>> {
+  return Object.fromEntries(format.formatToParts(at).map((p) => [p.type, p.value]));
+}
+
+/** A moment as `19 Okt 2026 14.05 WIB` (export time, AC-12.1). */
+export function formatDateTime(at: Date): string {
+  const p = parts(WIB_TEXT, at);
+  return `${p.day} ${p.month} ${p.year} ${p.hour}.${p.minute} WIB`;
+}
+
+/** The WIB calendar day of a moment as `YYYYMMDD`, for export file names (AC-12.3). */
+export function fileDate(at: Date): string {
+  const p = parts(WIB_DIGITS, at);
+  return `${p.year}${p.month}${p.day}`;
+}

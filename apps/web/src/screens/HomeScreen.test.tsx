@@ -4,12 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../app/toast';
 import { ALL_PO_MASTER } from '../data/fixtures/pos';
 import { createDb, type Auth, type M100Db } from '../db/schema';
+import { exportFile } from '../export/exportFile';
+import { saveFile } from '../export/saveFile';
 import { toJpeg } from '../photos/resize';
 import { AppStoreContext, createAppStore, type AppStore, type TapCommand } from '../state/store';
 import { HomeScreen, LONG_PRESS_MS } from './HomeScreen';
 
 // jsdom has no canvas: the resize itself is covered by the Playwright test (e2e/photos.spec.ts).
 vi.mock('../photos/resize', () => ({ toJpeg: vi.fn() }));
+// The files themselves are tested in src/export and e2e/export.spec.ts; here only what Home does with them.
+vi.mock('../export/exportFile', () => ({ exportFile: vi.fn() }));
+vi.mock('../export/saveFile', () => ({ saveFile: vi.fn() }));
 
 const AUTH: Auth = {
   username: 'DEWI CONTOH',
@@ -477,5 +482,135 @@ describe('photos (FR-10, doc 05 §12)', () => {
     expect(screen.queryByText('Foto wajib')).not.toBeInTheDocument();
     expect(screen.queryByText(/foto belum ada/)).not.toBeInTheDocument();
     expect(screen.queryByTestId('camera')).not.toBeInTheDocument();
+  });
+});
+
+describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
+  const LV1: Auth = { ...AUTH, username: 'ANDI CONTOH', level: 'PSI lv.1' };
+  const FILE = /^M100_0903359388_\d{8}\.(pdf|xlsx)$/;
+
+  beforeEach(() => {
+    vi.mocked(exportFile).mockReset();
+    vi.mocked(exportFile).mockImplementation((format, report) =>
+      Promise.resolve({ name: `${report.fileBase}.${format}`, blob: new Blob([format]) }),
+    );
+    vi.mocked(saveFile).mockReset();
+    vi.mocked(saveFile).mockResolvedValue('saved');
+    vi.mocked(toJpeg).mockResolvedValue({ blob: new Blob(['jpeg']), sha256: 'hash' });
+  });
+
+  /** Everything the tablet stores, to show that an export leaves it as it was (AC-12.4). */
+  const snapshot = async () =>
+    JSON.stringify(await Promise.all(db.tables.map((table) => table.toArray())));
+
+  async function asLv1() {
+    await store.getState().logout();
+    await store.getState().login(LV1);
+  }
+
+  it('makes each file, says its name, and changes nothing (AC-12.3, AC-12.4)', async () => {
+    await asLv1();
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')), END, { type: 'NO_DEFECT' });
+    renderHome(LV1);
+    const sessions = store.getState().sessions;
+    const before = await snapshot();
+
+    for (const [button, format] of [
+      ['EXPORT PDF', 'pdf'],
+      ['EXPORT EXCEL', 'xlsx'],
+    ] as const) {
+      fireEvent.click(screen.getByRole('button', { name: button }));
+      await waitFor(() => expect(saveFile).toHaveBeenCalledTimes(format === 'pdf' ? 1 : 2));
+      const [usedFormat, report] = vi.mocked(exportFile).mock.lastCall!;
+      expect(usedFormat).toBe(format);
+      expect(report.results.find((r) => r.label === 'Qty Inspection')?.value).toBe(2);
+      const name = vi.mocked(saveFile).mock.lastCall![0];
+      expect(name).toMatch(FILE);
+      expect(name.endsWith(`.${format}`)).toBe(true);
+      expect(await screen.findByText(`File dibuat: ${name}`)).toBeInTheDocument();
+    }
+
+    expect(store.getState().sessions).toBe(sessions);
+    expect(await snapshot()).toBe(before);
+    expect(stat('Qty Inspection')).toBe('2');
+  });
+
+  it('exports an empty session (doc 05 §8.5)', async () => {
+    await store.getState().addPo(PO, null);
+    renderHome();
+    fireEvent.click(screen.getByRole('button', { name: 'EXPORT EXCEL' }));
+    await waitFor(() => expect(saveFile).toHaveBeenCalledOnce());
+    expect(vi.mocked(exportFile).mock.lastCall![1].defects).toEqual([]);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('PSI lv.2 with a Top 5 photo missing: blocks both files and names the defects (BR-04)', async () => {
+    const a = entry('MAJOR', 'A01');
+    const b = entry('MINOR', 'A01');
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, START_REWORK, defect(a), defect(a), defect(b));
+    await act(() =>
+      store.getState().savePhoto(PO.po, b.defectId, { blob: new Blob(['j']), sha256: 'h' }),
+    );
+    renderHome();
+    const before = await snapshot();
+
+    for (const button of ['EXPORT PDF', 'EXPORT EXCEL']) {
+      fireEvent.click(screen.getByRole('button', { name: button }));
+      const dialog = screen.getByRole('alertdialog', { name: 'Foto belum lengkap' });
+      expect(dialog).toHaveTextContent(
+        'PSI lv.2 wajib menambahkan foto pada Top 5 Defect. Belum ada foto untuk:',
+      );
+      expect(
+        within(dialog)
+          .getAllByRole('listitem')
+          .map((li) => li.textContent),
+      ).toEqual([nameOf(a)]);
+      // Must be answered: no close button, the scrim does not close it.
+      expect(within(dialog).queryByRole('button', { name: /tutup/i })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('scrim'));
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Lengkapi foto' }));
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    }
+
+    expect(exportFile).not.toHaveBeenCalled();
+    expect(saveFile).not.toHaveBeenCalled();
+    expect(await snapshot()).toBe(before);
+  });
+
+  it('PSI lv.2 with every Top 5 photo exports', async () => {
+    const a = entry('MAJOR', 'A01');
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, START_REWORK, defect(a));
+    await act(() =>
+      store.getState().savePhoto(PO.po, a.defectId, { blob: new Blob(['j']), sha256: 'h' }),
+    );
+    renderHome();
+    fireEvent.click(screen.getByRole('button', { name: 'EXPORT PDF' }));
+    await waitFor(() => expect(saveFile).toHaveBeenCalledOnce());
+    expect(vi.mocked(exportFile).mock.lastCall![1].photos.map((p) => p.defectId)).toEqual([
+      a.defectId,
+    ]);
+  });
+
+  it('says nothing when the save dialog is closed', async () => {
+    vi.mocked(saveFile).mockResolvedValue('cancelled');
+    await store.getState().addPo(PO, null);
+    renderHome();
+    fireEvent.click(screen.getByRole('button', { name: 'EXPORT PDF' }));
+    await waitFor(() => expect(saveFile).toHaveBeenCalledOnce());
+    await act(() => Promise.resolve());
+    expect(screen.queryByText(/^File/)).not.toBeInTheDocument();
+  });
+
+  it('says so when the file cannot be made', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.mocked(saveFile).mockRejectedValue(new DOMException('full', 'QuotaExceededError'));
+    await store.getState().addPo(PO, null);
+    renderHome();
+    fireEvent.click(screen.getByRole('button', { name: 'EXPORT EXCEL' }));
+    expect(await screen.findByText('File gagal dibuat. Coba lagi.')).toBeInTheDocument();
   });
 });

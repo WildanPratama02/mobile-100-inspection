@@ -4,8 +4,9 @@
  * (FR-04, FR-05); nothing here counts by itself.
  *
  * For PSI lv.2 the Top 5 rows carry the photo control (FR-10, doc 05 §8.3, §12); PSI lv.1 gets none.
+ * EXPORT PDF / EXPORT EXCEL make a file of the open session on the tablet (FR-12, doc 05 §8.5).
  *
- * Wired later: EXPORT PDF / EXCEL (T1.6), SUBMIT PO (T1.7).
+ * Wired later: SUBMIT PO (T1.7).
  */
 import { useRef, useState, type ChangeEvent } from 'react';
 import {
@@ -17,18 +18,20 @@ import {
   takesPhotos,
   top5,
   totals,
-  type AreaId,
   type Classification,
   type DefectId,
   type MappingIndex,
   type RankedDefect,
 } from '@m100/shared';
 import { Logo } from '../app/Logo';
-import { useMapping } from '../app/mapping';
+import { areaLabels, useMapping } from '../app/mapping';
 import { Overlay } from '../app/Overlay';
 import { useToast } from '../app/toastContext';
 import { useOnline } from '../app/useOnline';
 import type { Auth, PhotoRow, PoRow } from '../db/schema';
+import { exportFile, type ExportFormat } from '../export/exportFile';
+import { exportReport } from '../export/report';
+import { saveFile } from '../export/saveFile';
 import { toJpeg } from '../photos/resize';
 import { usePhotoUrl } from '../photos/usePhotoUrl';
 import { hasOpenData, selectedPo, useAppStore, type PoSession } from '../state/store';
@@ -40,13 +43,13 @@ import {
   Notice,
   Pane,
   POListItem,
-  SHOE_AREAS,
   StatRow,
   Top5Row,
   type Classification as ChipClassification,
 } from '../ui';
 import { AddPoDialog } from './AddPoDialog';
 import { NO_PATH } from './drilldown';
+import { MissingPhotosDialog } from './MissingPhotosDialog';
 import { PartialDialog } from './PartialDialog';
 import { PhotoViewDialog } from './PhotoViewDialog';
 import { SettingsDialog } from './SettingsDialog';
@@ -64,7 +67,8 @@ type Open =
   | { kind: 'add' }
   | { kind: 'partial' }
   | { kind: 'remove'; po: string }
-  | { kind: 'photo'; defectId: DefectId };
+  | { kind: 'photo'; defectId: DefectId }
+  | { kind: 'missing-photos'; names: string[] };
 
 export interface HomeScreenProps {
   auth: Auth;
@@ -113,6 +117,29 @@ export function HomeScreen({ auth }: HomeScreenProps) {
     } catch (error) {
       console.error(error);
       toast('Foto gagal disimpan. Coba lagi.', 'error');
+    }
+  };
+
+  // One export at a time: a second tap while the file is being made does nothing.
+  const exporting = useRef(false);
+
+  /** Doc 05 §8.5. Reads the session only, so exporting never changes it (AC-12.4). */
+  const onExport = async (format: ExportFormat) => {
+    if (!po || exporting.current) return;
+    const report = exportReport({ po, session, auth, mapping, now: new Date() });
+    if (report.missingPhotos.length > 0) {
+      setOpen({ kind: 'missing-photos', names: report.missingPhotos });
+      return;
+    }
+    exporting.current = true;
+    try {
+      const file = await exportFile(format, report);
+      if ((await saveFile(file.name, file.blob)) === 'saved') toast(`File dibuat: ${file.name}`);
+    } catch (error) {
+      console.error(error);
+      toast('File gagal dibuat. Coba lagi.', 'error');
+    } finally {
+      exporting.current = false;
     }
   };
 
@@ -223,10 +250,10 @@ export function HomeScreen({ auth }: HomeScreenProps) {
           ADD DEFECT
         </Button>
         <div className="home__exports">
-          <Button icon="download" disabled={!po}>
+          <Button icon="download" disabled={!po} onClick={() => void onExport('pdf')}>
             EXPORT PDF
           </Button>
-          <Button icon="download" disabled={!po}>
+          <Button icon="download" disabled={!po} onClick={() => void onExport('xlsx')}>
             EXPORT EXCEL
           </Button>
         </div>
@@ -268,6 +295,9 @@ export function HomeScreen({ auth }: HomeScreenProps) {
       {open?.kind === 'menu' ? <SettingsDialog auth={auth} onClose={close} /> : null}
       {open?.kind === 'add' ? <AddPoDialog onClose={close} /> : null}
       {open?.kind === 'partial' && po ? <PartialDialog po={po} onClose={close} /> : null}
+      {open?.kind === 'missing-photos' ? (
+        <MissingPhotosDialog names={open.names} onClose={close} />
+      ) : null}
       {open?.kind === 'remove' ? (
         <Overlay onDismiss={close}>
           <Dialog title="Hapus PO dari list?" onClose={close}>
@@ -353,13 +383,6 @@ const CHIP_TONE = {
   MAJOR: 'major',
   CRITICAL: 'critical',
 } as const satisfies Record<Classification, ChipClassification>;
-
-/** Area names as on the shoe map pills ("VAMP, TOE BOX"; doc 05 §8.3). */
-const AREA_LABEL = new Map(SHOE_AREAS.map((a) => [a.id, a.lines.join(' ')]));
-
-function areaLabels(ids: readonly AreaId[], mapping: MappingIndex): string {
-  return ids.map((id) => AREA_LABEL.get(id) ?? mapping.area(id)?.name ?? id).join(', ');
-}
 
 interface PanelProps {
   po: PoRow | null;
