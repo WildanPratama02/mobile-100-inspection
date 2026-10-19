@@ -3,7 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LoginData, MasterDataSource } from '../data/sources';
 import * as repo from '../db/repo';
 import { createDb, type Auth, type M100Db } from '../db/schema';
-import { createAppStore, DEFAULT_VIEW, unsubmittedCount, type AppStore } from './store';
+import {
+  createAppStore,
+  DEFAULT_VIEW,
+  hasOpenData,
+  selectedPo,
+  unsubmittedCount,
+  type AppStore,
+} from './store';
 
 const A: Auth = {
   username: 'psi.uji.satu',
@@ -239,6 +246,40 @@ describe('PO list', () => {
     expect(store.getState().pos.map((p) => p.po)).toEqual(['0903359388']);
     expect(store.getState().sessions[second.po]).toBeUndefined();
     expect((await reopen()).getState().pos.map((p) => p.po)).toEqual(['0903359388']);
+  });
+
+  it('selects an added PO and remembers it across a reload (doc 05 §8.4, §9.2)', async () => {
+    const store = await loggedInWithPo();
+    expect(selectedPo(store.getState())?.po).toBe(PO.po);
+    await store.getState().addPo({ ...PO, po: 'CX-0902368685' }, null);
+    expect(selectedPo(store.getState())?.po).toBe('CX-0902368685');
+    expect(selectedPo((await reopen()).getState())?.po).toBe('CX-0902368685');
+  });
+
+  it('clears the selection when the selected PO is removed, and keeps it otherwise', async () => {
+    const store = await loggedInWithPo();
+    await store.getState().addPo({ ...PO, po: 'CX-0902368685' }, null);
+    await store.getState().removePo(PO.po);
+    expect(store.getState().view.selectedPo).toBe('CX-0902368685');
+    await store.getState().removePo('CX-0902368685');
+    expect(store.getState().view.selectedPo).toBeNull();
+    expect((await reopen()).getState().view.selectedPo).toBeNull();
+  });
+
+  it('drops a stored selection whose PO is no longer listed', async () => {
+    const store = await loggedInWithPo();
+    await store.getState().setView({ selectedPo: '0000000000' });
+    expect((await reopen()).getState().view.selectedPo).toBeNull();
+  });
+});
+
+describe('hasOpenData (AC-03.4)', () => {
+  it('is true once the open session holds a tap, also one that was undone', async () => {
+    const store = await loggedInWithPo();
+    expect(hasOpenData(store.getState().sessions[PO.po])).toBe(false);
+    await store.getState().tap(PO.po, { type: 'START', inspection: 'REWORK' });
+    await store.getState().tap(PO.po, { type: 'UNDO' });
+    expect(hasOpenData(store.getState().sessions[PO.po])).toBe(true);
   });
 });
 

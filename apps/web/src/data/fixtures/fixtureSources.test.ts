@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { LoginRejectedError } from '../sources';
+import { LoginRejectedError, PO_RESULTS_MAX, PoSearchError } from '../sources';
 import { createFixtureSources } from './fixtureSources';
 import { DB_CELL, USER_LIST } from './masterSheets';
+import { ALL_PO_MASTER } from './pos';
 
 describe('fixture master data', () => {
   it('holds users of other types, which the login list leaves out (AC-01.1)', async () => {
@@ -64,5 +65,40 @@ describe('fixture login', () => {
       code: 'CELL_NOT_FOUND',
       detail: 'Factory/Cell tidak ditemukan.',
     });
+  });
+});
+
+describe('fixture PO search (doc 04 §3.3, FR-03.2)', () => {
+  const { pos } = createFixtureSources();
+
+  it('matches PO number, article or model, ignoring case', async () => {
+    expect((await pos.search('0902368', 20)).map((p) => p.po)).toEqual([
+      'CX-0902368685',
+      'CX-0902368700',
+    ]);
+    expect((await pos.search('ih0003', 20)).map((p) => p.po)).toEqual(['0903359401']);
+    expect((await pos.search('skate', 20)).map((p) => p.po)).toEqual([
+      'CX-0902368700',
+      '0903361120',
+    ]);
+  });
+
+  it('keeps the leading zero, the prefix and the model byte for byte (AC-03.5)', async () => {
+    const [found] = await pos.search('0903359401', 20);
+    expect(found).toEqual(ALL_PO_MASTER.find((p) => p.po === '0903359401'));
+    expect(found?.model).toBe('RUNNER CONTOH 2');
+  });
+
+  it('refuses a query under 3 characters', async () => {
+    await expect(pos.search('09', 20)).rejects.toBeInstanceOf(PoSearchError);
+  });
+
+  it('returns at most the limit', async () => {
+    const many = Array.from({ length: 25 }, (_, i) => ({
+      ...ALL_PO_MASTER[0]!,
+      po: `09000000${String(i).padStart(2, '0')}`,
+    }));
+    const found = await createFixtureSources({ pos: many }).pos.search('0900', PO_RESULTS_MAX);
+    expect(found).toHaveLength(20);
   });
 });

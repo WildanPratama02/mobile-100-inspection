@@ -113,7 +113,10 @@ async function loadUserData(db: M100Db, auth: Auth | null): Promise<UserData> {
     const events = await repo.listEvents(db, username, session.id);
     sessions[session.po] = { session, events, state: replay(events) };
   }
-  return { auth, pos, sessions, view: view ?? DEFAULT_VIEW };
+  const restored = view ?? DEFAULT_VIEW;
+  // A selection always names a listed PO (doc 05 §8.4).
+  const selected = pos.some((p) => p.po === restored.selectedPo) ? restored.selectedPo : null;
+  return { auth, pos, sessions, view: { ...restored, selectedPo: selected } };
 }
 
 export function createAppStore(db: M100Db, now: () => string = () => new Date().toISOString()) {
@@ -187,16 +190,20 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
           set({ ...LOGGED_OUT, status: 'ready' });
         }),
 
+      // ADD TO PO LIST also selects the PO (doc 05 §9.2).
       addPo: (po, partial) =>
         serial(async () => {
           const username = requireUser();
           const added = await repo.addPo(db, username, po, partial, now());
+          const view = { ...get().view, selectedPo: po.po };
+          await repo.saveView(db, username, view);
           set((s) => ({
             pos: [added.po, ...s.pos],
             sessions: {
               ...s.sessions,
               [po.po]: { session: added.session, events: [], state: EMPTY_SESSION },
             },
+            view,
           }));
         }),
 
@@ -211,10 +218,15 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
         serial(async () => {
           const username = requireUser();
           await repo.removePo(db, username, po);
+          let view = get().view;
+          if (view.selectedPo === po) {
+            view = { ...view, selectedPo: null };
+            await repo.saveView(db, username, view);
+          }
           set((s) => {
             const sessions = { ...s.sessions };
             delete sessions[po];
-            return { pos: s.pos.filter((p) => p.po !== po), sessions };
+            return { pos: s.pos.filter((p) => p.po !== po), sessions, view };
           });
         }),
 
@@ -254,11 +266,21 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
 }
 
 /**
- * POs whose open session holds recorded taps; LOGOUT warns about these (AC-02.2). A PO added but never
- * tapped does not count, the same rule as removing a PO (`repo.removePo`, AC-03.4).
+ * Whether a PO's open session holds recorded taps. Such a PO can't be removed (`repo.removePo`, AC-03.4) and
+ * LOGOUT warns about it (AC-02.2). A photo always belongs to a recorded defect, so it needs no check here.
  */
+export function hasOpenData(session: PoSession | undefined): boolean {
+  return (session?.events.length ?? 0) > 0;
+}
+
+/** POs whose open session holds recorded taps (AC-02.2). */
 export function unsubmittedCount(state: Pick<AppState, 'sessions'>): number {
-  return Object.values(state.sessions).filter((s) => s.events.length > 0).length;
+  return Object.values(state.sessions).filter(hasOpenData).length;
+}
+
+/** The selected PO (doc 05 §8.4); its row is the stored object, so it is a stable selector result. */
+export function selectedPo(state: Pick<AppState, 'pos' | 'view'>): PoRow | null {
+  return state.pos.find((p) => p.po === state.view.selectedPo) ?? null;
 }
 
 let appStore: AppStore | undefined;

@@ -242,6 +242,214 @@
   outline-offset: -3px;
 }
 
+.home__meta--action {
+  justify-content: center;
+}
+
+/* ---- S3 Home body (doc 05 §8.1): PO list | Top 5 | results, then the bottom row ---- */
+.home {
+  height: 100dvh;
+}
+.home__body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  grid-template-columns: clamp(180px, 22%, 280px) minmax(0, 1fr) auto clamp(240px, 28%, 340px);
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'polist top5 top5 stats'
+    'polist notice notice notice'
+    'add add exports submit';
+}
+.home__pane-title {
+  margin: 0 0 var(--space-2);
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: var(--fs-action);
+  font-weight: var(--fw-title);
+  letter-spacing: var(--ls-title);
+  line-height: var(--lh-title);
+  text-transform: uppercase;
+}
+.home__polist {
+  grid-area: polist;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-3);
+}
+.home__pos {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  border-radius: var(--radius-md);
+}
+.home__po {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.home__addpo {
+  align-self: center;
+  width: 56px;
+  min-height: 56px;
+  margin-top: var(--space-3);
+  padding: 0;
+  border-radius: var(--radius-full);
+}
+.home__addpo .m100-ico {
+  width: 30px;
+  height: 30px;
+}
+.home__top5 {
+  grid-area: top5;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.home__t5 {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.home__t5 > :last-child .m100-t5 {
+  border-bottom: 0;
+}
+.home__empty {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  text-align: center;
+  color: var(--ink-3);
+}
+.home__empty b {
+  font-family: var(--font-display);
+  font-size: var(--fs-action);
+  letter-spacing: var(--ls-action);
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.home__stats {
+  grid-area: stats;
+  min-height: 0;
+  overflow-y: auto;
+}
+.home__results > :last-child {
+  border-bottom: 0;
+}
+.home__results--off .m100-stat > b {
+  color: var(--ink-3);
+}
+.home__notice {
+  grid-area: notice;
+}
+.home__add {
+  grid-area: add;
+}
+.home__exports {
+  grid-area: exports;
+  display: flex;
+  gap: var(--space-3);
+}
+.home__submit {
+  grid-area: submit;
+}
+
+/* ---- Dialogs on Home: S4 Add PO, S5 Partial, remove PO ---- */
+.dialog__text {
+  margin: 0;
+}
+.dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.addpo.m100-dialog,
+.partial-dialog.m100-dialog {
+  width: min(640px, 100%);
+}
+.addpo__panel {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.addpo__search {
+  min-height: var(--control-h);
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--fs-field);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+}
+/* Chrome's own clear button is far below 44 px (G2); HAPUS-style clearing is not needed for a search. */
+.addpo__search::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.addpo__search:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+.addpo__hint {
+  margin: 0;
+  padding: var(--space-2);
+  color: var(--ink-3);
+}
+.addpo__results {
+  max-height: 320px;
+  overflow-y: auto;
+}
+.addpo__po {
+  font-family: var(--font-mono);
+  font-size: var(--fs-po);
+  font-weight: var(--fw-po);
+}
+.addpo__details {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-4);
+}
+.addpo__detail {
+  min-width: 0;
+}
+.addpo__detail dt {
+  font-family: var(--font-display);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.addpo__detail dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.addpo__detail dd.addpo__empty {
+  color: var(--ink-3);
+}
+.partial__inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
 /* ---- S9 Settings ---- */
 .settings__account {
   display: flex;
@@ -296,6 +504,77 @@
     order: 3;
     padding: var(--space-2) var(--space-3) var(--space-2) 0;
   }
+  /* PO strip, exports, results, Top 5; ADD DEFECT and SUBMIT PO stay at the screen edge. */
+  .home {
+    height: auto;
+  }
+  .home__body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    /* Top 5 takes the spare height, so ADD DEFECT and SUBMIT PO sit at the bottom edge. */
+    grid-template-rows: auto auto auto 1fr auto auto;
+    grid-template-areas:
+      'polist polist'
+      'exports exports'
+      'stats stats'
+      'top5 top5'
+      'notice notice'
+      'add submit';
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  }
+  .home__polist {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+  .home__polist .home__pane-title {
+    display: none;
+  }
+  .home__pos {
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .home__po {
+    flex: 0 0 auto;
+    min-width: 180px;
+  }
+  .home__po .m100-po {
+    height: 100%;
+    border-bottom: 0;
+    border-right: 1px solid var(--line);
+  }
+  .home__addpo {
+    flex: none;
+    margin-top: 0;
+  }
+  .home__exports > .m100-btn {
+    flex: 1;
+  }
+  .home__results {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--space-4);
+  }
+  .home__results > :last-child {
+    border-bottom: 1px solid var(--line);
+  }
+  .home__t5 {
+    overflow: visible;
+  }
+  .home__add,
+  .home__submit {
+    position: sticky;
+    bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    z-index: 1;
+    box-shadow: 0 0 0 var(--space-3) var(--bg);
+  }
+  .partial__inputs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .addpo__details {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ---- Compact: short landscape ---- */
@@ -306,5 +585,28 @@
   }
   .login__title {
     font-size: min(var(--fs-brand), 6vw);
+  }
+  .home__body {
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+  .home__polist,
+  .m100-pane.home__top5,
+  .m100-pane.home__stats {
+    padding: var(--space-2);
+  }
+  .home__pane-title {
+    font-size: var(--fs-label);
+    margin-bottom: var(--space-1);
+  }
+  .home__addpo {
+    margin-top: var(--space-2);
+  }
+  .home__body .m100-stat {
+    min-height: 0;
+    padding: 2px 0;
+  }
+  .home__body .m100-stat > b {
+    font-size: 21px;
   }
 }

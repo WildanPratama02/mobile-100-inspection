@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { DataSourcesContext, useDataSources } from './app/dataSources';
 import './app/app.css';
+import { ToastProvider } from './app/toast';
 import type { DataSources } from './data/sources';
 import { HomeScreen } from './screens/HomeScreen';
 import { LoginScreen } from './screens/LoginScreen';
@@ -24,7 +25,9 @@ export function App({ store, sources }: AppProps) {
   return (
     <DataSourcesContext.Provider value={sources ?? fixtures}>
       <AppStoreContext.Provider value={store ?? getAppStore()}>
-        <Screens />
+        <ToastProvider>
+          <Screens />
+        </ToastProvider>
       </AppStoreContext.Provider>
     </DataSourcesContext.Provider>
   );
