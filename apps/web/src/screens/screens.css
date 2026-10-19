@@ -322,6 +322,9 @@
 .home__t5 > :last-child .m100-t5 {
   border-bottom: 0;
 }
+.home__photo-notice {
+  margin-top: var(--space-2);
+}
 .home__empty {
   flex: 1;
   display: grid;
@@ -372,6 +375,23 @@
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+/* ---- S7b photo view ---- */
+.photo-view__defect {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 500;
+}
+.photo-view__img {
+  display: block;
+  width: 100%;
+  max-height: 56vh;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
 }
 .addpo.m100-dialog,
 .partial-dialog.m100-dialog {

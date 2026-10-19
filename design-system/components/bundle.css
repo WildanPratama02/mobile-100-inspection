@@ -73,6 +73,7 @@
 .m100-t5 .m100-t5__no{color:var(--ink-3);font-size:13px;align-self:start;padding-top:12px;font-family:var(--font-body)}
 .m100-t5 .m100-t5__nm{font-family:var(--font-body);font-size:14.5px;font-weight:500;line-height:1.22;overflow-wrap:anywhere}
 .m100-t5 .m100-t5__nm small{display:flex;flex-wrap:wrap;gap:6px;align-items:center;color:var(--ink-3);font-size:12px;margin-top:4px;font-weight:400}
+.m100-t5 .m100-t5__flag{color:var(--danger);font-style:normal;font-weight:600}
 .m100-t5 .m100-t5__q{font-family:var(--font-display);font-weight:700;font-size:30px;text-align:center;align-self:stretch;display:grid;place-items:center;border-left:1px solid var(--line);border-right:1px solid var(--line);font-variant-numeric:tabular-nums}
 .m100-photo{display:flex;align-items:center;justify-content:center;gap:6px;min-width:88px;min-height:46px;border:1px solid var(--line-strong);border-radius:var(--radius-md);background:var(--surface);color:var(--ink);font-family:var(--font-display);font-weight:600;letter-spacing:.06em;font-size:15px;text-transform:uppercase;cursor:pointer;padding:0 10px}
 .m100-photo--required{border-style:dashed;border-width:1.5px;border-color:var(--danger);color:var(--danger)}

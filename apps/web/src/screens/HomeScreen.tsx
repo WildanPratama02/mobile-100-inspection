@@ -3,25 +3,34 @@
  * and the bottom row. Everything shown is derived from the selected PO's open session with `@m100/shared`
  * (FR-04, FR-05); nothing here counts by itself.
  *
- * Wired later: the Top 5 photo control (T1.5), EXPORT PDF / EXCEL (T1.6), SUBMIT PO (T1.7).
+ * For PSI lv.2 the Top 5 rows carry the photo control (FR-10, doc 05 §8.3, §12); PSI lv.1 gets none.
+ *
+ * Wired later: EXPORT PDF / EXCEL (T1.6), SUBMIT PO (T1.7).
  */
-import { useRef, useState } from 'react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import {
   EMPTY_SESSION,
   formatCount,
   formatPartial,
   formatRate,
+  missingPhotos,
+  takesPhotos,
   top5,
   totals,
   type AreaId,
   type Classification,
+  type DefectId,
   type MappingIndex,
+  type RankedDefect,
 } from '@m100/shared';
 import { Logo } from '../app/Logo';
 import { useMapping } from '../app/mapping';
 import { Overlay } from '../app/Overlay';
+import { useToast } from '../app/toastContext';
 import { useOnline } from '../app/useOnline';
-import type { Auth, PoRow } from '../db/schema';
+import type { Auth, PhotoRow, PoRow } from '../db/schema';
+import { toJpeg } from '../photos/resize';
+import { usePhotoUrl } from '../photos/usePhotoUrl';
 import { hasOpenData, selectedPo, useAppStore, type PoSession } from '../state/store';
 import {
   Button,
@@ -39,6 +48,7 @@ import {
 import { AddPoDialog } from './AddPoDialog';
 import { NO_PATH } from './drilldown';
 import { PartialDialog } from './PartialDialog';
+import { PhotoViewDialog } from './PhotoViewDialog';
 import { SettingsDialog } from './SettingsDialog';
 import './screens.css';
 
@@ -50,7 +60,11 @@ export const LONG_PRESS_MS = 600;
 
 /** One dialog at a time (doc 05 §2). */
 type Open =
-  { kind: 'menu' } | { kind: 'add' } | { kind: 'partial' } | { kind: 'remove'; po: string };
+  | { kind: 'menu' }
+  | { kind: 'add' }
+  | { kind: 'partial' }
+  | { kind: 'remove'; po: string }
+  | { kind: 'photo'; defectId: DefectId };
 
 export interface HomeScreenProps {
   auth: Auth;
@@ -64,11 +78,46 @@ export function HomeScreen({ auth }: HomeScreenProps) {
   const po = useAppStore(selectedPo);
   const setView = useAppStore((s) => s.setView);
   const removePo = useAppStore((s) => s.removePo);
+  const savePhoto = useAppStore((s) => s.savePhoto);
+  const removePhoto = useAppStore((s) => s.removePhoto);
+  const toast = useToast();
   const [open, setOpen] = useState<Open | null>(null);
   const close = () => setOpen(null);
 
   const session = po ? sessions[po.po] : undefined;
   const active = session?.state.active ?? null;
+
+  // S7a (doc 05 §12.1): the system camera through a file input; the defect it is for waits here.
+  const photos = takesPhotos(auth.level);
+  const camera = useRef<HTMLInputElement>(null);
+  const shooting = useRef<{ po: string; defectId: DefectId } | null>(null);
+
+  const takePhoto = (defectId: DefectId) => {
+    if (!po) return;
+    shooting.current = { po: po.po, defectId };
+    camera.current?.click();
+  };
+
+  const onPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    // Cleared so the same file can be picked again; a cancelled camera changes nothing.
+    input.value = '';
+    const target = shooting.current;
+    shooting.current = null;
+    if (!file || !target) return;
+    try {
+      await savePhoto(target.po, target.defectId, await toJpeg(file));
+      setOpen((current) => (current?.kind === 'photo' ? null : current));
+      toast('Foto tersimpan');
+    } catch (error) {
+      console.error(error);
+      toast('Foto gagal disimpan. Coba lagi.', 'error');
+    }
+  };
+
+  const viewed = open?.kind === 'photo' ? session?.photos[open.defectId] : undefined;
+  const viewedDefect = viewed ? mapping.defect(viewed.defectId) : undefined;
 
   const info: Array<[label: string, value: string, mono?: boolean]> = [
     ['PO NUMBER', po?.po ?? '-', true],
@@ -145,7 +194,14 @@ export function HomeScreen({ auth }: HomeScreenProps) {
         </Pane>
 
         <Pane label="TOP 5 DEFECT" className="home__top5">
-          <Top5 po={po} session={session} mapping={mapping} />
+          <Top5
+            po={po}
+            session={session}
+            mapping={mapping}
+            photos={photos}
+            onTakePhoto={takePhoto}
+            onViewPhoto={(defectId) => setOpen({ kind: 'photo', defectId })}
+          />
         </Pane>
 
         <Pane label="Hasil" className="home__stats">
@@ -179,6 +235,36 @@ export function HomeScreen({ auth }: HomeScreenProps) {
         </Button>
       </div>
 
+      {photos ? (
+        <input
+          ref={camera}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          hidden
+          data-testid="camera"
+          onChange={(event) => void onPhoto(event)}
+        />
+      ) : null}
+
+      {viewed && viewedDefect && po ? (
+        <PhotoViewDialog
+          photo={viewed}
+          name={viewedDefect.name}
+          classification={CHIP_TONE[viewedDefect.classification]}
+          onReplace={() => takePhoto(viewed.defectId)}
+          onRemove={() => {
+            close();
+            removePhoto(po.po, viewed.defectId)
+              .then(() => toast('Foto dihapus'))
+              .catch((error: unknown) => {
+                console.error(error);
+                toast('Foto gagal dihapus. Coba lagi.', 'error');
+              });
+          }}
+          onClose={close}
+        />
+      ) : null}
       {open?.kind === 'menu' ? <SettingsDialog auth={auth} onClose={close} /> : null}
       {open?.kind === 'add' ? <AddPoDialog onClose={close} /> : null}
       {open?.kind === 'partial' && po ? <PartialDialog po={po} onClose={close} /> : null}
@@ -280,9 +366,24 @@ interface PanelProps {
   session: PoSession | undefined;
 }
 
-/** TOP 5 DEFECT (FR-05, doc 05 §8.3): order and ties come from `top5` (AC-05.1). */
-function Top5({ po, session, mapping }: PanelProps & { mapping: MappingIndex }) {
+interface Top5Props extends PanelProps {
+  mapping: MappingIndex;
+  /** PSI lv.2 (AC-10.6). */
+  photos: boolean;
+  onTakePhoto: (defectId: DefectId) => void;
+  onViewPhoto: (defectId: DefectId) => void;
+}
+
+/**
+ * TOP 5 DEFECT (FR-05, doc 05 §8.3): order and ties come from `top5` (AC-05.1). For PSI lv.2 each row has
+ * its photo control, and a Notice counts the missing photos (AC-10.3, BR-04).
+ */
+function Top5({ po, session, mapping, photos, onTakePhoto, onViewPhoto }: Top5Props) {
   const rows = session ? top5(session.state, mapping) : [];
+  const attached = session?.photos ?? {};
+  const missing = photos
+    ? missingPhotos(rows, new Set(Object.keys(attached) as DefectId[])).length
+    : 0;
   return (
     <>
       <h2 className="home__pane-title">TOP 5 DEFECT</h2>
@@ -294,18 +395,57 @@ function Top5({ po, session, mapping }: PanelProps & { mapping: MappingIndex }) 
         <div className="home__t5" role="list">
           {rows.map((row, i) => (
             <div key={row.defectId} role="listitem">
-              <Top5Row
+              <Top5Item
                 no={i + 1}
-                name={mapping.defect(row.defectId)?.name ?? row.defectId}
-                classification={CHIP_TONE[row.classification]}
-                areas={areaLabels(row.areaIds, mapping)}
-                qty={row.qty}
+                row={row}
+                mapping={mapping}
+                photos={photos}
+                photo={attached[row.defectId]}
+                onTakePhoto={() => onTakePhoto(row.defectId)}
+                onViewPhoto={() => onViewPhoto(row.defectId)}
               />
             </div>
           ))}
         </div>
       )}
+      {missing > 0 ? (
+        <Notice tone="warning" title={`${missing} foto belum ada.`} className="home__photo-notice">
+          PSI lv.2 wajib melampirkan foto pada setiap Top 5 Defect sebelum SUBMIT PO.
+        </Notice>
+      ) : null}
     </>
+  );
+}
+
+interface Top5ItemProps {
+  no: number;
+  row: RankedDefect;
+  mapping: MappingIndex;
+  photos: boolean;
+  photo: PhotoRow | undefined;
+  onTakePhoto: () => void;
+  onViewPhoto: () => void;
+}
+
+function Top5Item({ no, row, mapping, photos, photo, onTakePhoto, onViewPhoto }: Top5ItemProps) {
+  const src = usePhotoUrl(photo?.blob);
+  const name = mapping.defect(row.defectId)?.name ?? row.defectId;
+  return (
+    <Top5Row
+      no={no}
+      name={name}
+      classification={CHIP_TONE[row.classification]}
+      areas={areaLabels(row.areaIds, mapping)}
+      qty={row.qty}
+      photo={
+        !photos
+          ? undefined
+          : photo
+            ? { state: 'attached', src, label: `Lihat foto ${name}`, onClick: onViewPhoto }
+            : { state: 'required', onClick: onTakePhoto }
+      }
+      flag={photos && !photo ? 'Foto wajib' : undefined}
+    />
   );
 }
 

@@ -6,3 +6,4 @@ export * from './mapping';
 export * from './counting';
 export * from './format';
 export * from './masterData';
+export * from './photos';

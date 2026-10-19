@@ -410,6 +410,7 @@ export function UiKitPage() {
               areas="Midsole, Toe Box"
               qty={6}
               photo={{ state: 'required' }}
+              flag="Foto wajib"
             />
             <Top5Row no={3} name={D039} classification={1} areas="Quarter" qty={3} photo={{}} />
           </List>

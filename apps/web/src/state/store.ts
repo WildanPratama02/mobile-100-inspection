@@ -17,8 +17,10 @@ import {
   recordDefect,
   replay,
   startInspection,
+  takesPhotos,
   undo,
   type AreaMapEntry,
+  type DefectId,
   type InspectionType,
   type Po,
   type PoPartial,
@@ -29,7 +31,14 @@ import {
 } from '@m100/shared';
 import type { LoginData, MasterDataSource } from '../data/sources';
 import * as repo from '../db/repo';
-import { createDb, type Auth, type M100Db, type PoRow, type View } from '../db/schema';
+import {
+  createDb,
+  type Auth,
+  type M100Db,
+  type PhotoRow,
+  type PoRow,
+  type View,
+} from '../db/schema';
 
 /** A tap on Home or the Defect screen (FR-06, FR-07, FR-08). */
 export type TapCommand =
@@ -45,11 +54,19 @@ export interface TapResult {
   after: SessionState;
 }
 
-/** The open session of one PO with its stored events and their reduction. */
+/** A photo as the camera step hands it over: a resized JPEG and its SHA-256 (doc 03 §4.5). */
+export type Jpeg = Pick<PhotoRow, 'blob' | 'sha256'>;
+
+/** The open session of one PO with its stored events, their reduction and its photos. */
 export interface PoSession {
   session: Session;
   events: readonly SessionEvent[];
   state: SessionState;
+  /**
+   * One photo per defect (AC-10.5), PSI lv.2 only. A photo stays when its defect leaves the Top 5 (AC-10.4)
+   * or is undone; Home shows only those of Top 5 rows.
+   */
+  photos: Readonly<Partial<Record<DefectId, PhotoRow>>>;
 }
 
 export interface AppState {
@@ -76,6 +93,10 @@ export interface AppState {
   removePo: (po: string) => Promise<void>;
   /** `null` when the tap is not allowed now (nothing is written). */
   tap: (po: string, command: TapCommand) => Promise<TapResult | null>;
+  /** Attaches a photo to a recorded defect, replacing an earlier one (FR-10, AC-10.5). Never for PSI lv.1. */
+  savePhoto: (po: string, defectId: DefectId, jpeg: Jpeg) => Promise<void>;
+  /** HAPUS in the photo view (doc 05 §12.2). */
+  removePhoto: (po: string, defectId: DefectId) => Promise<void>;
   setView: (patch: Partial<View>) => Promise<void>;
 }
 
@@ -116,8 +137,16 @@ async function loadUserData(db: M100Db, auth: Auth | null): Promise<UserData> {
   ]);
   const sessions: Record<string, PoSession> = {};
   for (const session of open) {
-    const events = await repo.listEvents(db, username, session.id);
-    sessions[session.po] = { session, events, state: replay(events) };
+    const [events, photos] = await Promise.all([
+      repo.listEvents(db, username, session.id),
+      repo.listPhotos(db, session.id),
+    ]);
+    sessions[session.po] = {
+      session,
+      events,
+      state: replay(events),
+      photos: Object.fromEntries(photos.map((p) => [p.defectId, p])),
+    };
   }
   const restored = view ?? DEFAULT_VIEW;
   // A selection always names a listed PO (doc 05 §8.4).
@@ -135,10 +164,27 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
   }
 
   return createStore<AppState>()((set, get) => {
-    function requireUser(): string {
+    function requireAuth(): Auth {
       const auth = get().auth;
       if (!auth) throw new Error('Not logged in');
-      return auth.username;
+      return auth;
+    }
+
+    function requireUser(): string {
+      return requireAuth().username;
+    }
+
+    function setPhotos(
+      po: string,
+      change: (photos: PoSession['photos']) => PoSession['photos'],
+    ): void {
+      set((s) => {
+        const current = s.sessions[po];
+        if (!current) return {};
+        return {
+          sessions: { ...s.sessions, [po]: { ...current, photos: change(current.photos) } },
+        };
+      });
     }
 
     function requireSession(po: string): PoSession {
@@ -207,7 +253,7 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
             pos: [added.po, ...s.pos],
             sessions: {
               ...s.sessions,
-              [po.po]: { session: added.session, events: [], state: EMPTY_SESSION },
+              [po.po]: { session: added.session, events: [], state: EMPTY_SESSION, photos: {} },
             },
             view,
           }));
@@ -257,6 +303,32 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
           return { before: state, after };
         }),
 
+      savePhoto: (po, defectId, jpeg) =>
+        serial(async () => {
+          const { username, level } = requireAuth();
+          // AC-10.6: PSI lv.1 never stores a photo, whatever the screen offers.
+          if (!takesPhotos(level)) throw new Error(`${level} does not take photos`);
+          const { session, state } = requireSession(po);
+          if (!state.recorded.some((d) => d.defectId === defectId)) {
+            throw new Error(`${defectId} is not recorded on PO ${po}`);
+          }
+          const photo: PhotoRow = { sessionId: session.id, defectId, ...jpeg, takenAt: now() };
+          await repo.putPhoto(db, username, photo);
+          setPhotos(po, (photos) => ({ ...photos, [defectId]: photo }));
+        }),
+
+      removePhoto: (po, defectId) =>
+        serial(async () => {
+          const username = requireUser();
+          const { session } = requireSession(po);
+          await repo.deletePhoto(db, username, session.id, defectId);
+          setPhotos(po, (photos) => {
+            const rest = { ...photos };
+            delete rest[defectId];
+            return rest;
+          });
+        }),
+
       setView: (patch) =>
         serial(async () => {
           const username = requireUser();
@@ -270,7 +342,7 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
 
 /**
  * Whether a PO's open session holds recorded taps. Such a PO can't be removed (`repo.removePo`, AC-03.4) and
- * LOGOUT warns about it (AC-02.2). A photo always belongs to a recorded defect, so it needs no check here.
+ * LOGOUT warns about it (AC-02.2). A photo is only taken of a recorded defect, so it needs no check here.
  */
 export function hasOpenData(session: PoSession | undefined): boolean {
   return (session?.events.length ?? 0) > 0;

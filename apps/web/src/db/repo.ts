@@ -167,6 +167,14 @@ export class SessionNotOpenError extends Error {
   }
 }
 
+/** Taps and photos go only into the PSI's own open session: a sealed session never changes (doc 03 §4.6). */
+async function requireOpenSession(db: M100Db, username: string, sessionId: string): Promise<void> {
+  const session = await db.sessions.get(sessionId);
+  if (session?.username !== username || session.status !== 'open') {
+    throw new SessionNotOpenError(sessionId);
+  }
+}
+
 /**
  * One tap = one write of one event, numbered after the last one of its session (doc 03 §4.2). Only into
  * the PSI's own open session: a sealed session never changes again (doc 03 §4.6).
@@ -179,10 +187,7 @@ export function appendEvent(
   at: string,
 ): Promise<EventRow> {
   return db.transaction('rw', db.sessions, db.events, async () => {
-    const session = await db.sessions.get(sessionId);
-    if (session?.username !== username || session.status !== 'open') {
-      throw new SessionNotOpenError(sessionId);
-    }
+    await requireOpenSession(db, username, sessionId);
     const last = await eventsOf(db, sessionId).last();
     const event: EventRow = { ...payload, sessionId, seq: (last?.seq ?? 0) + 1, at, username };
     await db.events.add(event);
@@ -192,9 +197,28 @@ export function appendEvent(
 
 // ---- Photos (FR-10, PSI lv.2 only) ----
 
-/** One photo per defect: a new photo replaces the old one (GANTI FOTO, AC-10.5). */
-export async function putPhoto(db: M100Db, photo: PhotoRow): Promise<void> {
-  await db.photos.put(photo);
+/**
+ * One photo per defect: a new photo replaces the old one (GANTI FOTO, AC-10.5). Only into the PSI's own open
+ * session, like a tap.
+ */
+export function putPhoto(db: M100Db, username: string, photo: PhotoRow): Promise<void> {
+  return db.transaction('rw', db.sessions, db.photos, async () => {
+    await requireOpenSession(db, username, photo.sessionId);
+    await db.photos.put(photo);
+  });
+}
+
+/** HAPUS in the photo view (doc 05 §12.2). */
+export function deletePhoto(
+  db: M100Db,
+  username: string,
+  sessionId: string,
+  defectId: DefectId,
+): Promise<void> {
+  return db.transaction('rw', db.sessions, db.photos, async () => {
+    await requireOpenSession(db, username, sessionId);
+    await db.photos.delete([sessionId, defectId]);
+  });
 }
 
 export function getPhoto(

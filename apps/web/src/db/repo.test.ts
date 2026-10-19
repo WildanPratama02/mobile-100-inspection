@@ -130,7 +130,7 @@ describe('user scoping (AC-02.3)', () => {
     await repo.saveAuth(db, A);
     const { session } = await repo.addPo(db, A.username, po('0903359388'), null, AT);
     await repo.appendEvent(db, A.username, session.id, { type: 'NO_DEFECT' }, AT);
-    await repo.putPhoto(db, photo(session.id, 'aa'));
+    await repo.putPhoto(db, A.username, photo(session.id, 'aa'));
 
     await repo.clearAuth(db);
 
@@ -184,7 +184,7 @@ describe('PO list', () => {
 
   it('refuses to remove a PO whose session has a photo', async () => {
     const { session } = await repo.addPo(db, A.username, po('0903359388'), null, AT);
-    await repo.putPhoto(db, photo(session.id, 'aa'));
+    await repo.putPhoto(db, A.username, photo(session.id, 'aa'));
     await expect(repo.removePo(db, A.username, '0903359388')).rejects.toThrow(repo.PoHasDataError);
   });
 });
@@ -192,10 +192,35 @@ describe('PO list', () => {
 describe('photos', () => {
   it('keeps one photo per defect of a session (AC-10.5)', async () => {
     const s = await repo.openSession(db, A.username, '0903359388', AT);
-    await repo.putPhoto(db, photo(s.id, 'first'));
-    await repo.putPhoto(db, photo(s.id, 'second'));
+    await repo.putPhoto(db, A.username, photo(s.id, 'first'));
+    await repo.putPhoto(db, A.username, photo(s.id, 'second'));
     expect((await repo.listPhotos(db, s.id)).map((p) => p.sha256)).toEqual(['second']);
     expect((await repo.getPhoto(db, s.id, 'D001'))?.sha256).toBe('second');
+  });
+
+  it('removes a photo (HAPUS)', async () => {
+    const s = await repo.openSession(db, A.username, '0903359388', AT);
+    await repo.putPhoto(db, A.username, photo(s.id, 'aa'));
+    await repo.deletePhoto(db, A.username, s.id, 'D001');
+    expect(await repo.listPhotos(db, s.id)).toEqual([]);
+  });
+
+  it('writes and removes photos only in the PSI’s own open session', async () => {
+    const own = await repo.openSession(db, A.username, '0903359388', AT);
+    const closed = await repo.openSession(db, A.username, 'CX-0902368685', AT);
+    await repo.putPhoto(db, A.username, photo(closed.id, 'kept'));
+    await db.sessions.update(closed.id, { status: 'closed' });
+
+    await expect(repo.putPhoto(db, 'psi.uji.dua', photo(own.id, 'aa'))).rejects.toThrow(
+      repo.SessionNotOpenError,
+    );
+    await expect(repo.putPhoto(db, A.username, photo(closed.id, 'bb'))).rejects.toThrow(
+      repo.SessionNotOpenError,
+    );
+    await expect(repo.deletePhoto(db, A.username, closed.id, 'D001')).rejects.toThrow(
+      repo.SessionNotOpenError,
+    );
+    expect((await db.photos.toArray()).map((p) => p.sha256)).toEqual(['kept']);
   });
 });
 

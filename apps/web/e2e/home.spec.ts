@@ -57,8 +57,9 @@ async function longPress(page: Page, po: string) {
 }
 
 /** Text fields on the page; the PO search box is the only one the app ever shows (doc 05 G1). */
+// Fields that bring up the device keyboard; the hidden camera input (PSI lv.2, FR-10) does not.
 const textFields = (page: Page) =>
-  page.locator('input, textarea, select, [contenteditable="true"]');
+  page.locator('input:not([type="file"]), textarea, select, [contenteditable="true"]');
 
 test('adds a PO with PO PARTIAL, keeps it over a reload, changes and removes it (FR-03)', async ({
   page,

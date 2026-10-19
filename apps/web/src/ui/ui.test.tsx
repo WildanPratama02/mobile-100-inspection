@@ -216,6 +216,13 @@ describe('Top5Row', () => {
     );
     expect(screen.getByRole('button', { name: 'Foto wajib' })).toBeInTheDocument();
   });
+
+  it('shows a flag beside the areas', () => {
+    const { container } = render(
+      <Top5Row no={1} name="X" classification="minor" qty={2} flag="Foto wajib" />,
+    );
+    expect(container.querySelector('.m100-t5__flag')).toHaveTextContent('Foto wajib');
+  });
 });
 
 describe('PhotoButton', () => {

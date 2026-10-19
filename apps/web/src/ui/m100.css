@@ -517,6 +517,11 @@
   margin-top: 4px;
   font-weight: 400;
 }
+.m100-t5 .m100-t5__flag {
+  color: var(--danger);
+  font-style: normal;
+  font-weight: 600;
+}
 .m100-t5 .m100-t5__q {
   font-family: var(--font-display);
   font-weight: 700;

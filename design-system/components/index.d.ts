@@ -16,7 +16,7 @@ export interface OutboxItemProps { po: string; time?: string; status: 'waiting' 
 export interface POListItemProps { po: string; sub?: string; count?: number; live?: string; selected?: boolean; onClick?: () => void; className?: string }
 export interface StatRowProps { label: string; value?: string | number | null; unit?: string; tone?: 'bad' | 'good'; className?: string }
 export interface PhotoButtonProps { state?: 'add' | 'required' | 'attached'; src?: string; label?: string; onClick?: () => void; className?: string }
-export interface Top5RowProps { no: number; name: string; classification: Classification; areas?: string; qty: number; photo?: PhotoButtonProps | null; className?: string }
+export interface Top5RowProps { no: number; name: string; classification: Classification; areas?: string; qty: number; photo?: PhotoButtonProps | null; flag?: string; className?: string }
 export interface OptionRowProps { kind?: 'nav' | 'defect'; title: string; sub?: string; count?: number; classification?: Classification; qty?: number; flash?: boolean; disabled?: boolean; onClick?: () => void; className?: string }
 export interface BreadcrumbProps { items: Array<string | { label: string; onClick?: () => void }>; className?: string }
 export interface HistoryRowProps { head?: boolean; no?: number; name?: string; path?: string; classification?: Classification; qty?: number; flash?: boolean; className?: string }

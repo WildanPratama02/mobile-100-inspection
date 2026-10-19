@@ -1,10 +1,15 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { defaultMapping, type AreaMapEntry, type Classification, type Po } from '@m100/shared';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ToastProvider } from '../app/toast';
 import { ALL_PO_MASTER } from '../data/fixtures/pos';
 import { createDb, type Auth, type M100Db } from '../db/schema';
+import { toJpeg } from '../photos/resize';
 import { AppStoreContext, createAppStore, type AppStore, type TapCommand } from '../state/store';
 import { HomeScreen, LONG_PRESS_MS } from './HomeScreen';
+
+// jsdom has no canvas: the resize itself is covered by the Playwright test (e2e/photos.spec.ts).
+vi.mock('../photos/resize', () => ({ toJpeg: vi.fn() }));
 
 const AUTH: Auth = {
   username: 'DEWI CONTOH',
@@ -47,10 +52,12 @@ afterEach(async () => {
   await db.delete();
 });
 
-function renderHome() {
+function renderHome(auth: Auth = AUTH) {
   render(
     <AppStoreContext.Provider value={store}>
-      <HomeScreen auth={AUTH} />
+      <ToastProvider>
+        <HomeScreen auth={auth} />
+      </ToastProvider>
     </AppStoreContext.Provider>,
   );
 }
@@ -213,8 +220,8 @@ describe('TOP 5 DEFECT (FR-05)', () => {
     expect(row).toHaveTextContent('VAMP, TOE BOX');
     expect(row).toHaveTextContent('MAJOR');
     expect(row?.querySelector('.m100-t5__q')).toHaveTextContent('3');
-    // The photo control comes with T1.5.
-    expect(row?.querySelector('.m100-t5--nophoto')).not.toBeNull();
+    // PSI lv.2: the row carries its photo control (FR-10).
+    expect(within(row!).getByRole('button', { name: 'Foto wajib' })).toBeInTheDocument();
   });
 
   it('shows five defects at most', async () => {
@@ -312,5 +319,163 @@ describe('removing a PO by long press (AC-03.4)', () => {
     await longPress(/^0903359388/);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await waitFor(() => expect(infoValue('PO NUMBER')).toBe('0903359388'));
+  });
+});
+
+describe('photos (FR-10, doc 05 §12)', () => {
+  const LV1: Auth = { ...AUTH, username: 'ANDI CONTOH', level: 'PSI lv.1' };
+  const shot = (name = 'shot.jpg') => new File(['raw'], name, { type: 'image/jpeg' });
+  let hashes = 0;
+
+  beforeEach(() => {
+    hashes = 0;
+    vi.mocked(toJpeg).mockReset();
+    vi.mocked(toJpeg).mockImplementation(() =>
+      Promise.resolve({
+        blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
+        sha256: `hash-${++hashes}`,
+      }),
+    );
+  });
+
+  const rows = () =>
+    within(screen.getByRole('region', { name: 'TOP 5 DEFECT' })).getAllByRole('listitem');
+  const camera = () => screen.getByTestId<HTMLInputElement>('camera');
+  const stored = () => store.getState().sessions[PO.po]!.photos;
+
+  /** What the camera hands back: a file, or nothing when it is cancelled. Callers wait for the result. */
+  function returnFromCamera(...files: File[]) {
+    fireEvent.change(camera(), { target: { files } });
+  }
+
+  async function withDefects(...entries: AreaMapEntry[]) {
+    await store.getState().addPo(PO, null);
+    await store.getState().tap(PO.po, START_REWORK);
+    for (const e of entries) await store.getState().tap(PO.po, defect(e));
+  }
+
+  it('marks a Top 5 row without a photo and counts the missing photos (AC-10.3)', async () => {
+    const a = entry('MAJOR', 'A01');
+    const b = entry('MINOR', 'A01');
+    await withDefects(a, b);
+    renderHome();
+
+    for (const row of rows()) {
+      expect(within(row).getByRole('button', { name: 'Foto wajib' })).toBeInTheDocument();
+      expect(row.querySelector('.m100-t5__flag')).toHaveTextContent('Foto wajib');
+    }
+    expect(screen.getByText('2 foto belum ada.')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /PSI lv.2 wajib melampirkan foto pada setiap Top 5 Defect sebelum SUBMIT PO/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('opens the camera, stores the resized photo and shows its thumbnail (S7a, AC-10.1, AC-10.2)', async () => {
+    const a = entry('MAJOR', 'A01');
+    await withDefects(a);
+    renderHome();
+    const click = vi.spyOn(camera(), 'click');
+
+    fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' }));
+    expect(click).toHaveBeenCalledOnce();
+    expect(camera()).toHaveAttribute('accept', 'image/*');
+    expect(camera()).toHaveAttribute('capture', 'environment');
+    returnFromCamera(shot());
+
+    expect(await screen.findByText('Foto tersimpan')).toBeInTheDocument();
+    expect(toJpeg).toHaveBeenCalledOnce();
+    expect(stored()[a.defectId]?.sha256).toBe('hash-1');
+    const row = rows()[0]!;
+    expect(
+      within(row).getByRole('button', { name: `Lihat foto ${nameOf(a)}` }),
+    ).toBeInTheDocument();
+    expect(row.querySelector('img')?.getAttribute('src')).toMatch(/^blob:/);
+    expect(row.querySelector('.m100-t5__flag')).toBeNull();
+    expect(screen.queryByText(/foto belum ada/)).not.toBeInTheDocument();
+  });
+
+  it('changes nothing when the camera is cancelled', async () => {
+    await withDefects(entry('MAJOR', 'A01'));
+    renderHome();
+    fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' }));
+    returnFromCamera();
+    expect(toJpeg).not.toHaveBeenCalled();
+    expect(stored()).toEqual({});
+    expect(screen.queryByText('Foto tersimpan')).not.toBeInTheDocument();
+  });
+
+  it('says so when the photo cannot be processed, and keeps the row as it was', async () => {
+    vi.mocked(toJpeg).mockRejectedValueOnce(new Error('decode failed'));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await withDefects(entry('MAJOR', 'A01'));
+    renderHome();
+    fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' }));
+    returnFromCamera(shot());
+
+    expect(await screen.findByText('Foto gagal disimpan. Coba lagi.')).toBeInTheDocument();
+    expect(stored()).toEqual({});
+    expect(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' })).toBeInTheDocument();
+  });
+
+  it('shows the photo large; GANTI FOTO replaces it and HAPUS removes it (S7b, AC-10.5)', async () => {
+    const a = entry('CRITICAL', 'A01');
+    await withDefects(a);
+    renderHome();
+    fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' }));
+    returnFromCamera(shot());
+    await screen.findByText('Foto tersimpan');
+
+    fireEvent.click(screen.getByRole('button', { name: `Lihat foto ${nameOf(a)}` }));
+    const view = screen.getByRole('dialog', { name: 'Foto defect' });
+    expect(view).toHaveTextContent(nameOf(a));
+    expect(view).toHaveTextContent('CRITICAL');
+    expect(within(view).getByRole('img', { name: `Foto defect ${nameOf(a)}` })).toBeInTheDocument();
+
+    fireEvent.click(within(view).getByRole('button', { name: 'GANTI FOTO' }));
+    returnFromCamera(shot('second.jpg'));
+    await waitFor(() => expect(stored()[a.defectId]?.sha256).toBe('hash-2'));
+    expect(await db.photos.count()).toBe(1);
+    expect(screen.queryByRole('dialog', { name: 'Foto defect' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: `Lihat foto ${nameOf(a)}` }));
+    fireEvent.click(screen.getByRole('button', { name: 'HAPUS' }));
+    expect(await screen.findByText('Foto dihapus')).toBeInTheDocument();
+    expect(stored()).toEqual({});
+    expect(await db.photos.count()).toBe(0);
+    expect(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' })).toBeInTheDocument();
+  });
+
+  it('keeps the photo of a defect that leaves the Top 5, without showing it (AC-10.4)', async () => {
+    const seen: AreaMapEntry[] = [];
+    for (let i = 0; i < 6; i++) seen.push(entry('MINOR', 'A01', seen));
+    const [first, ...others] = seen as [AreaMapEntry, ...AreaMapEntry[]];
+    await withDefects(first);
+    renderHome();
+    fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' }));
+    returnFromCamera(shot());
+    await screen.findByText('Foto tersimpan');
+
+    // Five other defects, twice each, push the photographed one out of the Top 5.
+    for (const e of others) await tap(PO.po, defect(e), defect(e));
+
+    expect(top5Names()).not.toContain(nameOf(first));
+    expect(stored()[first.defectId]?.sha256).toBe('hash-1');
+    expect(screen.queryByRole('button', { name: /^Lihat foto/ })).not.toBeInTheDocument();
+    expect(screen.getByText('5 foto belum ada.')).toBeInTheDocument();
+  });
+
+  it('shows no photo column, no flag, no notice and no camera for PSI lv.1 (AC-10.6)', async () => {
+    await store.getState().logout();
+    await store.getState().login(LV1);
+    await withDefects(entry('MAJOR', 'A01'));
+    renderHome(LV1);
+
+    expect(rows()[0]!.querySelector('.m100-t5--nophoto')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /foto/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Foto wajib')).not.toBeInTheDocument();
+    expect(screen.queryByText(/foto belum ada/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('camera')).not.toBeInTheDocument();
   });
 });

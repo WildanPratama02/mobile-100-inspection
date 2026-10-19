@@ -95,7 +95,7 @@ function Top5Row(p){
   var hasPhoto = p.photo !== undefined && p.photo !== null;
   return h('div', {className:cx('m100-t5', !hasPhoto&&'m100-t5--nophoto', p.className)},
     h('div', {className:'m100-t5__no'}, p.no),
-    h('div', {className:'m100-t5__nm'}, p.name, h('small', null, h(Chip,{tone:p.classification}), p.areas)),
+    h('div', {className:'m100-t5__nm'}, p.name, h('small', null, h(Chip,{tone:p.classification}), p.areas, p.flag ? h('em', {className:'m100-t5__flag'}, p.flag) : null)),
     h('div', {className:'m100-t5__q'}, p.qty),
     hasPhoto ? h('div', null, h(PhotoButton, Object.assign({}, p.photo))) : null);
 }

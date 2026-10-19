@@ -341,3 +341,89 @@ describe('unsubmittedCount (AC-02.2)', () => {
     expect(unsubmittedCount(store.getState())).toBe(1);
   });
 });
+
+describe('photos (FR-10)', () => {
+  const jpeg = (sha256: string) => ({ blob: new Blob([sha256], { type: 'image/jpeg' }), sha256 });
+
+  async function withDefect(): Promise<AppStore> {
+    const store = await loggedInWithPo();
+    await store.getState().tap(PO.po, { type: 'START', inspection: 'REWORK' });
+    await store.getState().tap(PO.po, { type: 'DEFECT', entry: TOE });
+    return store;
+  }
+
+  it('stores a photo with the session and restores it after a reload (AC-10.2)', async () => {
+    const store = await withDefect();
+    await store.getState().savePhoto(PO.po, 'D001', jpeg('aa'));
+
+    const sessionId = store.getState().sessions[PO.po]!.session.id;
+    expect(store.getState().sessions[PO.po]!.photos.D001).toMatchObject({
+      sessionId,
+      defectId: 'D001',
+      sha256: 'aa',
+    });
+    const restored = (await reopen()).getState().sessions[PO.po]!.photos;
+    expect(Object.keys(restored)).toEqual(['D001']);
+    expect(restored.D001?.sha256).toBe('aa');
+  });
+
+  it('keeps one photo per defect: GANTI FOTO replaces it (AC-10.5)', async () => {
+    const store = await withDefect();
+    await store.getState().savePhoto(PO.po, 'D001', jpeg('first'));
+    await store.getState().savePhoto(PO.po, 'D001', jpeg('second'));
+    const sessionId = store.getState().sessions[PO.po]!.session.id;
+    expect((await repo.listPhotos(db, sessionId)).map((p) => p.sha256)).toEqual(['second']);
+    expect(store.getState().sessions[PO.po]!.photos.D001?.sha256).toBe('second');
+  });
+
+  it('removes a photo (HAPUS)', async () => {
+    const store = await withDefect();
+    await store.getState().savePhoto(PO.po, 'D001', jpeg('aa'));
+    await store.getState().removePhoto(PO.po, 'D001');
+    const sessionId = store.getState().sessions[PO.po]!.session.id;
+    expect(store.getState().sessions[PO.po]!.photos).toEqual({});
+    expect(await repo.listPhotos(db, sessionId)).toEqual([]);
+  });
+
+  it('keeps a photo when its defect is undone or outranked (AC-10.4)', async () => {
+    const store = await withDefect();
+    await store.getState().savePhoto(PO.po, 'D001', jpeg('aa'));
+    await store.getState().tap(PO.po, { type: 'DEFECT', entry: HEEL });
+    await store.getState().tap(PO.po, { type: 'UNDO' });
+    await store.getState().tap(PO.po, { type: 'UNDO' });
+    expect(store.getState().sessions[PO.po]!.photos.D001?.sha256).toBe('aa');
+  });
+
+  it('never stores a photo for PSI lv.1 (AC-10.6)', async () => {
+    const store = createAppStore(db, now);
+    await store.getState().hydrate();
+    await store.getState().login(B);
+    await store.getState().addPo(PO, null);
+    await store.getState().tap(PO.po, { type: 'START', inspection: 'REWORK' });
+    await store.getState().tap(PO.po, { type: 'DEFECT', entry: TOE });
+
+    await expect(store.getState().savePhoto(PO.po, 'D001', jpeg('aa'))).rejects.toThrow(
+      'PSI lv.1 does not take photos',
+    );
+    expect(await db.photos.count()).toBe(0);
+    expect(store.getState().sessions[PO.po]!.photos).toEqual({});
+  });
+
+  it('refuses a photo of a defect that is not recorded', async () => {
+    const store = await withDefect();
+    await expect(store.getState().savePhoto(PO.po, 'D049', jpeg('aa'))).rejects.toThrow(
+      'D049 is not recorded',
+    );
+    expect(await db.photos.count()).toBe(0);
+  });
+
+  it('leaves the state unchanged when the write fails (NFR-05)', async () => {
+    const store = await withDefect();
+    const before = store.getState().sessions;
+    vi.spyOn(db.photos, 'put').mockRejectedValueOnce(new Error('QuotaExceededError'));
+    await expect(store.getState().savePhoto(PO.po, 'D001', jpeg('aa'))).rejects.toThrow(
+      'QuotaExceededError',
+    );
+    expect(store.getState().sessions).toBe(before);
+  });
+});
