@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Version | 0.5 — NFR-06/07 aligned with doc 02 §8 (append + one batch); doc 03 written |
-| Date | 16 Oct 2026 |
+| Version | 0.6 — OQ-07 answered: NO DEFECT records the pair at once |
+| Date | 19 Oct 2026 |
 | Owner | QIP Digital Team, PT Parkland World Indonesia |
 | Related | [00 Document Map](00-document-map.md), [07 Decision Log](07-decision-log.md), clickable prototype "Mobile 100% Inspection" v3 |
 
@@ -161,7 +161,7 @@ The defect screen has REWORK, B-GRADE and NO DEFECT buttons above the shoe diagr
 
 1. With no active inspection, the shoe areas, sub-areas, families and defects are disabled and visibly dimmed. The right panel says to choose REWORK, B-GRADE or NO DEFECT.
 2. **REWORK** or **B-GRADE** starts an inspection (BR-01) and enables defect input. The chosen button is highlighted, the other two are disabled, and the panel shows the inspection type.
-3. **NO DEFECT** records an A-Grade pair (BR-01) and completes it at once. Defect input stays disabled. (Prototype behavior; confirm, OQ-07.)
+3. **NO DEFECT** records an A-Grade pair (BR-01) and completes it at once. Defect input stays disabled; no END INSPECTION is needed (decided 19 Oct 2026, OQ-07).
 4. **END INSPECTION** ends the active inspection and disables defect input again. It is disabled when no inspection is active.
 
 - AC-06.1 Defects can be recorded only while a REWORK or B-GRADE inspection is active.
@@ -298,7 +298,7 @@ Detailed column mapping is in doc 02 (Data Design). In short, per Submit PO:
 | ~~OQ-04~~ | **Answered 16 Oct 2026:** most likely Xiaomi Redmi Pad 2; a tablet can be shared by several PSI. Number of tablets: more than 30, on Wi-Fi with internet access (16 Oct 2026). | — |
 | OQ-05 | Once Mobile 100% Inspection is live, do PSI stop entering the same results in the AppSheet app? Otherwise the same check round could appear twice. | Rollout |
 | OQ-06 | Which POs should Add PO offer: all of `ALL_PO_MASTER`, or only those not finished (`FINISH PRODUCTION` empty or `Balance Prod` > 0)? | Doc 02, 04 |
-| OQ-07 | NO DEFECT records the pair immediately, without END INSPECTION (prototype behavior). Confirm. Doc 05 assumes yes (U1). | Doc 05 |
+| ~~OQ-07~~ | **Answered 19 Oct 2026:** NO DEFECT records the pair immediately, without END INSPECTION, and UNDO right after it cancels it (FR-06.3, FR-08; doc 05 U1). | — |
 | OQ-08 | Should Home also show what was already submitted today for the selected PO, next to the current session? Doc 05 assumes no (U2). | Doc 05 |
 | OQ-09 | Who updates `M100_AREA_MAP` when `DEFECT_LIST` changes, and how is the change announced? | Doc 02 |
 | OQ-10 | The product is named "for CFA", and `USER_LIST` has CFA users. Release 1 serves PSI only. Is a CFA flow planned later? | Roadmap |

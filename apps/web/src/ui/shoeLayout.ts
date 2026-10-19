@@ -49,3 +49,60 @@ export const SHOE_AREAS: ShoeMapArea[] = [
   },
   { id: 'A03', lines: ['QUARTER'], anchor: [728, 988], dock: [400, 650], side: 'bottom' },
 ];
+
+/**
+ * Docks for a short map (doc 05 U13): the same pills, lines and anchors, spread over the whole height so 44 px pills
+ * stay apart down to a map about 226 px tall. Side pills sit far enough in to keep inside a 383 px wide map, and the
+ * leader lines do not cross.
+ */
+const COMPACT_DOCKS: Readonly<Record<string, [number, number]>> = {
+  A06: [225, 70],
+  A08: [225, 210],
+  A05: [225, 350],
+  A04: [225, 495],
+  A11: [225, 650],
+  A07: [560, 150],
+  A02: [775, 70],
+  A01: [775, 215],
+  A09: [775, 360],
+  A10: [775, 505],
+  A12: [775, 650],
+  A03: [400, 572],
+};
+
+export const SHOE_AREAS_COMPACT: ShoeMapArea[] = SHOE_AREAS.map((area) => ({
+  ...area,
+  dock: COMPACT_DOCKS[area.id] ?? area.dock,
+}));
+
+/** Height of the map box the docks are placed in. */
+const MAP_H = 720;
+/** The gap the pill CSS leaves between a top or bottom pill and its dock. */
+const PILL_GAP = 2;
+
+/**
+ * The smallest map height in CSS px at which pills `tap` px tall neither overlap their neighbours on the same side
+ * nor reach past the top or bottom of the map (doc 05 G2).
+ */
+export function minMapHeight(layout: readonly ShoeMapArea[], tap = 44): number {
+  let height = 0;
+  const need = (h: number) => {
+    height = Math.max(height, h);
+  };
+  for (const side of ['left', 'right'] as const) {
+    const ys = layout
+      .filter((a) => a.side === side)
+      .map((a) => a.dock[1])
+      .sort((a, b) => a - b);
+    ys.forEach((y, i) => {
+      if (i > 0) need((tap * MAP_H) / (y - ys[i - 1]!));
+      need((tap / 2) * (MAP_H / y));
+      need(tap / 2 / (1 - y / MAP_H));
+    });
+  }
+  for (const { side, dock } of layout) {
+    if (side === 'top') need(((tap + PILL_GAP) * MAP_H) / dock[1]);
+    if (side === 'bottom') need((tap + PILL_GAP) / (1 - dock[1] / MAP_H));
+  }
+  return height;
+}

@@ -20,7 +20,13 @@ export { Pane, type PaneProps } from './Pane';
 export { PhotoButton, type PhotoButtonProps } from './PhotoButton';
 export { POListItem, type POListItemProps } from './POListItem';
 export { ShoeMap, type ShoeMapAreaState, type ShoeMapProps } from './ShoeMap';
-export { SHOE_AREAS, SHOE_BOX, type ShoeMapArea } from './shoeLayout';
+export {
+  SHOE_AREAS,
+  SHOE_AREAS_COMPACT,
+  SHOE_BOX,
+  minMapHeight,
+  type ShoeMapArea,
+} from './shoeLayout';
 export { SelectField, type SelectFieldProps } from './SelectField';
 export { StatRow, type StatRowProps } from './StatRow';
 export { Stepper, type StepperProps } from './Stepper';

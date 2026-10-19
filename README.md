@@ -72,7 +72,7 @@ Kerjakan T1.4. Ikuti layout dan alur reference/prototype/app.html, tapi tampilan
 
 ## 4. Yang belum boleh dikerjakan
 
-Phase 0–3 sudah bisa dikerjakan: PWA offline, API NestJS (login, master data, pencarian PO), lalu Submit PO ke spreadsheet dan upload foto (doc 02, 03, 04 sudah tersedia; doc 03 masih draft v0.2). Phase 4 (deploy dan pilot) dimulai dengan pemeriksaan server (doc 03 §7.3). Server memakai Windows dan dirawat tim QIP Digital, jadi script deploy memakai PowerShell atau Node, bukan bash. HTTPS sudah diputuskan: `https://m100.qdms.web.id` lewat Cloudflare (ADR-016). Doc 05 (UI/UX, draft v0.1) sudah ada; tiga keputusan di dalamnya (U1, U2, U10) masih menunggu konfirmasi pemilik. `CLAUDE.md` sudah menyuruh Claude berhenti dan bertanya kalau task menyentuh hal-hal itu.
+Phase 0–3 sudah bisa dikerjakan: PWA offline, API NestJS (login, master data, pencarian PO), lalu Submit PO ke spreadsheet dan upload foto (doc 02, 03, 04 sudah tersedia; doc 03 masih draft v0.2). Phase 4 (deploy dan pilot) dimulai dengan pemeriksaan server (doc 03 §7.3). Server memakai Windows dan dirawat tim QIP Digital, jadi script deploy memakai PowerShell atau Node, bukan bash. HTTPS sudah diputuskan: `https://m100.qdms.web.id` lewat Cloudflare (ADR-016). Doc 05 (UI/UX, draft v0.2) sudah ada; dua keputusan di dalamnya (U2, U10) masih menunggu konfirmasi pemilik; U1 (OQ-07) sudah dikonfirmasi 19 Okt 2026. `CLAUDE.md` sudah menyuruh Claude berhenti dan bertanya kalau task menyentuh hal-hal itu.
 
 Sebelum Phase 2, siapkan dulu (bukan pekerjaan Claude): salinan spreadsheet, service account Google, folder Drive uji, dan, sebelum T3.5, OAuth client dengan consent screen berstatus **In production** (daftar lengkap di `docs/08-implementation-plan.md`).
 

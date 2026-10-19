@@ -15,11 +15,11 @@ This file lists every planning document for Mobile 100% Inspection, what each on
 | # | Document | Answers the question | Status |
 |---|---|---|---|
 | 00 | Document Map (this file) | Which documents exist, and in what order to read them | Done |
-| 01 | [PRD — Product Requirements](01-prd.md) | What the app must do, for whom, and how we know it works | Done (v0.4; OQ-03…OQ-10, OQ-12 open) |
+| 01 | [PRD — Product Requirements](01-prd.md) | What the app must do, for whom, and how we know it works | Done (v0.6, 19 Oct 2026; OQ-05, OQ-06, OQ-08…OQ-10, OQ-12 open) |
 | 02 | [Data Design — Spreadsheet Schema](02-data-design.md) | Which sheets the system reads and writes, column by column, and how a session maps onto DATA_INSPECTION | Done (v1.0, 16 Oct 2026) |
 | 03 | [TDD — Technical Design](03-tdd.md) | NestJS modules, PWA architecture, offline queue, Submit PO pipeline, quotas, security, deployment | Draft v0.2 (16 Oct 2026; HTTPS decided; server is Windows) |
 | 04 | [API Contract](04-api-contract.md) + [`04-openapi.yaml`](04-openapi.yaml) | Every endpoint, request and response shape, error codes (OpenAPI 3.1) | Done (v1.1, 16 Oct 2026) |
-| 05 | [UI/UX Flow and Screen Spec](05-ui-ux-spec.md) | Every screen, state and interaction (S0–S9), layouts, copy, traceability to FR/AC | Draft v0.1 (16 Oct 2026; U1, U2, U10 need owner confirmation) |
+| 05 | [UI/UX Flow and Screen Spec](05-ui-ux-spec.md) | Every screen, state and interaction (S0–S9), layouts, copy, traceability to FR/AC | Draft v0.2 (19 Oct 2026; U2, U10 need owner confirmation) |
 | 06 | Design System — claude.ai artifact "Mobile 100% Inspection" (Design System, namespace `M100`) | Tokens (light and dark), type, 25 components with live previews (including `ShoeMap` for the Defect page), responsive and touch rules; accent `#1D4ED8` | Done (v2, 16 Oct 2026: added CheckboxRow, Stepper, NumberPad) |
 | 07 | [Decision Log (ADRs)](07-decision-log.md) | Why each architectural choice was made, and what it costs | Done (ADR-001 to ADR-017; 017 Proposed) |
 | 08 | [Implementation Plan and Task Breakdown](08-implementation-plan.md) | Phases, ordered tasks with acceptance checks; the repo `CLAUDE.md` and `.claude/rules/` live in the starter kit | Draft v0.4 (Phase 0–4 ready; Phase 4 starts with the server pre-checks) |
@@ -73,4 +73,4 @@ flowchart LR
 | Blocks | Open item | Raised in |
 |---|---|---|
 | 03 → Phase 4 | Confirm the sub-domain `m100` (ADR-016); server pre-checks: Windows version, port 443 free, RAM and disk, outbound reach to Cloudflare and Let's Encrypt, DHCP reservation (TQ-5) | doc 03 §7.3, §9 |
-| 05 | Confirm U1 (NO DEFECT records at once, OQ-07), U2 (Home shows the current session only, OQ-08) and U10 (a partial stays after Submit PO) | doc 05 §18 |
+| 05 | Confirm U2 (Home shows the current session only, OQ-08) and U10 (a partial stays after Submit PO) | doc 05 §18 |

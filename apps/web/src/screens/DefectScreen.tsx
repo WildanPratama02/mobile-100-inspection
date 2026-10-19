@@ -6,7 +6,7 @@
  * from `@m100/shared` (BR-01). A defect row flashes in the frame of the tap (AC-07.2, NFR-03); counts, history and
  * the toast follow once the tap is stored.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import {
   EMPTY_SESSION,
   findings,
@@ -31,9 +31,12 @@ import {
   OptionRow,
   Pane,
   SHOE_AREAS,
+  SHOE_AREAS_COMPACT,
   ShoeMap,
+  minMapHeight,
   type Classification as ChipClassification,
   type CommandButtonProps,
+  type ShoeMapArea,
   type ShoeMapAreaState,
 } from '../ui';
 import {
@@ -75,6 +78,27 @@ function vibrate(): void {
   }
 }
 
+/** Below this map height the design-system docks would overlap or stick out, so the compact docks are used (U13). */
+const REGULAR_MIN_HEIGHT = minMapHeight(SHOE_AREAS);
+
+/**
+ * The pill layout that fits the map as rendered (doc 05 U13). The map's size never depends on the layout, so the
+ * choice can't flip back and forth. Without `ResizeObserver` the design-system docks stay.
+ */
+function useShoeLayout(container: RefObject<HTMLElement | null>): ShoeMapArea[] {
+  const [compact, setCompact] = useState(false);
+  useLayoutEffect(() => {
+    const map = container.current?.firstElementChild;
+    if (!map || typeof ResizeObserver === 'undefined') return;
+    const update = () => setCompact(map.getBoundingClientRect().height < REGULAR_MIN_HEIGHT);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(map);
+    return () => observer.disconnect();
+  }, [container]);
+  return compact ? SHOE_AREAS_COMPACT : SHOE_AREAS;
+}
+
 /** A flash to play once; `n` makes React mount the row again so the animation restarts on every tap. */
 interface Flash {
   key: string;
@@ -95,6 +119,8 @@ export function DefectScreen({ po }: DefectScreenProps) {
   const [optionFlash, setOptionFlash] = useState<Flash | null>(null);
   const [historyFlash, setHistoryFlash] = useState<Flash | null>(null);
   const historyRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const layout = useShoeLayout(mapRef);
 
   const state = session?.state ?? EMPTY_SESSION;
   const active = state.active;
@@ -210,9 +236,10 @@ export function DefectScreen({ po }: DefectScreenProps) {
           />
           <CommandButton mode="nodefect" state={active ? 'disabled' : 'idle'} onClick={noDefect} />
         </div>
-        <div className="defect__map">
+        <div className="defect__map" ref={mapRef}>
           <ShoeMap
             src={SHOE_SRC}
+            layout={layout}
             areas={areas}
             disabled={!active}
             onSelect={(id) => go(selectArea(mapping, id as AreaId))}

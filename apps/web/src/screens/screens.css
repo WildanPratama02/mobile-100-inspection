@@ -755,28 +755,14 @@
   .home__body .m100-stat > b {
     font-size: 21px;
   }
-  /*
-   * The pills need a map at least 422 px tall to sit 44 px apart (docks 75/720 apart), more than this height
-   * gives. The shoe pane takes a wider share and the map uses its full width, scrolling between the command row
-   * and END INSPECTION, which stay in place (doc 05 §4). The padding keeps the top and bottom pills inside.
-   */
+  /* The map fits the height left; a short map gets the compact pill docks (U13, `useShoeLayout`). */
   .defect {
-    grid-template-columns: minmax(0, 60fr) minmax(0, 40fr);
     gap: var(--space-2);
     padding: var(--space-2);
   }
   .m100-pane.defect__shoe {
     gap: var(--space-2);
     padding: var(--space-2);
-  }
-  .defect__map {
-    display: block;
-    overflow-y: auto;
-    padding: var(--space-2) 0 var(--space-4);
-    container-type: normal;
-  }
-  .defect__map > .m100-shoemap {
-    width: 100%;
   }
   .defect__cmds > .m100-cmd,
   .defect__end {

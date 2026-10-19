@@ -20,7 +20,7 @@ Read the doc a task needs before writing code. Do not invent behaviour that a do
 | Look, tokens, components | `design-system/README.md`, `design-system/tokens.json`, `design-system/components/*/README.md`, reference implementation in `design-system/components/bundle.js` + `bundle.css` |
 | Area → sub-area → family → defect mapping | `reference/mapping/mapping.json` (generated from `Footwear_Defect_Mapping_Database_v2.xlsx`) |
 
-Doc 02 (Data Design) and doc 04 (API Contract, v1.1) are final; doc 03 (TDD) is a draft (v0.2) and is the spec for how things are built. Doc 05 (UI/UX spec, draft v0.1) defines every screen S0–S9; where it disagrees with the prototype, doc 05 wins. U1, U2 and U10 in doc 05 §18 are awaiting owner confirmation: implement them as written and do not change them silently. Phase 4 starts with the server pre-checks of doc 03 §7.3. The server is **Windows**, operated by the QIP Digital Team: no bash scripts in `deploy/` or `scripts/` (use Node/TypeScript or PowerShell) and always build paths with `node:path`. HTTPS is decided: `https://m100.qdms.web.id` (ADR-016). If a task depends on something not decided in the docs, stop and say so instead of guessing.
+Doc 02 (Data Design) and doc 04 (API Contract, v1.1) are final; doc 03 (TDD) is a draft (v0.2) and is the spec for how things are built. Doc 05 (UI/UX spec, draft v0.2) defines every screen S0–S9; where it disagrees with the prototype, doc 05 wins. U2 and U10 in doc 05 §18 are awaiting owner confirmation: implement them as written and do not change them silently (U1 was confirmed on 19 Oct 2026, closing OQ-07). Phase 4 starts with the server pre-checks of doc 03 §7.3. The server is **Windows**, operated by the QIP Digital Team: no bash scripts in `deploy/` or `scripts/` (use Node/TypeScript or PowerShell) and always build paths with `node:path`. HTTPS is decided: `https://m100.qdms.web.id` (ADR-016). If a task depends on something not decided in the docs, stop and say so instead of guessing.
 
 ## Stack (ADR-004, ADR-005; React + Vite confirmed)
 
@@ -52,7 +52,7 @@ Tests: Vitest (unit), Playwright (web end-to-end), Jest (NestJS default). Node 2
 - Numbers `id-ID` (2.400; 18,8%), times WIB (Asia/Jakarta).
 - No device keyboard except the PO search box; numbers (the PO partial quantity, ADR-013) use the app's own number pad. Every tappable element ≥ 44 × 44 px (`--tap-min`).
 - Colours, radius, spacing, type only through the CSS variables in `design-system/tokens.css`. No hex values in components. Accent is `#1D4ED8` (`--accent`); black (`--ink`) is text only; grey (`--disabled`) means disabled.
-- Port design-system components to React components in `apps/web/src/ui/` with the same names and props as `design-system/components/index.d.ts`. `ShoeMap` must keep the anchor coordinates and image box from `bundle.js`.
+- Port design-system components to React components in `apps/web/src/ui/` with the same names and props as `design-system/components/index.d.ts`. `ShoeMap` must keep the anchor coordinates and image box from `bundle.js`; only the pill docks change on a short map (doc 05 U13, `SHOE_AREAS_COMPACT`).
 - Fonts must work offline: self-host Barlow Condensed, Barlow Semi Condensed and IBM Plex Mono (e.g. `@fontsource/*`), not the Google Fonts `@import`.
 
 ## How to work

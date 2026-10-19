@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Document | 05 — UI/UX Flow and Screen Spec |
-| Version | v0.1 Draft, 16 Oct 2026 |
+| Version | v0.2 Draft, 19 Oct 2026 (U1 confirmed; U13 compact shoe map added) |
 | Inputs | PRD v0.5 (FR-01…FR-13, AC, BR, NFR), the clickable prototype (`reference/prototype/app.html`, layout and behavior only), Design System v45 (namespace `M100`), doc 03 §4 (tablet design), doc 04 §5–6 (outbox, error codes) |
 | Used by | The coding agent in Phase 1 (offline PWA). Doc 06 gives the parts; this document says where each part goes and what it does. |
 
@@ -14,7 +14,7 @@ If this document and the prototype disagree, **this document wins**. The prototy
 - Screens are named `S0 … S9`. Each has: purpose, what is on it, states, interactions, copy, and the requirements it satisfies.
 - Component names in `code` are from the Design System (`M100.*`). A component that is not listed in doc 06 is a layout container written in the app, using tokens only.
 - Screen text is Bahasa Indonesia; fixed shop-floor labels stay English and uppercase (doc 00). Quoted copy in this document is the exact text to use.
-- Decision IDs `U1…U12` (section 18) record the choices made here that the PRD left open. Two are proposed defaults that need the owner's confirmation: U1 (OQ-07) and U2 (OQ-08); U10 also needs a look.
+- Decision IDs `U1…U13` (section 18) record the choices made here that the PRD left open. One is a proposed default that needs the owner's confirmation: U2 (OQ-08); U10 also needs a look. U1 (OQ-07) was confirmed on 19 Oct 2026.
 
 ## 2. Screen map and navigation
 
@@ -68,7 +68,7 @@ The same screens run in three layouts, chosen by the viewport (doc 06 "Responsiv
 | Layout | When | S3 Home | S6 Defect |
 |---|---|---|---|
 | **Regular** | landscape, height > 480 px | Header on top; below it a left PO column (≈ 22%) and a main area with Top 5 Defect and, on the right, the results box; the bottom row holds ADD DEFECT (wide), EXPORT PDF, EXPORT EXCEL, SUBMIT PO | Left: shoe map pane (≈ 56%). Right: command row, breadcrumb, drill-down list, history, bottom bar BACK / HOME / UNDO |
-| **Compact** | landscape, height ≤ 480 px | Same arrangement, smaller type and padding | Same arrangement |
+| **Compact** | landscape, height ≤ 480 px | Same arrangement, smaller type and padding | Same arrangement; the shoe map uses the compact pill docks (U13) |
 | **Stacked** | portrait or width ≤ 640 px | Info strip, PO list as a horizontal strip, results box, Top 5, then a bottom bar | Shoe map on top, then command row, list, history; bottom bar fixed to the screen edge with the safe-area inset |
 
 The page never scrolls sideways. Long defect names wrap inside their row. Only the list areas scroll (PO list, Top 5 when over five rows is not possible, drill-down list, history); the header, command row and bottom bars stay in place.
@@ -485,7 +485,7 @@ Layout containers written in the app (not in the design system): the Home grid, 
 
 | ID | Decision | Why |
 |---|---|---|
-| U1 | **Proposed (OQ-07).** NO DEFECT records the pair at once and needs no END INSPECTION; UNDO right after it cancels it. | It is the prototype's behavior and one pair needs one tap. Needs owner confirmation. |
+| U1 | **Decided 19 Oct 2026 (OQ-07).** NO DEFECT records the pair at once and needs no END INSPECTION; UNDO right after it cancels it. | It is the prototype's behavior and one pair needs one tap. Confirmed by the owner. |
 | U2 | **Proposed (OQ-08).** Home shows only the current session, not what was already submitted today. | The API has no read endpoint (doc 04 §8); Leader Quality reads the sheet. A later release can add it. Needs owner confirmation. |
 | U3 | The Defect Rate figure turns `bad` (danger colour plus its number) above 5,0%. | The prototype did this; the threshold is a display aid only and is not a business rule. Change in one place if QIP wants another value. |
 | U4 | Login is disabled while offline; an already logged-in PSI is unaffected. | `POST /auth/login` issues the token (doc 04 §3.1). |
@@ -497,6 +497,7 @@ Layout containers written in the app (not in the design system): the Home grid, 
 | U10 | A partial stays on the PO after SUBMIT PO. | A partial shipment is inspected in several rounds; ADR-013 does not say to clear it. Confirm with the owner when ADR-013 is reviewed. |
 | U11 | HAPUS on a photo needs no confirmation. | The photo can be retaken at once; an extra dialog costs more than the mistake. |
 | U12 | The gear menu holds account, outbox, master data time and LOGOUT; "Reset data demo" from the prototype does not exist. | Demo only. |
+| U13 | **Decided 19 Oct 2026.** When the shoe map is drawn shorter than its pills need (about 473 px for the design-system docks), the app places the same 12 pills on a second set of docks spread over the whole height (`SHOE_AREAS_COMPACT`). Anchors, leader-line targets, labels and the image box stay as in the design system; the command row and END INSPECTION stay in place; nothing scrolls. | In Compact (a landscape screen 480 px or less tall) the design-system docks put 44 px pills 75/720 of the map apart, so they cover each other and the command buttons. Touch sizes must not shrink (G2). |
 
 ## 19. Checks for the coding agent
 
