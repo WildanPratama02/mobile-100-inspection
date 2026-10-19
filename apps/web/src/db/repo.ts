@@ -4,7 +4,16 @@
  */
 import { Dexie } from 'dexie';
 import type { DefectId, Po, PoPartial, Session, SessionEventPayload } from '@m100/shared';
-import type { Auth, EventRow, M100Db, OutboxRow, PhotoRow, PoRow, View } from './schema';
+import type {
+  Auth,
+  EventRow,
+  M100Db,
+  MasterDataRow,
+  OutboxRow,
+  PhotoRow,
+  PoRow,
+  View,
+} from './schema';
 
 // ---- Login (FR-01, FR-02) ----
 
@@ -22,6 +31,16 @@ export async function saveAuth(db: M100Db, auth: Auth): Promise<void> {
 /** LOGOUT deletes the login only; POs, sessions and photos stay for the next login (AC-02.2). */
 export async function clearAuth(db: M100Db): Promise<void> {
   await db.auth.delete('current');
+}
+
+// ---- Master data (doc 03 §4.3: the last good copy is used when a refresh fails) ----
+
+export async function getMasterData(db: M100Db): Promise<MasterDataRow | null> {
+  return (await db.masterData.get('current')) ?? null;
+}
+
+export async function saveMasterData(db: M100Db, row: Omit<MasterDataRow, 'id'>): Promise<void> {
+  await db.masterData.put({ ...row, id: 'current' });
 }
 
 // ---- PO list (FR-03) ----

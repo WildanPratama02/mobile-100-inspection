@@ -72,6 +72,7 @@ Node 22 LTS ≥ 22.13 and pnpm 10 (`packageManager` in `package.json`; `engine-s
 - `pnpm e2e:install` (once per machine: Playwright's Chromium)
 - `pnpm dev` (web on `http://localhost:5173`; dev-only UI kit catalogue at `/ui`), `pnpm --filter api start:dev` (api on `127.0.0.1:3000`, builds `@m100/shared` first)
 - `pnpm test` (Vitest in `web` and `@m100/shared`, Jest in `api`), `pnpm lint`, `pnpm typecheck`, `pnpm e2e`
+- `E2E_PORT=5174 pnpm e2e` from a git worktree when another checkout's dev server holds 5173 (Playwright would otherwise reuse that server and test the other checkout's code)
 - `pnpm format` / `pnpm format:check` (Prettier)
 - `pnpm build` (shared → `packages/shared/dist`, web → `apps/web/dist`, api → `apps/api/dist`)
 - One package only: `pnpm --filter <web|api|@m100/shared> <script>`

@@ -1,8 +1,9 @@
 import { totals, type AreaMapEntry, type Po } from '@m100/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { LoginData, MasterDataSource } from '../data/sources';
 import * as repo from '../db/repo';
 import { createDb, type Auth, type M100Db } from '../db/schema';
-import { createAppStore, DEFAULT_VIEW, type AppStore } from './store';
+import { createAppStore, DEFAULT_VIEW, unsubmittedCount, type AppStore } from './store';
 
 const A: Auth = {
   username: 'psi.uji.satu',
@@ -238,5 +239,61 @@ describe('PO list', () => {
     expect(store.getState().pos.map((p) => p.po)).toEqual(['0903359388']);
     expect(store.getState().sessions[second.po]).toBeUndefined();
     expect((await reopen()).getState().pos.map((p) => p.po)).toEqual(['0903359388']);
+  });
+});
+
+describe('login data (AC-01.4, doc 03 §4.3)', () => {
+  const DATA: LoginData = {
+    version: 'v1',
+    fetchedAt: '2026-10-16T08:00:00+07:00',
+    users: [{ username: 'ANDI CONTOH', level: 'PSI lv.1' }],
+    factories: [{ factory: 'F 1', cells: ['F1-01'] }],
+  };
+  const ok = (data: LoginData): MasterDataSource => ({ getLoginData: () => Promise.resolve(data) });
+  const down: MasterDataSource = { getLoginData: () => Promise.reject(new Error('offline')) };
+
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  it('loads from the source and keeps a copy on the tablet', async () => {
+    const store = createAppStore(db, now);
+    await store.getState().loadLoginData(ok(DATA));
+    expect(store.getState()).toMatchObject({ loginData: DATA, loginDataStatus: 'ready' });
+    expect(await repo.getMasterData(db)).toMatchObject({ etag: 'v1', document: DATA });
+  });
+
+  it('uses the stored copy when the source fails', async () => {
+    await createAppStore(db, now).getState().loadLoginData(ok(DATA));
+    const store = await reopen();
+    await store.getState().loadLoginData(down);
+    expect(store.getState()).toMatchObject({ loginData: DATA, loginDataStatus: 'ready' });
+  });
+
+  it('fails with nothing cached, and a retry recovers', async () => {
+    const store = createAppStore(db, now);
+    await store.getState().loadLoginData(down);
+    expect(store.getState()).toMatchObject({ loginData: null, loginDataStatus: 'failed' });
+    await store.getState().loadLoginData(ok(DATA));
+    expect(store.getState()).toMatchObject({ loginData: DATA, loginDataStatus: 'ready' });
+  });
+
+  it('replaces the stored copy with a fresh one', async () => {
+    await createAppStore(db, now).getState().loadLoginData(ok(DATA));
+    const fresh = { ...DATA, version: 'v2', users: [] };
+    const store = await reopen();
+    await store.getState().loadLoginData(ok(fresh));
+    expect(store.getState().loginData).toEqual(fresh);
+    expect((await repo.getMasterData(db))?.etag).toBe('v2');
+  });
+});
+
+describe('unsubmittedCount (AC-02.2)', () => {
+  it('counts only POs whose open session has taps', async () => {
+    const store = await loggedInWithPo();
+    await store.getState().addPo({ ...PO, po: 'CX-0902368685' }, null);
+    expect(unsubmittedCount(store.getState())).toBe(0);
+    await store.getState().tap(PO.po, { type: 'START', inspection: 'REWORK' });
+    expect(unsubmittedCount(store.getState())).toBe(1);
   });
 });

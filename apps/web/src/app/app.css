@@ -1,0 +1,56 @@
+.app-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: var(--scrim);
+  overflow-y: auto;
+}
+
+.app-scrim > .m100-dialog {
+  max-height: calc(100dvh - 2 * var(--space-4));
+}
+
+.app-scrim > .m100-dialog > .m100-dialog__body {
+  overflow-y: auto;
+}
+
+/* Heights from doc 05 §4a. */
+.app-logo {
+  display: block;
+  width: auto;
+  flex: none;
+}
+.app-logo--start {
+  height: 72px;
+}
+.app-logo--login {
+  height: 64px;
+}
+.app-logo--home {
+  height: 36px;
+}
+.app-logo--menu {
+  height: 32px;
+}
+@media (orientation: portrait), (max-width: 640px) {
+  .app-logo--login {
+    height: 48px;
+  }
+}
+@media (orientation: landscape) and (max-height: 480px) and (min-width: 641px) {
+  /* Compact: the Home header drops the logo to keep the info strip wide. */
+  .app-logo--home {
+    display: none;
+  }
+}
+
+/* The full-screen frame of Start, Login and Home. */
+.app-screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}

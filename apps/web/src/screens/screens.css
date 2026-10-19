@@ -1,0 +1,310 @@
+/* Layout containers of the screens (doc 05 §17): tokens only. */
+
+/* ---- S1 Start ---- */
+.start {
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+.start__box {
+  width: min(420px, 100%);
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+}
+.start__text {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-title);
+  font-weight: var(--fw-title);
+  letter-spacing: var(--ls-title);
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+/* ---- S2 Login ---- */
+/* Regular/Compact: brand left; logo above the form, centred, on the right. Stacked: logo, brand, form. */
+.login {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  grid-template-rows: 1fr auto auto 1fr;
+  grid-template-areas:
+    'brand .'
+    'brand logo'
+    'brand form'
+    'brand .';
+}
+.login__logo {
+  grid-area: logo;
+  display: flex;
+  justify-content: center;
+  padding: var(--space-4) var(--space-4) 0;
+}
+.login__brand {
+  grid-area: brand;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.login__team {
+  font-family: var(--font-display);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.login__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: min(var(--fs-brand), 7vw);
+  font-weight: var(--fw-brand);
+  line-height: var(--lh-brand);
+  letter-spacing: var(--ls-brand);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.login__title small {
+  display: block;
+  margin-top: var(--space-4);
+  font-family: var(--font-body);
+  font-size: var(--fs-field);
+  font-weight: var(--fw-body);
+  line-height: var(--lh-body);
+  letter-spacing: 0;
+  color: var(--ink-2);
+}
+.login__form {
+  grid-area: form;
+  padding: var(--space-4) var(--space-6) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  width: min(520px, 100%);
+  justify-self: center;
+}
+.login__heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-title);
+  font-weight: var(--fw-title);
+  letter-spacing: var(--ls-title);
+  line-height: var(--lh-title);
+  text-transform: uppercase;
+}
+.login__name {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.login__name > .m100-field {
+  flex: 1;
+  min-width: 0;
+}
+.login__name > .m100-chip {
+  margin-bottom: var(--space-4);
+}
+.login__pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+.login__hint {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-meta);
+}
+.login__names .login__option {
+  min-height: 52px;
+}
+.login__option[aria-selected='true'] {
+  background: var(--accent-soft);
+}
+.login__check {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  color: var(--accent);
+}
+.login__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--space-2);
+}
+.login__choice {
+  min-width: 64px;
+  min-height: 52px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: var(--fs-field);
+  font-weight: var(--fw-action);
+  cursor: pointer;
+}
+.login__choice:active {
+  background: var(--accent-soft);
+}
+.login__choice[aria-selected='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+.login__choice:focus-visible,
+.login__option:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ---- S3 Home header ---- */
+.home__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--bar-h);
+  padding-left: var(--space-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.home__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-5);
+  margin: 0;
+  padding: var(--space-2) 0;
+}
+.home__meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.home__meta dt {
+  font-family: var(--font-display);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--ls-caption);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.home__meta dd {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home__mono {
+  font-family: var(--font-mono);
+}
+.home__who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.home__name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.home__gear {
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  min-width: var(--bar-h);
+  min-height: var(--tap-min);
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.home__gear .m100-ico {
+  width: 30px;
+  height: 30px;
+}
+.home__gear:active {
+  background: var(--accent-soft);
+}
+.home__gear:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+}
+
+/* ---- S9 Settings ---- */
+.settings__account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+.settings__name {
+  font-weight: 600;
+  font-size: var(--fs-field);
+}
+.settings__cell {
+  color: var(--ink-2);
+}
+.settings__text {
+  margin: 0;
+}
+.settings__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* ---- Stacked: portrait or narrow ---- */
+@media (orientation: portrait), (max-width: 640px) {
+  .login {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto 1fr;
+    grid-template-areas: 'logo' 'brand' 'form' '.';
+  }
+  .login__brand {
+    border-right: 0;
+    border-block: 1px solid var(--line);
+    margin-top: var(--space-4);
+    padding: var(--space-4);
+  }
+  .login__form {
+    padding: var(--space-4);
+  }
+  .login__title {
+    font-size: min(var(--fs-brand), 11vw);
+  }
+  .home__header {
+    flex-wrap: wrap;
+  }
+  .home__who {
+    margin-left: auto;
+  }
+  .home__info {
+    flex-basis: 100%;
+    order: 3;
+    padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  }
+}
+
+/* ---- Compact: short landscape ---- */
+@media (orientation: landscape) and (max-height: 480px) and (min-width: 641px) {
+  .login__brand,
+  .login__form {
+    padding: var(--space-4);
+  }
+  .login__title {
+    font-size: min(var(--fs-brand), 6vw);
+  }
+}

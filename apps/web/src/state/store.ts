@@ -6,6 +6,7 @@
  * at a time, so each tap is judged against the state left by the tap before it. Only the logged-in PSI's
  * data is ever loaded (AC-02.3). Totals, Top 5 and findings are derived with `@m100/shared`, never stored.
  */
+import { createContext, useContext } from 'react';
 import { useStore } from 'zustand';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import {
@@ -26,6 +27,7 @@ import {
   type SessionEventPayload,
   type SessionState,
 } from '@m100/shared';
+import type { LoginData, MasterDataSource } from '../data/sources';
 import * as repo from '../db/repo';
 import { createDb, type Auth, type M100Db, type PoRow, type View } from '../db/schema';
 
@@ -52,9 +54,15 @@ export interface AppState {
   /** Open sessions by PO number. */
   sessions: Readonly<Record<string, PoSession>>;
   view: View;
+  /** Names and factories/cells for the login screen; `null` until loaded or read from the cache. */
+  loginData: LoginData | null;
+  /** `failed`: nothing could be loaded and nothing is cached (AC-01.4). */
+  loginDataStatus: 'idle' | 'loading' | 'ready' | 'failed';
 
   // Arrow-typed so components can take them out of the state unbound.
   hydrate: () => Promise<void>;
+  /** Shows the cached copy at once, then refreshes it from `source` (doc 03 §4.3). Never rejects. */
+  loadLoginData: (source: MasterDataSource) => Promise<void>;
   login: (auth: Auth) => Promise<void>;
   logout: () => Promise<void>;
   addPo: (po: Po, partial: PoPartial | null) => Promise<void>;
@@ -133,12 +141,39 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
     return {
       status: 'loading',
       ...LOGGED_OUT,
+      loginData: null,
+      loginDataStatus: 'idle',
 
       hydrate: () =>
         serial(async () => {
           const data = await loadUserData(db, await repo.getAuth(db));
           set({ ...data, status: 'ready' });
         }),
+
+      // Outside `serial`: a slow refresh must never hold back a tap queued behind it (NFR-03).
+      loadLoginData: async (source) => {
+        if (!get().loginData) set({ loginDataStatus: 'loading' });
+        try {
+          const cached = await repo.getMasterData(db);
+          if (cached && !get().loginData) {
+            set({ loginData: cached.document as LoginData, loginDataStatus: 'ready' });
+          }
+        } catch (error) {
+          console.error(error);
+        }
+        try {
+          const fresh = await source.getLoginData();
+          set({ loginData: fresh, loginDataStatus: 'ready' });
+          await repo.saveMasterData(db, {
+            etag: fresh.version,
+            fetchedAt: fresh.fetchedAt,
+            document: fresh,
+          });
+        } catch (error) {
+          console.error(error);
+          if (!get().loginData) set({ loginDataStatus: 'failed' });
+        }
+      },
 
       login: (auth) =>
         serial(async () => {
@@ -218,6 +253,14 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
   });
 }
 
+/**
+ * POs whose open session holds recorded taps; LOGOUT warns about these (AC-02.2). A PO added but never
+ * tapped does not count, the same rule as removing a PO (`repo.removePo`, AC-03.4).
+ */
+export function unsubmittedCount(state: Pick<AppState, 'sessions'>): number {
+  return Object.values(state.sessions).filter((s) => s.events.length > 0).length;
+}
+
 let appStore: AppStore | undefined;
 
 /** The app's store on the `m100` database, created on first use. */
@@ -226,6 +269,13 @@ export function getAppStore(): AppStore {
   return appStore;
 }
 
+/** Lets tests give the screens their own store; the app uses `getAppStore()`. */
+export const AppStoreContext = createContext<AppStore | null>(null);
+
+export function useAppStoreApi(): AppStore {
+  return useContext(AppStoreContext) ?? getAppStore();
+}
+
 export function useAppStore<T>(selector: (state: AppState) => T): T {
-  return useStore(getAppStore(), selector);
+  return useStore(useAppStoreApi(), selector);
 }

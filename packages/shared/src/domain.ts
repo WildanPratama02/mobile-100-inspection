@@ -25,6 +25,14 @@ export interface Cell {
   cell: string;
 }
 
+/** `POST /auth/login` body (doc 04 §3.1). */
+export interface LoginRequest {
+  username: string;
+  level: PsiLevel;
+  factory: string;
+  cell: string;
+}
+
 /** One PO from ALL_PO_MASTER. Dates are `YYYY-MM-DD`, or `null` when the cell is empty. */
 export interface Po {
   po: string;
