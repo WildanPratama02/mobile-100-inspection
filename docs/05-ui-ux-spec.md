@@ -358,7 +358,7 @@ After the photo returns:
 
 ### 12.2 S7b — View a photo
 
-`Dialog wide title="Foto defect"` showing the classification `Chip` and defect name, the photo, and two buttons: GANTI FOTO (`secondary`, camera icon; replaces the photo, AC-10.5) and HAPUS (`danger`). HAPUS asks nothing more: it removes the photo and returns the row to "Foto wajib", toast "Foto dihapus".
+`Dialog wide title="Foto defect"` showing the classification `Chip` and defect name, the photo, and two buttons: GANTI FOTO (`secondary`, camera icon; replaces the photo, AC-10.5) and HAPUS (`danger`). HAPUS asks nothing more: it removes the photo and returns the row to "Foto wajib", toast "Foto dihapus". If removing fails, toast error "Foto gagal dihapus. Coba lagi." and the photo stays (confirmed 19 Oct 2026).
 
 **Satisfies.** FR-10, AC-10.1…10.6, BR-04.
 
