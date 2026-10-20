@@ -15,7 +15,9 @@
     "e2e": "pnpm --filter web e2e",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "e2e:install": "pnpm --filter web exec playwright install chromium"
+    "e2e:install": "pnpm --filter web exec playwright install chromium",
+    "db:bootstrap": "pnpm --filter api db:bootstrap",
+    "db:migrate": "pnpm --filter api db:migrate"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

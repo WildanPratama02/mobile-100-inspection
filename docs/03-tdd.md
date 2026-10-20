@@ -399,6 +399,7 @@ A `.env` file in the install folder (readable only by the service account; never
 |---|---|
 | `DATABASE_URL` | Runtime connection, role `m100_app` (`postgres://m100_app:…@127.0.0.1:5432/m100`). |
 | `MIGRATE_DATABASE_URL` | Role `m100_migrate`, used only by `pnpm db:migrate` during upgrades. |
+| `ADMIN_DATABASE_URL`, `REPORT_DB_PASSWORD` | Only for the one-time `pnpm db:bootstrap` (a PostgreSQL superuser; the password of `m100_report`, which stays NOLOGIN without one). It creates the three roles, with the passwords of `DATABASE_URL` and `MIGRATE_DATABASE_URL`, and the database owned by `m100_migrate`. Remove both from `.env` afterwards. |
 | `PHOTO_STORE` | `disk` or `s3`. |
 | `PHOTO_DIR` | Folder, when `disk`. |
 | `S3_ENDPOINT`, `S3_BUCKET` (`m100-photos`), `S3_ACCESS_KEY`, `S3_SECRET_KEY` | When `s3` (path-style addressing). |
