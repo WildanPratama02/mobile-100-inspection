@@ -233,12 +233,67 @@ export function listPhotos(db: M100Db, sessionId: string): Promise<PhotoRow[]> {
   return db.photos.where('sessionId').equals(sessionId).toArray();
 }
 
-// ---- Outbox (doc 03 §4.6; sealing comes with SUBMIT PO) ----
+// ---- Outbox (doc 03 §4.6) ----
 
-/** Submissions on this tablet, newest first (doc 05 §14). */
-export async function listOutbox(db: M100Db): Promise<OutboxRow[]> {
-  const rows = await db.outbox.toArray();
+/** A PSI's own submissions, newest first (doc 05 §14, U14: the outbox is per author like sessions). */
+export async function listOutbox(db: M100Db, username: string): Promise<OutboxRow[]> {
+  const rows = await db.outbox.where('authorUsername').equals(username).toArray();
   return rows.sort((a, b) => b.sealedAt.localeCompare(a.sealedAt));
+}
+
+/** The session changed after its submission was built; nothing was sealed. */
+export class SessionChangedError extends Error {
+  constructor(sessionId: string) {
+    super(`Session ${sessionId} changed while it was being sealed`);
+    this.name = 'SessionChangedError';
+  }
+}
+
+export interface SealRequest {
+  username: string;
+  sessionId: string;
+  /** `seq` of the last event the submission was built from; 0 for none. */
+  lastSeq: number;
+  /** The outbox item, `payloadJson` and `payloadSha256` already computed. */
+  item: OutboxRow;
+  /** The photos the submission names, as they were when it was built. */
+  photos: ReadonlyArray<Pick<PhotoRow, 'defectId' | 'sha256'>>;
+  at: string;
+}
+
+/**
+ * KIRIM (doc 03 §4.6): one transaction writes the outbox item, moves the submitted photos to `outboxPhotos`,
+ * closes the session and opens a new empty one for the PO. Either all of it happens or none, so a session is
+ * never both live and sealed. Refused when the session is not the PSI's open session, or when its events or
+ * photos differ from what the submission was built from. Photos the submission leaves out (a defect undone
+ * completely) go with the closed session.
+ */
+export function sealSession(db: M100Db, request: SealRequest): Promise<Session> {
+  const { username, sessionId, lastSeq, item, at } = request;
+  return db.transaction(
+    'rw',
+    [db.sessions, db.events, db.photos, db.outbox, db.outboxPhotos],
+    async () => {
+      await requireOpenSession(db, username, sessionId);
+      const last = await eventsOf(db, sessionId).last();
+      if ((last?.seq ?? 0) !== lastSeq) throw new SessionChangedError(sessionId);
+      const stored = new Map((await listPhotos(db, sessionId)).map((p) => [p.defectId, p]));
+      const moved = request.photos.map(({ defectId, sha256 }) => {
+        const photo = stored.get(defectId);
+        if (photo?.sha256 !== sha256) throw new SessionChangedError(sessionId);
+        const { blob, takenAt } = photo;
+        return { submissionUuid: item.submissionUuid, defectId, blob, sha256, takenAt };
+      });
+
+      await db.outbox.add(item);
+      await db.outboxPhotos.bulkAdd(moved);
+      await db.photos.where('sessionId').equals(sessionId).delete();
+      await db.sessions.update(sessionId, { status: 'closed' });
+      const session = await db.sessions.get(sessionId);
+      if (!session) throw new SessionNotOpenError(sessionId);
+      return openSessionInTx(db, username, session.po, at);
+    },
+  );
 }
 
 export async function putOutboxItem(db: M100Db, item: OutboxRow): Promise<void> {

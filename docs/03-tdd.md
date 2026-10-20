@@ -128,6 +128,12 @@ Pressing KIRIM runs **one Dexie transaction**:
 
 Either all four happen or none, so a session is never both live and sealed, and never lost. The tablet always resends the **stored string**, byte for byte, so the API's hash check (doc 04 §4.3) compares identical bytes; no canonical-JSON library is needed on either side.
 
+As built (T1.7):
+- Step 1 runs just before the transaction opens, because awaiting `crypto.subtle` inside a Dexie transaction ends that transaction. The transaction then checks that the session is still the PSI's open session, that its last event `seq` and the hash of each photo it submits are the ones step 1 read, and refuses otherwise. A refused or failed seal writes nothing, and the PSI sees "PO gagal disimpan. Coba lagi." (doc 05 §15).
+- Step 3 moves only the photos the submission names (PSI lv.2, one per defect still in the findings). A photo whose defect was undone completely has no slot (doc 02 §7) and is removed along with the closed session.
+- Times in the submission keep milliseconds (`2026-10-16T14:32:05.123+07:00`, still ISO 8601), so the API breaks Top 5 ties on the same `firstRecordedAt` as the tablet (doc 02 §6.2). The API must accept fractional seconds (T3.2).
+- `appVersion` is the `version` of `apps/web/package.json`.
+
 **Outbox sender** (a loop inside the app): runs when an item is sealed, when the browser fires `online`, when the app regains focus, and on a 30 s timer. It processes the oldest eligible item, follows the table in doc 04 §5 exactly, and sets `nextAttemptAt` with the back-off 5 s, 15 s, 1 min, 5 min, then every 5 min. It runs **only while the app is open**: items wait on the tablet until someone opens the app, and the header's waiting counter (AC-11.3) is what tells the PSI. Photos of a `Terkirim` item are deleted 7 days later.
 
 ### 4.7 Master data

@@ -154,3 +154,30 @@ export interface InspectionCounts {
   bGrade: number;
   noDefect: number;
 }
+
+/** One photo part of a submission (doc 04 §4.1): PSI lv.2 only, at most one per defect (ADR-011). */
+export interface SubmissionPhoto {
+  defectId: DefectId;
+  /** `photo_<DEFECT_ID>`, the name of its multipart part. */
+  part: string;
+  sha256: string;
+}
+
+/**
+ * The `submission` part of `POST /submissions` (doc 04 §4.1, `SubmissionRequest` in docs/04-openapi.yaml).
+ * It says what happened, not totals: the API computes every total itself (ADR-008).
+ */
+export interface SubmissionRequest {
+  submissionUuid: string;
+  /** ISO 8601 in WIB (`+07:00`). */
+  sealedAt: string;
+  appVersion: string;
+  user: User;
+  factory: string;
+  cell: string;
+  po: string;
+  partial: PoPartial | null;
+  counts: InspectionCounts;
+  findings: Finding[];
+  photos: SubmissionPhoto[];
+}

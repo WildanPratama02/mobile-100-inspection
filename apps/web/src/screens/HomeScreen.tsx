@@ -4,9 +4,9 @@
  * (FR-04, FR-05); nothing here counts by itself.
  *
  * For PSI lv.2 the Top 5 rows carry the photo control (FR-10, doc 05 §8.3, §12); PSI lv.1 gets none.
- * EXPORT PDF / EXPORT EXCEL make a file of the open session on the tablet (FR-12, doc 05 §8.5).
- *
- * Wired later: SUBMIT PO (T1.7).
+ * EXPORT PDF / EXPORT EXCEL make a file of the open session on the tablet (FR-12, doc 05 §8.5). SUBMIT PO runs
+ * the checks and the confirmation of S8 and seals the session into the outbox (FR-11, doc 05 §13); the header
+ * counts the PSI's waiting submissions (AC-11.3).
  */
 import { useRef, useState, type ChangeEvent } from 'react';
 import {
@@ -34,10 +34,18 @@ import { exportReport } from '../export/report';
 import { saveFile } from '../export/saveFile';
 import { toJpeg } from '../photos/resize';
 import { usePhotoUrl } from '../photos/usePhotoUrl';
-import { hasOpenData, selectedPo, useAppStore, type PoSession } from '../state/store';
+import {
+  hasOpenData,
+  selectedPo,
+  submitBlock,
+  useAppStore,
+  waitingCount,
+  type PoSession,
+} from '../state/store';
 import {
   Button,
   Chip,
+  CountBadge,
   Dialog,
   Icon,
   Notice,
@@ -53,6 +61,7 @@ import { MissingPhotosDialog } from './MissingPhotosDialog';
 import { PartialDialog } from './PartialDialog';
 import { PhotoViewDialog } from './PhotoViewDialog';
 import { SettingsDialog } from './SettingsDialog';
+import { SubmitActiveDialog, SubmitConfirmDialog, SubmitEmptyDialog } from './SubmitDialogs';
 import './screens.css';
 
 /** U3: Defect Rate shows `bad` above this. A display aid only, not a business rule; change it here. */
@@ -68,7 +77,10 @@ type Open =
   | { kind: 'partial' }
   | { kind: 'remove'; po: string }
   | { kind: 'photo'; defectId: DefectId }
-  | { kind: 'missing-photos'; names: string[] };
+  | { kind: 'missing-photos'; names: string[] }
+  | { kind: 'submit-active' }
+  | { kind: 'submit-empty' }
+  | { kind: 'submit-confirm' };
 
 export interface HomeScreenProps {
   auth: Auth;
@@ -84,6 +96,8 @@ export function HomeScreen({ auth }: HomeScreenProps) {
   const removePo = useAppStore((s) => s.removePo);
   const savePhoto = useAppStore((s) => s.savePhoto);
   const removePhoto = useAppStore((s) => s.removePhoto);
+  const submitPo = useAppStore((s) => s.submitPo);
+  const waiting = useAppStore(waitingCount);
   const toast = useToast();
   const [open, setOpen] = useState<Open | null>(null);
   const close = () => setOpen(null);
@@ -143,6 +157,34 @@ export function HomeScreen({ auth }: HomeScreenProps) {
     }
   };
 
+  /** S8 step 1 (doc 05 §13.1): the first failing check opens its dialog, otherwise the confirmation. */
+  const onSubmit = () => {
+    if (!po) return;
+    const block = submitBlock(auth.level, session, mapping);
+    if (!block) setOpen({ kind: 'submit-confirm' });
+    else if (block.kind === 'ACTIVE') setOpen({ kind: 'submit-active' });
+    else if (block.kind === 'EMPTY') setOpen({ kind: 'submit-empty' });
+    else {
+      const names = block.defects.map((d) => mapping.defect(d.defectId)?.name ?? d.defectId);
+      setOpen({ kind: 'missing-photos', names });
+    }
+  };
+
+  /**
+   * KIRIM (doc 05 §13.3): the session is sealed on the tablet and Home shows the PO's new empty session. Sending
+   * comes with the outbox sender (T3.6); until then every submission waits.
+   */
+  const onSend = () => {
+    if (!po) return;
+    close();
+    submitPo(po.po, mapping)
+      .then(() => toast('Tersimpan. Menunggu koneksi.'))
+      .catch((error: unknown) => {
+        console.error(error);
+        toast('PO gagal disimpan. Coba lagi.', 'error');
+      });
+  };
+
   const viewed = open?.kind === 'photo' ? session?.photos[open.defectId] : undefined;
   const viewedDefect = viewed ? mapping.defect(viewed.defectId) : undefined;
 
@@ -183,6 +225,7 @@ export function HomeScreen({ auth }: HomeScreenProps) {
           {!online ? <Chip tone="neutral">Offline</Chip> : null}
           <span className="home__name">{auth.username}</span>
           <Chip tone="role">{auth.level}</Chip>
+          <CountBadge value={waiting} label={`${waiting} pengiriman menunggu`} />
         </div>
         <button
           type="button"
@@ -257,7 +300,13 @@ export function HomeScreen({ auth }: HomeScreenProps) {
             EXPORT EXCEL
           </Button>
         </div>
-        <Button variant="primary" size="lg" className="home__submit" disabled={!po}>
+        <Button
+          variant="primary"
+          size="lg"
+          className="home__submit"
+          disabled={!po}
+          onClick={onSubmit}
+        >
           SUBMIT PO
         </Button>
       </div>
@@ -297,6 +346,24 @@ export function HomeScreen({ auth }: HomeScreenProps) {
       {open?.kind === 'partial' && po ? <PartialDialog po={po} onClose={close} /> : null}
       {open?.kind === 'missing-photos' ? (
         <MissingPhotosDialog names={open.names} onClose={close} />
+      ) : null}
+      {open?.kind === 'submit-active' ? (
+        <SubmitActiveDialog
+          onAddDefect={() => {
+            close();
+            void setView({ screen: 'defect', defectPath: NO_PATH });
+          }}
+        />
+      ) : null}
+      {open?.kind === 'submit-empty' ? <SubmitEmptyDialog onClose={close} /> : null}
+      {open?.kind === 'submit-confirm' && po && session ? (
+        <SubmitConfirmDialog
+          po={po}
+          session={session}
+          level={auth.level}
+          onCancel={close}
+          onSend={onSend}
+        />
       ) : null}
       {open?.kind === 'remove' ? (
         <Overlay onDismiss={close}>

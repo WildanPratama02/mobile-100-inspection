@@ -1,5 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { defaultMapping, type AreaMapEntry, type Classification, type Po } from '@m100/shared';
+import {
+  defaultMapping,
+  formatPartial,
+  type AreaMapEntry,
+  type Classification,
+  type Po,
+} from '@m100/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../app/toast';
 import { ALL_PO_MASTER } from '../data/fixtures/pos';
@@ -612,5 +618,167 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
     renderHome();
     fireEvent.click(screen.getByRole('button', { name: 'EXPORT EXCEL' }));
     expect(await screen.findByText('File gagal dibuat. Coba lagi.')).toBeInTheDocument();
+  });
+});
+
+describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
+  const LV1: Auth = { ...AUTH, username: 'ANDI CONTOH', level: 'PSI lv.1' };
+  const jpeg = { blob: new Blob(['j'], { type: 'image/jpeg' }), sha256: 'h' };
+  const NO_DEFECT: TapCommand = { type: 'NO_DEFECT' };
+  const submit = () => fireEvent.click(screen.getByRole('button', { name: 'SUBMIT PO' }));
+  const summary = (label: string) =>
+    within(screen.getByRole('dialog', { name: 'Submit PO' }))
+      .getByText(label)
+      .closest('.m100-stat')
+      ?.querySelector('b')?.textContent;
+
+  /** Everything sealing touches. */
+  async function stored() {
+    return {
+      sessions: (await db.sessions.toArray()).map((s) => [s.id, s.status]),
+      events: await db.events.count(),
+      photos: await db.photos.count(),
+      outbox: await db.outbox.count(),
+      outboxPhotos: await db.outboxPhotos.count(),
+    };
+  }
+
+  it('blocks while an inspection is active; Ke ADD DEFECT opens the Defect screen', async () => {
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')));
+    renderHome();
+    const before = await stored();
+    submit();
+    // The active inspection is checked first, before the photo check.
+    const dialog = screen.getByRole('alertdialog', { name: 'Inspeksi masih berjalan' });
+    expect(dialog).toHaveTextContent('Selesaikan inspeksi dulu (END INSPECTION).');
+    // Must be answered: no close button, the scrim does not close it.
+    expect(within(dialog).queryByRole('button', { name: /tutup/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('scrim'));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Ke ADD DEFECT' }));
+    await waitFor(() => expect(store.getState().view.screen).toBe('defect'));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(await stored()).toEqual(before);
+  });
+
+  it('blocks when Qty Inspection is 0', async () => {
+    await store.getState().addPo(PO, null);
+    renderHome();
+    submit();
+    const dialog = screen.getByRole('alertdialog', { name: 'Belum ada inspeksi' });
+    expect(dialog).toHaveTextContent('Belum ada inspeksi untuk PO ini. Mulai dari ADD DEFECT.');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Mengerti' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('lists the Top 5 defects without a photo for PSI lv.2 (BR-04)', async () => {
+    const a = entry('MAJOR', 'A01');
+    const b = entry('MINOR', 'A01');
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, START_REWORK, defect(a), defect(b), defect(b), END);
+    await act(() => store.getState().savePhoto(PO.po, a.defectId, jpeg));
+    renderHome();
+    submit();
+    const dialog = screen.getByRole('alertdialog', { name: 'Foto belum lengkap' });
+    expect(
+      within(dialog)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual([nameOf(b)]);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Lengkapi foto' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('confirms with the summary; BATAL, the close button and the scrim change nothing', async () => {
+    const a = entry('MAJOR', 'A01');
+    await store.getState().addPo(PO, { number: 1, qty: 1200 });
+    await tap(PO.po, START_BGRADE, defect(a), END, NO_DEFECT, NO_DEFECT, NO_DEFECT);
+    await act(() => store.getState().savePhoto(PO.po, a.defectId, jpeg));
+    renderHome();
+    const before = await stored();
+
+    submit();
+    expect(summary('PO')).toBe(PO.po);
+    expect(summary('Partial')).toBe(formatPartial({ number: 1, qty: 1200 }, PO.orderQty));
+    expect(summary('Qty Inspection')).toBe('4');
+    expect(summary('Qty Defect')).toBe('1');
+    expect(summary('Qty A-Grade')).toBe('3');
+    expect(summary('Qty B-Grade')).toBe('1');
+    expect(summary('Defect Rate')).toBe('25,0%');
+    expect(summary('Pass Rate (RFT)')).toBe('75,0%');
+    expect(summary('Foto')).toBe('1');
+
+    const dialog = () => screen.queryByRole('dialog', { name: 'Submit PO' });
+    fireEvent.click(within(dialog()!).getByRole('button', { name: 'BATAL' }));
+    expect(dialog()).not.toBeInTheDocument();
+    submit();
+    fireEvent.click(within(dialog()!).getByRole('button', { name: 'Tutup' }));
+    expect(dialog()).not.toBeInTheDocument();
+    submit();
+    fireEvent.click(screen.getByTestId('scrim'));
+    expect(dialog()).not.toBeInTheDocument();
+    expect(await stored()).toEqual(before);
+  });
+
+  it('KIRIM seals the session: Home shows zeros, the toast and the waiting count (AC-04.2, AC-11.3)', async () => {
+    const a = entry('MAJOR', 'A01');
+    await store.getState().addPo(PO, { number: 2, qty: 300 });
+    await tap(PO.po, START_REWORK, defect(a), END);
+    await act(() => store.getState().savePhoto(PO.po, a.defectId, jpeg));
+    renderHome();
+    expect(screen.queryByLabelText(/pengiriman menunggu/)).not.toBeInTheDocument();
+
+    submit();
+    fireEvent.click(screen.getByRole('button', { name: 'KIRIM' }));
+
+    expect(await screen.findByText('Tersimpan. Menunggu koneksi.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('1 pengiriman menunggu')).toHaveTextContent('1');
+    expect(stat('Qty Inspection')).toBe('0');
+    expect(stat('Qty Defect')).toBe('0');
+    expect(stat('Defect Rate')).toBe('—');
+    expect(screen.getByText('Belum ada defect')).toBeInTheDocument();
+    // U10: the partial stays on the PO.
+    expect(infoValue('PARTIAL')).toBe(formatPartial({ number: 2, qty: 300 }, PO.orderQty));
+    expect(await db.outbox.count()).toBe(1);
+    expect(await db.outboxPhotos.count()).toBe(1);
+  });
+
+  it('PSI lv.1 confirms without a Foto row and submits no photo (AC-10.6)', async () => {
+    await act(async () => {
+      await store.getState().logout();
+      await store.getState().login(LV1);
+    });
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')), END);
+    renderHome(LV1);
+    submit();
+    expect(screen.queryByText('Foto')).not.toBeInTheDocument();
+    expect(screen.queryByText('Partial')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'KIRIM' }));
+    expect(await screen.findByText('Tersimpan. Menunggu koneksi.')).toBeInTheDocument();
+    expect(await db.outbox.count()).toBe(1);
+    expect(await db.outboxPhotos.count()).toBe(0);
+  });
+
+  it('says so when sealing fails on the tablet, and keeps the session', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, NO_DEFECT);
+    renderHome();
+    const before = await stored();
+    vi.spyOn(db.outbox, 'add').mockRejectedValueOnce(new Error('QuotaExceededError'));
+
+    submit();
+    fireEvent.click(screen.getByRole('button', { name: 'KIRIM' }));
+
+    expect(await screen.findByText('PO gagal disimpan. Coba lagi.')).toBeInTheDocument();
+    expect(stat('Qty Inspection')).toBe('1');
+    expect(await stored()).toEqual(before);
+    expect(screen.queryByLabelText(/pengiriman menunggu/)).not.toBeInTheDocument();
   });
 });

@@ -6,6 +6,8 @@ import {
   formatDateTime,
   formatPartial,
   formatRate,
+  formatTime,
+  toWibIso,
 } from './format';
 
 describe('formatRate (BR-02, doc 05 G5)', () => {
@@ -69,5 +71,30 @@ describe('fileDate (AC-12.3)', () => {
     expect(fileDate(new Date('2026-10-19T07:05:00Z'))).toBe('20261019');
     expect(fileDate(new Date('2026-10-19T16:59:59Z'))).toBe('20261019');
     expect(fileDate(new Date('2026-10-19T17:00:00Z'))).toBe('20261020');
+  });
+});
+
+describe('toWibIso (doc 04 §1)', () => {
+  it('writes the moment with the +07:00 offset, milliseconds kept', () => {
+    expect(toWibIso('2026-10-16T07:32:05.123Z')).toBe('2026-10-16T14:32:05.123+07:00');
+    expect(toWibIso(new Date('2026-10-16T07:32:05Z'))).toBe('2026-10-16T14:32:05.000+07:00');
+  });
+
+  it('names the same moment', () => {
+    const at = '2026-12-31T17:30:00.250Z';
+    expect(toWibIso(at)).toBe('2027-01-01T00:30:00.250+07:00');
+    expect(Date.parse(toWibIso(at))).toBe(Date.parse(at));
+  });
+
+  it('refuses something that is not a moment', () => {
+    expect(() => toWibIso('kemarin')).toThrow(RangeError);
+  });
+});
+
+describe('formatTime (doc 05 G5)', () => {
+  it('shows WIB HH:mm', () => {
+    expect(formatTime('2026-10-16T07:32:05Z')).toBe('14:32');
+    expect(formatTime(new Date('2026-10-19T17:05:00Z'))).toBe('00:05');
+    expect(formatTime('2026-10-19T00:00:00Z')).toBe('07:00');
   });
 });

@@ -76,3 +76,29 @@ export function fileDate(at: Date): string {
   const p = parts(WIB_DIGITS, at);
   return `${p.year}${p.month}${p.day}`;
 }
+
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+/**
+ * A moment as ISO 8601 in WIB, `2026-10-16T14:32:05.123+07:00` (doc 04 §1). WIB has no daylight saving, so the
+ * offset is fixed. Milliseconds are kept so the API breaks Top 5 ties on the same first-recorded times as the
+ * tablet (doc 02 §6.2).
+ */
+export function toWibIso(at: string | Date): string {
+  const ms = typeof at === 'string' ? Date.parse(at) : at.getTime();
+  if (Number.isNaN(ms)) throw new RangeError(`Not a moment: ${String(at)}`);
+  return new Date(ms + WIB_OFFSET_MS).toISOString().replace('Z', '+07:00');
+}
+
+const WIB_TIME = new Intl.DateTimeFormat('en-GB', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+  timeZone: WIB,
+});
+
+/** A moment as WIB `HH:mm` (doc 05 G5): the outbox list and the submit toasts. */
+export function formatTime(at: string | Date): string {
+  const p = parts(WIB_TIME, typeof at === 'string' ? new Date(at) : at);
+  return `${p.hour}:${p.minute}`;
+}

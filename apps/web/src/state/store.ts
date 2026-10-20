@@ -11,30 +11,38 @@ import { useStore } from 'zustand';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import {
   applyEvent,
+  buildSubmission,
+  checkSubmit,
   EMPTY_SESSION,
   endInspection,
   noDefect,
   recordDefect,
   replay,
   startInspection,
+  submissionPhotos,
   takesPhotos,
+  top5,
   undo,
   type AreaMapEntry,
   type DefectId,
   type InspectionType,
+  type MappingIndex,
   type Po,
   type PoPartial,
   type Session,
   type SessionEvent,
   type SessionEventPayload,
   type SessionState,
+  type SubmitBlock,
 } from '@m100/shared';
+import { sha256Hex } from '../app/sha256';
 import type { LoginData, MasterDataSource } from '../data/sources';
 import * as repo from '../db/repo';
 import {
   createDb,
   type Auth,
   type M100Db,
+  type OutboxRow,
   type PhotoRow,
   type PoRow,
   type View,
@@ -76,6 +84,8 @@ export interface AppState {
   pos: readonly PoRow[];
   /** Open sessions by PO number. */
   sessions: Readonly<Record<string, PoSession>>;
+  /** The PSI's own sealed submissions, newest first (AC-11.3, doc 05 U14). */
+  outbox: readonly OutboxRow[];
   view: View;
   /** Names and factories/cells for the login screen; `null` until loaded or read from the cache. */
   loginData: LoginData | null;
@@ -97,10 +107,46 @@ export interface AppState {
   savePhoto: (po: string, defectId: DefectId, jpeg: Jpeg) => Promise<void>;
   /** HAPUS in the photo view (doc 05 §12.2). */
   removePhoto: (po: string, defectId: DefectId) => Promise<void>;
+  /**
+   * KIRIM (FR-11.3, doc 03 §4.6): seals the PO's open session into the outbox and gives the PO a new empty
+   * session; the partial stays (doc 05 U10). Rejects with `SubmitBlockedError` when a check of doc 05 §13.1
+   * fails, and with `repo.SessionChangedError` when the stored session differs from the state; nothing is
+   * written then.
+   */
+  submitPo: (po: string, mapping: Pick<MappingIndex, 'defect'>) => Promise<OutboxRow>;
   setView: (patch: Partial<View>) => Promise<void>;
 }
 
 export type AppStore = StoreApi<AppState>;
+
+/** SUBMIT PO was refused by a check before anything was written (doc 05 §13.1). */
+export class SubmitBlockedError extends Error {
+  constructor(readonly block: SubmitBlock) {
+    super(`Submit blocked: ${block.kind}`);
+    this.name = 'SubmitBlockedError';
+  }
+}
+
+/** The checks of doc 05 §13.1 for a PO's open session, in order; `null` when it can be submitted. */
+export function submitBlock(
+  level: Auth['level'],
+  session: PoSession | undefined,
+  mapping: Pick<MappingIndex, 'defect'>,
+): SubmitBlock | null {
+  const state = session?.state ?? EMPTY_SESSION;
+  return checkSubmit({
+    state,
+    level,
+    top: top5(state, mapping),
+    photographed: new Set(Object.keys(session?.photos ?? {}) as DefectId[]),
+  });
+}
+
+/** The photos a KIRIM of this session submits (doc 04 §4.1), for the confirmation's "Foto" count too. */
+export function photosToSubmit(level: Auth['level'], session: PoSession): PhotoRow[] {
+  const stored = Object.values(session.photos).filter((p): p is PhotoRow => p !== undefined);
+  return submissionPhotos(session.state, level, stored);
+}
 
 export const DEFAULT_VIEW: View = {
   screen: 'home',
@@ -108,9 +154,15 @@ export const DEFAULT_VIEW: View = {
   defectPath: { areaId: null, subAreaId: null, familyId: null },
 };
 
-type UserData = Pick<AppState, 'auth' | 'pos' | 'sessions' | 'view'>;
+type UserData = Pick<AppState, 'auth' | 'pos' | 'sessions' | 'outbox' | 'view'>;
 
-const LOGGED_OUT: UserData = { auth: null, pos: [], sessions: {}, view: DEFAULT_VIEW };
+const LOGGED_OUT: UserData = {
+  auth: null,
+  pos: [],
+  sessions: {},
+  outbox: [],
+  view: DEFAULT_VIEW,
+};
 
 function toPayload(state: SessionState, command: TapCommand): SessionEventPayload | null {
   switch (command.type) {
@@ -130,9 +182,10 @@ function toPayload(state: SessionState, command: TapCommand): SessionEventPayloa
 async function loadUserData(db: M100Db, auth: Auth | null): Promise<UserData> {
   if (!auth) return LOGGED_OUT;
   const { username } = auth;
-  const [pos, open, view] = await Promise.all([
+  const [pos, open, outbox, view] = await Promise.all([
     repo.listPos(db, username),
     repo.listOpenSessions(db, username),
+    repo.listOutbox(db, username),
     repo.getView(db, username),
   ]);
   const sessions: Record<string, PoSession> = {};
@@ -151,7 +204,7 @@ async function loadUserData(db: M100Db, auth: Auth | null): Promise<UserData> {
   const restored = view ?? DEFAULT_VIEW;
   // A selection always names a listed PO (doc 05 §8.4).
   const selected = pos.some((p) => p.po === restored.selectedPo) ? restored.selectedPo : null;
-  return { auth, pos, sessions, view: { ...restored, selectedPo: selected } };
+  return { auth, pos, sessions, outbox, view: { ...restored, selectedPo: selected } };
 }
 
 export function createAppStore(db: M100Db, now: () => string = () => new Date().toISOString()) {
@@ -329,6 +382,66 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
           });
         }),
 
+      submitPo: (po, mapping) =>
+        serial(async () => {
+          const auth = requireAuth();
+          const current = requireSession(po);
+          const listed = get().pos.find((p) => p.po === po);
+          if (!listed) throw new Error(`PO ${po} is not in the list`);
+          const block = submitBlock(auth.level, current, mapping);
+          if (block) throw new SubmitBlockedError(block);
+
+          // The submission is serialised once, here, and that string is what is ever sent (doc 03 §4.6).
+          const submissionUuid = crypto.randomUUID();
+          const sealedAt = now();
+          const photos = photosToSubmit(auth.level, current);
+          const payloadJson = JSON.stringify(
+            buildSubmission({
+              submissionUuid,
+              sealedAt,
+              appVersion: __APP_VERSION__,
+              user: { username: auth.username, level: auth.level },
+              cell: { factory: auth.factory, cell: auth.cell },
+              po,
+              partial: listed.partial,
+              state: current.state,
+              photos,
+            }),
+          );
+          const item: OutboxRow = {
+            submissionUuid,
+            po,
+            sealedAt,
+            payloadJson,
+            payloadSha256: await sha256Hex(payloadJson),
+            authorUsername: auth.username,
+            authorToken: auth.token,
+            state: 'waiting',
+            attempts: 0,
+            nextAttemptAt: sealedAt,
+            lastAttemptAt: null,
+            problem: null,
+          };
+          const session = await repo.sealSession(db, {
+            username: auth.username,
+            sessionId: current.session.id,
+            lastSeq: current.events.at(-1)?.seq ?? 0,
+            item,
+            photos,
+            at: sealedAt,
+          });
+          // Home shows the new empty session at once (AC-04.2). Sending is not part of Phase 1: the item
+          // waits in the outbox until the sender of T3.6 exists.
+          set((s) => ({
+            sessions: {
+              ...s.sessions,
+              [po]: { session, events: [], state: EMPTY_SESSION, photos: {} },
+            },
+            outbox: [item, ...s.outbox],
+          }));
+          return item;
+        }),
+
       setView: (patch) =>
         serial(async () => {
           const username = requireUser();
@@ -351,6 +464,11 @@ export function hasOpenData(session: PoSession | undefined): boolean {
 /** POs whose open session holds recorded taps (AC-02.2). */
 export function unsubmittedCount(state: Pick<AppState, 'sessions'>): number {
   return Object.values(state.sessions).filter(hasOpenData).length;
+}
+
+/** Submissions still on their way, Menunggu + Mengirim (AC-11.3, doc 05 G11, U15); Gagal is not waiting. */
+export function waitingCount(state: Pick<AppState, 'outbox'>): number {
+  return state.outbox.filter((o) => o.state === 'waiting' || o.state === 'sending').length;
 }
 
 /** The selected PO (doc 05 §8.4); its row is the stored object, so it is a stable selector result. */

@@ -1,12 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  encodeWithin,
-  fitWithin,
-  MAX_BYTES,
-  PhotoProcessingError,
-  QUALITIES,
-  sha256Hex,
-} from './resize';
+import { encodeWithin, fitWithin, MAX_BYTES, PhotoProcessingError, QUALITIES } from './resize';
 
 describe('fitWithin (AC-10.1)', () => {
   it('scales a landscape photo to 960 px wide', () => {
@@ -46,14 +39,6 @@ describe('encodeWithin (AC-10.1)', () => {
   it('fails when no quality fits', async () => {
     await expect(encodeWithin(() => Promise.resolve(ofSize(MAX_BYTES + 1)))).rejects.toThrow(
       PhotoProcessingError,
-    );
-  });
-});
-
-describe('sha256Hex', () => {
-  it('hashes the bytes as lowercase hex', async () => {
-    expect(await sha256Hex(new Blob(['abc']))).toBe(
-      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
     );
   });
 });

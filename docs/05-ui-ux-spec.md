@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Document | 05 — UI/UX Flow and Screen Spec |
-| Version | v0.2 Draft, 19 Oct 2026 (U1 confirmed; U13 compact shoe map added) |
+| Version | v0.2 Draft, 20 Oct 2026 (U1 confirmed; U13 compact shoe map; U14–U16 outbox and Submit PO added) |
 | Inputs | PRD v0.5 (FR-01…FR-13, AC, BR, NFR), the clickable prototype (`reference/prototype/app.html`, layout and behavior only), Design System v45 (namespace `M100`), doc 03 §4 (tablet design), doc 04 §5–6 (outbox, error codes) |
 | Used by | The coding agent in Phase 1 (offline PWA). Doc 06 gives the parts; this document says where each part goes and what it does. |
 
@@ -57,7 +57,7 @@ flowchart TD
 | G8 | **Disabled looks grey** (`disabled` fill), and the reason is visible on the same screen (a hint line, a `Notice`, or the dialog's checks). |
 | G9 | **Haptics.** `navigator.vibrate(18)` on every recorded defect and on UNDO, where supported. |
 | G10 | **Screen on.** While an inspection is active the app requests a screen wake lock so the tablet does not sleep mid-inspection; released when the inspection ends or the app is hidden. Failure is silent. |
-| G11 | **Online indicator.** A small status word in the Home header: nothing when online and the outbox is empty; "Offline" (`Chip` neutral) when `navigator.onLine` is false; the outbox count when something is waiting (S3 header, S9). |
+| G11 | **Online indicator.** A small status word in the Home header: nothing when online and the outbox is empty; "Offline" (`Chip` neutral) when `navigator.onLine` is false; the outbox count when something is waiting (S3 header, S9). The count covers the logged-in PSI's own submissions (U14) in Menunggu or Mengirim (U15). |
 | G13 | **Logo.** The company mark `assets/parkland.png` is the app's logo (the product has no mark of its own). It appears on S0, S1, S2 (above the form), the S3 header, the S9 menu, the PDF export header, and as the PWA icon. Rules in section 4a. |
 | G12 | **No hidden gestures** except one: long press on a PO in the PO list to remove it (AC-03.4, Should). Everything else has a visible button. |
 
@@ -401,7 +401,7 @@ Home never blocks on the result. The PSI can start the next round on the same PO
 `Dialog title="Pengaturan"` (anchored to the gear on Regular; centred otherwise). From top to bottom:
 
 1. **Akun** — name, level `Chip`, "Factory/Cell F3-10".
-2. **Pengiriman** — the outbox list: one `OutboxItem` per submission (PO, time `HH:mm`, status Menunggu / Mengirim / Terkirim / Gagal, and the reason for Gagal; for Menunggu the last attempt). Newest first. "Terkirim" items stay for 7 days (doc 04 §5), then leave the list. Empty: "Tidak ada pengiriman." (AC-11.3). `Gagal` items also show the hint "Hubungi admin dengan nomor PO ini."
+2. **Pengiriman** — the outbox list: one `OutboxItem` per submission of the logged-in PSI (U14) (PO, time `HH:mm`, status Menunggu / Mengirim / Terkirim / Gagal, and the reason for Gagal; for Menunggu the last attempt, shown once the sender has recorded one). Newest first. "Terkirim" items stay for 7 days (doc 04 §5), then leave the list. Empty: "Tidak ada pengiriman." (AC-11.3). `Gagal` items also show the hint "Hubungi admin dengan nomor PO ini."
 3. **Data** — "Data master diperbarui {dd MMM HH:mm}" (AC-13.4).
 4. **LOGOUT** — `Button danger block` at the bottom (FR-02).
 
@@ -432,6 +432,8 @@ Exact texts beyond those quoted above, so that the coding agent does not invent 
 | NO DEFECT toast | No Defect tercatat. A-Grade +1 |
 | UNDO toasts | Defect terakhir dibatalkan / Inspeksi dibatalkan / No Defect dibatalkan |
 | Submit toasts | PO terkirim {HH:mm} / Tersimpan. Menunggu koneksi. / Sedang dikirim. |
+| Sealing failed on the tablet (KIRIM, toast error; nothing is sealed, the session stays as it was) | PO gagal disimpan. Coba lagi. (confirmed 20 Oct 2026) |
+| Waiting count badge, accessible label | {n} pengiriman menunggu |
 | Device not registered (401 DEVICE_KEY_INVALID) | Tablet belum terdaftar, hubungi admin |
 | Server error | Terjadi kesalahan server. Data tetap tersimpan di tablet. |
 
@@ -498,6 +500,9 @@ Layout containers written in the app (not in the design system): the Home grid, 
 | U11 | HAPUS on a photo needs no confirmation. | The photo can be retaken at once; an extra dialog costs more than the mistake. |
 | U12 | The gear menu holds account, outbox, master data time and LOGOUT; "Reset data demo" from the prototype does not exist. | Demo only. |
 | U13 | **Decided 19 Oct 2026.** When the shoe map is drawn shorter than its pills need (about 473 px for the design-system docks), the app places the same 12 pills on a second set of docks spread over the whole height (`SHOE_AREAS_COMPACT`). Anchors, leader-line targets, labels and the image box stay as in the design system; the command row and END INSPECTION stay in place; nothing scrolls. | In Compact (a landscape screen 480 px or less tall) the design-system docks put 44 px pills 75/720 of the map apart, so they cover each other and the command buttons. Touch sizes must not shrink (G2). |
+| U14 | **Decided 20 Oct 2026.** The outbox is shown per author: the header count and the S9 Pengiriman list hold only the logged-in PSI's submissions. Another PSI's waiting items stay on the tablet and are still sent with their author's token (doc 03 §4.4). | BR-09 and AC-02.3: a PSI never sees another PSI's data, and the outbox carries POs like the PO list does. |
+| U15 | **Decided 20 Oct 2026.** The waiting count is Menunggu + Mengirim. Gagal and Terkirim are not counted. | Both are still on their way; a Gagal item waits for an admin, not for the connection, and shows in S9 with its reason (AC-11.4). |
+| U16 | **Decided 20 Oct 2026.** In the Submit PO confirmation the summary takes two columns on a screen 480 px or less tall. | KIRIM stays on screen without scrolling in Compact. |
 
 ## 19. Checks for the coding agent
 

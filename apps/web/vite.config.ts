@@ -3,10 +3,12 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { APP_NAME } from '../../packages/shared/src/index.ts';
+import { appVersionDefine } from './version.config.ts';
 
 const sharedSrc = fileURLToPath(new URL('../../packages/shared/src/index.ts', import.meta.url));
 
 export default defineConfig({
+  define: appVersionDefine,
   resolve: {
     alias: { '@m100/shared': sharedSrc },
   },

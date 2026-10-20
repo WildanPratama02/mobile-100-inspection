@@ -501,6 +501,49 @@
   justify-content: flex-end;
   gap: var(--space-2);
 }
+.settings__outbox {
+  display: grid;
+  gap: var(--space-2);
+}
+.settings__heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.settings__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 40dvh;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+}
+.settings__hint {
+  display: block;
+  padding: var(--space-1) 12px var(--space-2);
+  font-size: var(--fs-caption);
+  color: var(--ink-2);
+}
+
+/* ---- S8 Submit PO (doc 05 §13.2) ---- */
+.submit__summary {
+  display: grid;
+  column-gap: var(--space-5);
+}
+.submit__po > b {
+  font-family: var(--font-mono);
+  font-size: var(--fs-po);
+}
+/* Compact: the summary in two columns keeps KIRIM on screen without scrolling. */
+@media (max-height: 480px) {
+  .submit__summary {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
 
 /* ---- S6 Defect (doc 05 §11.1): shoe pane ≈56% | side ≈44% ---- */
 .defect {

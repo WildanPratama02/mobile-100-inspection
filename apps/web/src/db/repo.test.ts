@@ -1,7 +1,7 @@
-import type { Po } from '@m100/shared';
+import type { DefectId, Po } from '@m100/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as repo from './repo';
-import { createDb, type Auth, type M100Db, type PhotoRow } from './schema';
+import { createDb, type Auth, type M100Db, type OutboxRow, type PhotoRow } from './schema';
 
 const AT = '2026-10-16T01:00:00.000Z';
 const LATER = '2026-10-16T02:00:00.000Z';
@@ -224,22 +224,151 @@ describe('photos', () => {
   });
 });
 
+const outboxItem = (submissionUuid: string, sealedAt = AT): OutboxRow => ({
+  submissionUuid,
+  po: '0903359388',
+  sealedAt,
+  payloadJson: '{}',
+  payloadSha256: 'x',
+  authorUsername: A.username,
+  authorToken: null,
+  state: 'waiting',
+  attempts: 0,
+  nextAttemptAt: sealedAt,
+  lastAttemptAt: null,
+  problem: null,
+});
+
 describe('outbox', () => {
-  it('lists submissions newest first', async () => {
-    const item = {
-      po: '0903359388',
-      payloadJson: '{}',
-      payloadSha256: 'x',
-      authorUsername: A.username,
-      authorToken: null,
-      state: 'waiting' as const,
-      attempts: 0,
-      nextAttemptAt: AT,
-      lastAttemptAt: null,
-      problem: null,
+  it('lists a PSI’s own submissions, newest first (U14)', async () => {
+    await repo.putOutboxItem(db, outboxItem('u1', AT));
+    await repo.putOutboxItem(db, outboxItem('u2', LATER));
+    await repo.putOutboxItem(db, { ...outboxItem('u3', LATER), authorUsername: 'psi.uji.dua' });
+    expect((await repo.listOutbox(db, A.username)).map((o) => o.submissionUuid)).toEqual([
+      'u2',
+      'u1',
+    ]);
+    expect((await repo.listOutbox(db, 'psi.uji.dua')).map((o) => o.submissionUuid)).toEqual(['u3']);
+  });
+});
+
+describe('sealSession (doc 03 §4.6)', () => {
+  const PO = '0903359388';
+  const defect = (defectId: DefectId) =>
+    ({ type: 'DEFECT', areaId: 'A01', subAreaId: 'S01', familyId: 'F01', defectId }) as const;
+  const shot = (sessionId: string, defectId: DefectId): PhotoRow => ({
+    ...photo(sessionId, `sha-${defectId}`),
+    defectId,
+  });
+
+  /** An open session with REWORK, D001 and D002 recorded, ended, and a photo of each. */
+  async function recorded() {
+    const s = await repo.openSession(db, A.username, PO, AT);
+    await repo.appendEvent(db, A.username, s.id, { type: 'START_REWORK' }, AT);
+    await repo.appendEvent(db, A.username, s.id, defect('D001'), AT);
+    await repo.appendEvent(db, A.username, s.id, defect('D002'), AT);
+    await repo.appendEvent(db, A.username, s.id, { type: 'END' }, AT);
+    await repo.putPhoto(db, A.username, shot(s.id, 'D001'));
+    await repo.putPhoto(db, A.username, shot(s.id, 'D002'));
+    return s;
+  }
+
+  const request = (sessionId: string, overrides: Partial<repo.SealRequest> = {}) => ({
+    username: A.username,
+    sessionId,
+    lastSeq: 4,
+    item: outboxItem('u1'),
+    photos: [{ defectId: 'D001' as const, sha256: 'sha-D001' }],
+    at: LATER,
+    ...overrides,
+  });
+
+  /** Everything sealing touches, to compare before and after a refusal. */
+  async function snapshot() {
+    return {
+      sessions: await db.sessions.toArray(),
+      events: await db.events.count(),
+      photos: (await db.photos.toArray()).map((p) => [p.sessionId, p.defectId, p.sha256]),
+      outbox: await db.outbox.toArray(),
+      outboxPhotos: await db.outboxPhotos.toArray(),
     };
-    await repo.putOutboxItem(db, { ...item, submissionUuid: 'u1', sealedAt: AT });
-    await repo.putOutboxItem(db, { ...item, submissionUuid: 'u2', sealedAt: LATER });
-    expect((await repo.listOutbox(db)).map((o) => o.submissionUuid)).toEqual(['u2', 'u1']);
+  }
+
+  it('writes the outbox item, moves the photos, closes the session and opens a new one', async () => {
+    const s = await recorded();
+    const next = await repo.sealSession(db, request(s.id));
+
+    expect(await db.outbox.toArray()).toEqual([outboxItem('u1')]);
+    const moved = await db.outboxPhotos.toArray();
+    expect(moved.map((p) => [p.submissionUuid, p.defectId, p.sha256, p.takenAt])).toEqual([
+      ['u1', 'D001', 'sha-D001', AT],
+    ]);
+    expect(moved[0]?.blob).toBeDefined();
+    // D002's photo was not submitted; it leaves with the closed session.
+    expect(await db.photos.count()).toBe(0);
+    expect((await db.sessions.get(s.id))?.status).toBe('closed');
+    expect(next).toMatchObject({ username: A.username, po: PO, status: 'open', createdAt: LATER });
+    expect(next.id).not.toBe(s.id);
+    expect((await repo.listOpenSessions(db, A.username)).map((o) => o.id)).toEqual([next.id]);
+    // The sealed session never changes again.
+    await expect(
+      repo.appendEvent(db, A.username, s.id, { type: 'NO_DEFECT' }, LATER),
+    ).rejects.toThrow(repo.SessionNotOpenError);
+  });
+
+  it('refuses when an event was added after the submission was built', async () => {
+    const s = await recorded();
+    await repo.appendEvent(db, A.username, s.id, { type: 'NO_DEFECT' }, LATER);
+    const before = await snapshot();
+    await expect(repo.sealSession(db, request(s.id))).rejects.toThrow(repo.SessionChangedError);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('refuses when a submitted photo was replaced or removed meanwhile', async () => {
+    const s = await recorded();
+    await repo.putPhoto(db, A.username, { ...shot(s.id, 'D001'), sha256: 'newer' });
+    const replaced = await snapshot();
+    await expect(repo.sealSession(db, request(s.id))).rejects.toThrow(repo.SessionChangedError);
+    expect(await snapshot()).toEqual(replaced);
+
+    await repo.deletePhoto(db, A.username, s.id, 'D001');
+    const removed = await snapshot();
+    await expect(
+      repo.sealSession(db, request(s.id, { photos: [{ defectId: 'D001', sha256: 'newer' }] })),
+    ).rejects.toThrow(repo.SessionChangedError);
+    expect(await snapshot()).toEqual(removed);
+  });
+
+  it('refuses a closed session or another PSI’s session', async () => {
+    const s = await recorded();
+    const before = await snapshot();
+    await expect(repo.sealSession(db, request(s.id, { username: 'psi.uji.dua' }))).rejects.toThrow(
+      repo.SessionNotOpenError,
+    );
+    expect(await snapshot()).toEqual(before);
+
+    await repo.sealSession(db, request(s.id));
+    const sealed = await snapshot();
+    await expect(repo.sealSession(db, request(s.id, { item: outboxItem('u2') }))).rejects.toThrow(
+      repo.SessionNotOpenError,
+    );
+    expect(await snapshot()).toEqual(sealed);
+  });
+
+  it('rolls everything back when a later step fails', async () => {
+    const s = await recorded();
+    // A leftover photo under the same key makes the photo move fail after the outbox item was written.
+    await db.outboxPhotos.add({
+      submissionUuid: 'u1',
+      defectId: 'D001',
+      blob: new Blob(['old']),
+      sha256: 'old',
+      takenAt: AT,
+    });
+    const before = await snapshot();
+    await expect(repo.sealSession(db, request(s.id))).rejects.toThrow();
+    expect(await snapshot()).toEqual(before);
+    expect(await db.outbox.count()).toBe(0);
+    expect((await db.sessions.get(s.id))?.status).toBe('open');
   });
 });

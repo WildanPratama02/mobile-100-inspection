@@ -3,6 +3,7 @@
  * on the long edge, re-encoded as JPEG of at most 1 MB, with its SHA-256 for the submission (doc 04 §4.1).
  * Runs on the tablet only; the server never re-encodes.
  */
+import { sha256Hex } from '../app/sha256';
 import type { Jpeg } from '../state/store';
 
 /** AC-10.1. */
@@ -42,11 +43,6 @@ export async function encodeWithin(
     if (blob.size <= maxBytes) return blob;
   }
   throw new PhotoProcessingError(`JPEG stays above ${maxBytes} bytes`);
-}
-
-export async function sha256Hex(blob: Blob): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 function canvasJpeg(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {

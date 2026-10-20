@@ -1,14 +1,25 @@
-import { totals, type AreaMapEntry, type Po } from '@m100/shared';
+import {
+  defaultMapping,
+  EMPTY_SESSION,
+  toWibIso,
+  totals,
+  type AreaMapEntry,
+  type Po,
+  type SubmissionRequest,
+} from '@m100/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sha256Hex } from '../app/sha256';
 import type { LoginData, MasterDataSource } from '../data/sources';
 import * as repo from '../db/repo';
-import { createDb, type Auth, type M100Db } from '../db/schema';
+import { createDb, type Auth, type M100Db, type OutboxRow } from '../db/schema';
 import {
   createAppStore,
   DEFAULT_VIEW,
   hasOpenData,
   selectedPo,
+  SubmitBlockedError,
   unsubmittedCount,
+  waitingCount,
   type AppStore,
 } from './store';
 
@@ -425,5 +436,207 @@ describe('photos (FR-10)', () => {
       'QuotaExceededError',
     );
     expect(store.getState().sessions).toBe(before);
+  });
+});
+
+describe('submitPo (FR-11, doc 03 §4.6)', () => {
+  const mapping = defaultMapping();
+  const jpeg = (sha256: string) => ({ blob: new Blob([sha256], { type: 'image/jpeg' }), sha256 });
+
+  /** PSI lv.2 with REWORK: D001 ×2, then B-GRADE: D049, then NO DEFECT; D001 photographed. */
+  async function readyToSubmit(): Promise<AppStore> {
+    const store = await loggedInWithPo();
+    const { tap, savePhoto } = store.getState();
+    await tap(PO.po, { type: 'START', inspection: 'REWORK' });
+    await tap(PO.po, { type: 'DEFECT', entry: TOE });
+    await tap(PO.po, { type: 'DEFECT', entry: TOE });
+    await tap(PO.po, { type: 'END' });
+    await tap(PO.po, { type: 'START', inspection: 'B-GRADE' });
+    await tap(PO.po, { type: 'DEFECT', entry: HEEL });
+    await tap(PO.po, { type: 'END' });
+    await tap(PO.po, { type: 'NO_DEFECT' });
+    await savePhoto(PO.po, 'D001', jpeg('sha-toe'));
+    await savePhoto(PO.po, 'D049', jpeg('sha-heel'));
+    return store;
+  }
+
+  /** Everything sealing touches, to compare before and after a refusal. */
+  async function snapshot() {
+    return {
+      sessions: await db.sessions.toArray(),
+      events: await db.events.count(),
+      photos: (await db.photos.toArray()).map((p) => [p.sessionId, p.defectId, p.sha256]),
+      outbox: await db.outbox.toArray(),
+      outboxPhotos: await db.outboxPhotos.count(),
+    };
+  }
+
+  it('seals the session into the outbox and starts an empty one, partial kept (AC-04.2, U10)', async () => {
+    const store = await readyToSubmit();
+    const sealed = store.getState().sessions[PO.po]!.session;
+
+    const item = await store.getState().submitPo(PO.po, mapping);
+
+    expect(item).toMatchObject({
+      po: PO.po,
+      authorUsername: A.username,
+      authorToken: null,
+      state: 'waiting',
+      attempts: 0,
+      lastAttemptAt: null,
+      problem: null,
+    });
+    expect(item.nextAttemptAt).toBe(item.sealedAt);
+    const after = store.getState();
+    expect(after.outbox).toEqual([item]);
+    expect(waitingCount(after)).toBe(1);
+    const next = after.sessions[PO.po]!;
+    expect(next.session.id).not.toBe(sealed.id);
+    expect(next).toMatchObject({ events: [], state: EMPTY_SESSION, photos: {} });
+    expect(totals(next.state)).toMatchObject({ qtyInspection: 0, qtyDefect: 0 });
+    expect(after.pos[0]?.partial).toEqual({ number: 1, qty: 600 });
+    expect((await db.sessions.get(sealed.id))?.status).toBe('closed');
+    expect(
+      (await db.outboxPhotos.toArray()).map((p) => [p.submissionUuid, p.defectId]).sort(),
+    ).toEqual([
+      [item.submissionUuid, 'D001'],
+      [item.submissionUuid, 'D049'],
+    ]);
+    expect(await db.photos.count()).toBe(0);
+  });
+
+  it('stores the submission string once, with its matching SHA-256 (doc 04 §4.3)', async () => {
+    const store = await readyToSubmit();
+    const item = await store.getState().submitPo(PO.po, mapping);
+
+    const stored = await db.outbox.get(item.submissionUuid);
+    expect(stored?.payloadJson).toBe(item.payloadJson);
+    expect(stored?.payloadSha256).toBe(await sha256Hex(item.payloadJson));
+    expect(item.payloadSha256).toMatch(/^[0-9a-f]{64}$/);
+
+    const payload = JSON.parse(item.payloadJson) as SubmissionRequest;
+    expect(payload).toMatchObject({
+      submissionUuid: item.submissionUuid,
+      sealedAt: toWibIso(item.sealedAt),
+      appVersion: __APP_VERSION__,
+      user: { username: A.username, level: 'PSI lv.2' },
+      factory: 'F 1',
+      cell: 'C01',
+      po: PO.po,
+      partial: { number: 1, qty: 600 },
+      counts: { rework: 1, bGrade: 1, noDefect: 1 },
+    });
+    expect(payload.findings.map((f) => [f.inspectionType, f.defectId, f.qty])).toEqual([
+      ['REWORK', 'D001', 2],
+      ['B-GRADE', 'D049', 1],
+    ]);
+    expect(payload.findings.every((f) => f.firstRecordedAt.endsWith('+07:00'))).toBe(true);
+    expect(payload.photos).toEqual([
+      { defectId: 'D001', part: 'photo_D001', sha256: 'sha-toe' },
+      { defectId: 'D049', part: 'photo_D049', sha256: 'sha-heel' },
+    ]);
+  });
+
+  it('keeps the outbox and the new session across a reload (AC-11.2)', async () => {
+    const store = await readyToSubmit();
+    const item = await store.getState().submitPo(PO.po, mapping);
+    const reloaded = (await reopen()).getState();
+    expect(reloaded.outbox).toEqual([item]);
+    expect(reloaded.sessions).toEqual(store.getState().sessions);
+  });
+
+  it('refuses by the checks of doc 05 §13.1 and writes nothing', async () => {
+    const store = await loggedInWithPo();
+    const { tap, submitPo, removePhoto } = store.getState();
+    const blocked = async (kind: string) => {
+      const before = await snapshot();
+      const error = await submitPo(PO.po, mapping).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(SubmitBlockedError);
+      expect((error as SubmitBlockedError).block.kind).toBe(kind);
+      expect(await snapshot()).toEqual(before);
+      expect(store.getState().outbox).toEqual([]);
+    };
+
+    await blocked('EMPTY');
+    await tap(PO.po, { type: 'START', inspection: 'REWORK' });
+    await blocked('ACTIVE');
+    await tap(PO.po, { type: 'DEFECT', entry: TOE });
+    await tap(PO.po, { type: 'END' });
+    await blocked('PHOTOS_MISSING');
+    await store.getState().savePhoto(PO.po, 'D001', jpeg('aa'));
+    await removePhoto(PO.po, 'D001');
+    await blocked('PHOTOS_MISSING');
+  });
+
+  it('submits PSI lv.1 without photos (AC-10.6)', async () => {
+    const store = createAppStore(db, now);
+    await store.getState().hydrate();
+    await store.getState().login(B);
+    await store.getState().addPo(PO, null);
+    await store.getState().tap(PO.po, { type: 'START', inspection: 'REWORK' });
+    await store.getState().tap(PO.po, { type: 'DEFECT', entry: TOE });
+    await store.getState().tap(PO.po, { type: 'END' });
+
+    const item = await store.getState().submitPo(PO.po, mapping);
+    const payload = JSON.parse(item.payloadJson) as SubmissionRequest;
+    expect(payload.photos).toEqual([]);
+    expect(payload.partial).toBeNull();
+    expect(payload.user).toEqual({ username: B.username, level: 'PSI lv.1' });
+    expect(await db.outboxPhotos.count()).toBe(0);
+  });
+
+  it('refuses when the session changed after the submission was built, changing nothing', async () => {
+    const store = await readyToSubmit();
+    const before = store.getState();
+    const sessionId = before.sessions[PO.po]!.session.id;
+    // Another tab of the app taps on the same session behind this store's back.
+    const realSeal = repo.sealSession;
+    vi.spyOn(repo, 'sealSession').mockImplementationOnce(async (database, request) => {
+      await repo.appendEvent(database, A.username, sessionId, { type: 'START_REWORK' }, now());
+      return realSeal(database, request);
+    });
+    const stored = await snapshot();
+
+    await expect(store.getState().submitPo(PO.po, mapping)).rejects.toThrow(
+      repo.SessionChangedError,
+    );
+
+    const after = await snapshot();
+    expect(after).toEqual({ ...stored, events: stored.events + 1 });
+    expect(store.getState().sessions).toBe(before.sessions);
+    expect(store.getState().outbox).toBe(before.outbox);
+  });
+
+  it('rolls everything back when sealing fails on the tablet', async () => {
+    const store = await readyToSubmit();
+    const before = store.getState();
+    const stored = await snapshot();
+    vi.spyOn(db.outboxPhotos, 'bulkAdd').mockRejectedValueOnce(new Error('QuotaExceededError'));
+
+    await expect(store.getState().submitPo(PO.po, mapping)).rejects.toThrow('QuotaExceededError');
+
+    expect(await snapshot()).toEqual(stored);
+    expect(store.getState().sessions).toBe(before.sessions);
+    expect(store.getState().outbox).toEqual([]);
+  });
+
+  it('shows each PSI only their own submissions (U14)', async () => {
+    const store = await readyToSubmit();
+    await store.getState().submitPo(PO.po, mapping);
+    await store.getState().logout();
+    await store.getState().login(B);
+    expect(store.getState().outbox).toEqual([]);
+    expect(waitingCount(store.getState())).toBe(0);
+    await store.getState().logout();
+    await store.getState().login(A);
+    expect(store.getState().outbox).toHaveLength(1);
+  });
+});
+
+describe('waitingCount (AC-11.3, U15)', () => {
+  it('counts Menunggu and Mengirim, not Gagal or Terkirim', () => {
+    const states = ['waiting', 'sending', 'failed', 'sent', 'waiting'] as const;
+    const outbox = states.map((state) => ({ state }) as OutboxRow);
+    expect(waitingCount({ outbox })).toBe(3);
   });
 });

@@ -1,13 +1,14 @@
 /**
- * S9 gear menu (doc 05 §14, FR-02): the account and LOGOUT. The Pengiriman list comes with the outbox
- * (T1.7) and the master-data time with T2.6.
+ * S9 gear menu (doc 05 §14, FR-02): the account, the PSI's own submissions (AC-11.3, U14) and LOGOUT. The
+ * master-data time comes with T2.6.
  */
 import { useState } from 'react';
+import { formatTime } from '@m100/shared';
 import { Logo } from '../app/Logo';
 import { Overlay } from '../app/Overlay';
-import type { Auth } from '../db/schema';
+import type { Auth, OutboxRow } from '../db/schema';
 import { unsubmittedCount, useAppStore } from '../state/store';
-import { Button, Chip, Dialog } from '../ui';
+import { Button, Chip, Dialog, OutboxItem } from '../ui';
 import './screens.css';
 
 export interface SettingsDialogProps {
@@ -51,6 +52,7 @@ export function SettingsDialog({ auth, onClose }: SettingsDialogProps) {
             <div className="settings__cell">Factory/Cell {auth.cell}</div>
           </div>
         </section>
+        <Outbox />
         <Button
           variant="danger"
           block
@@ -60,5 +62,45 @@ export function SettingsDialog({ auth, onClose }: SettingsDialogProps) {
         </Button>
       </Dialog>
     </Overlay>
+  );
+}
+
+/**
+ * Pengiriman (doc 05 §14): one item per submission of this PSI, newest first, with its status in words. The
+ * last attempt of a Menunggu item is shown once the sender of T3.6 records one.
+ */
+function Outbox() {
+  const outbox = useAppStore((s) => s.outbox);
+  return (
+    <section className="settings__outbox" aria-label="Pengiriman">
+      <h4 className="settings__heading">Pengiriman</h4>
+      {outbox.length === 0 ? (
+        <p className="settings__text">Tidak ada pengiriman.</p>
+      ) : (
+        <ul className="settings__list">
+          {outbox.map((item) => (
+            <li key={item.submissionUuid}>
+              <OutboxEntry item={item} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function OutboxEntry({ item }: { item: OutboxRow }) {
+  return (
+    <>
+      <OutboxItem
+        po={item.po}
+        time={formatTime(item.sealedAt)}
+        status={item.state}
+        reason={item.state === 'failed' ? (item.problem ?? undefined) : undefined}
+      />
+      {item.state === 'failed' ? (
+        <small className="settings__hint">Hubungi admin dengan nomor PO ini.</small>
+      ) : null}
+    </>
   );
 }
