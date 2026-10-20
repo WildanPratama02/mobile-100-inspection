@@ -1,309 +1,336 @@
-# Mobile 100% Inspection — Data Design (Spreadsheet Schema)
+# Mobile 100% Inspection — Data Design (PostgreSQL and object storage)
 
 | | |
 |---|---|
-| Version | 1.0 — approved by the product owner, 16 Oct 2026 |
-| Date | 16 Oct 2026 |
-| Spreadsheet | "100%INLINE IMPACTIVA" (owner `fnd.ahmad12@gmail.com`, time zone Asia/Bangkok = WIB) |
-| Based on | A full read of `DATA_INSPECTION` rows 2–2371 (2,370 sessions, 3 Aug – 15 Oct 2026) and of `USER_LIST`, `DB_CELL`, `ALL_PO_MASTER`, `DEFECT_LIST`, `SUMMARY`, on 16 Oct 2026 |
-| Related | ADR-001, 002, 003, 008, 009, 011, 012 in [07 Decision Log](07-decision-log.md); FR-10, FR-11, FR-13 in [01 PRD](01-prd.md) |
+| Version | 2.0 — rewritten 20 Oct 2026 for ADR-018 (v1.0, the Google Sheets design, is superseded) |
+| Date | 20 Oct 2026 |
+| Database | PostgreSQL 16, database `m100`, schema `public`, time zone `Asia/Jakarta` for sessions, all timestamps stored as `timestamptz` |
+| Photos | An object store behind the `PhotoStore` interface (S3 API; MinIO or another S3-compatible store, or a plain folder), bucket `m100-photos` |
+| Based on | A full read of the old spreadsheet on 16 Oct 2026 (its findings are kept in §2 where they still matter) and ADR-018 |
+| Related | ADR-003, 006, 008, 009, 013, 018 in [07 Decision Log](07-decision-log.md); FR-01…FR-14 in [01 PRD](01-prd.md); [03 TDD](03-tdd.md) §5 |
 
-This document says exactly what the API reads from and writes to the spreadsheet. Every item is decided; the decisions taken during review are listed in §12.
+This document says what is stored, where, and how a submission is written. Mobile 100% Inspection no longer reads or writes the "100%INLINE IMPACTIVA" spreadsheet or any Google service (ADR-018). Historical AppSheet data stays in that spreadsheet and is not migrated.
 
-## 1. What the existing data shows
+## 1. Overview
 
-These findings shape the design. Counts are for the 600 PSI rows unless stated.
+```mermaid
+erDiagram
+  psi_users ||--o{ submissions : "username, level (copied)"
+  pos ||--o{ submissions : "po (copied)"
+  devices ||--o{ submissions : "device_id"
+  submissions ||--o{ submission_findings : has
+  submissions ||--o{ submission_photos : has
+  defects ||--o{ area_map : "maps"
+  sub_areas ||--o{ area_map : "in"
+  families ||--o{ area_map : "of"
+  areas ||--o{ sub_areas : has
+  factories ||--o{ cells : has
+```
 
-| # | Finding | Consequence for Mobile 100% Inspection |
+| Group | Tables | Written by |
 |---|---|---|
-| D1 | `ID` is 8 lowercase hex characters (AppSheet `UNIQUEID()`), e.g. `a39deaf8`. | The API generates IDs in the same format and checks they are unused. |
-| D2 | `DATE`, `CRD` are date serials shown as `dd/mm/yyyy`; quantities are numbers shown as `#,##0`; `RFT` and `DEFECT RATE` are numbers rounded to 3 decimals shown as `0.0%`; `PO` is text (keeps leading zeros). | Values are written as numbers/strings, not formatted text; the row's formats are copied from the row above. |
-| D3 | **Every row has a spreadsheet formula in all 75 `LINK` cells**, the same per column: `=SUBSTITUTE(CONCATENATE("https://www.appsheet.com/template/gettablefileurl?appName=";"100PERCENTINLINEIMPACTIVA-227477299";"&tableName=";"DATA_INSPECTION";"&fileName=";W2371);" ";"%20")`, pointing at the `PHOTO` cell on its left. Rows below the data are empty. | AppSheet only keeps adding this formula to new rows while the column's formulas are consistent. A row with a plain value in a LINK cell makes the column "mixed": AppSheet then marks it read-only and stops adding the formula to new rows. Mobile 100% Inspection rows must therefore carry the same formula (§7). |
-| D4 | `PHOTOk` holds the path `DATA_INSPECTION_Images/<ID>.PHOTO<k>.<HHmmss>.jpg`; *k* is the global photo number, `3(n−1)+j` for photo *j* of slot *n* (7,883 of 7,898 paths follow this exactly). | Same naming for Mobile 100% Inspection photos; the LINK formula then produces a working link. |
-| D5 | An unused slot is written as `DEFECTn` = empty, `DEFECT NAMEn` = `-`, everything else empty (8,907 of 8,922 unused PSI slots). | Same pattern. |
-| D6 | PSI sessions use 0–24 slots: median 10, 8 sessions used 20 or more, none used all 25. | 25 slots are enough for nearly every session; overflow is handled (§6.3) but should be rare. |
-| D7 | Slots are in entry order, not by quantity (25 of 595 rows are sorted). The same defect name appears in two slots of one row in 114 rows. | Readers don't depend on slot order or unique names; Mobile 100% Inspection orders slots by quantity so slots 1–5 are the Top 5. |
-| D8 | Photos are attached to 99% of used slots, **at both levels** (PSI lv.1: 832 of 852 slots; lv.2: 5,179 of 5,222). Per used slot: 1 photo 4,573×, 2 photos 989×, 3 photos 449×. | Mobile 100% Inspection deliberately takes fewer (decided 16 Oct 2026, §7): one photo per Top 5 defect, PSI lv.2 only. Its rows carry at most a handful of photos and none for PSI lv.1, a visible difference from AppSheet rows. |
-| D9 | `TOTAL DEFECT` = sum of `QTY DEFECT n` (597/600). `QTY INSPECTION` = `A-GRADE` + `TOTAL DEFECT` in **600/600** rows, so `RFT` + `DEFECT RATE` = 100%. `B-GRADE` is empty or a small number, always ≤ `TOTAL DEFECT`. | Mobile 100% Inspection counts differently (ADR-008): one pair can carry several defects, so `QTY INSPECTION` ≠ `A-GRADE` + `TOTAL DEFECT` and the two rates don't add to 100%. See §9. |
-| D10 | `INSPECTION BY`, `CFA NAME`, `HISTORYCAL PO`, `STATUS PO`, `PIC ADM` are empty in all 600 PSI rows. `CATEGORY` is `SHOES` in 596 rows (`COMPONENT UPPER` 3). `PARTIAL OF QTY PO` is empty in 412 rows, otherwise free text (`1`, `1200`, `P1 1200`). `C-GRADE` is empty in 598 rows. | Defaults in §5. |
-| D11 | 132 used slots hold names that are not in `DEFECT_LIST` (`LONG SHORT`, `HEEL HIGHT`, `LINE UP`, `-`, empty…), typed by hand in AppSheet. | Mobile 100% Inspection writes only names from `DEFECT_LIST`. Reports already cope with other names. |
-| D12 | `MODEL` and `DESTINATION` contain non-breaking spaces (U+00A0) in 2,347 of 2,370 rows, copied from `ALL_PO_MASTER`. | Copy PO fields byte for byte; never trim or normalise them, or joins with existing rows break. |
-| D13 | `SUMMARY` holds plain values (no formulas), one row per defect, with `LINK` = the first photo link of each slot. It is produced outside the sheet (OQ-12). | Mobile 100% Inspection rows feed it as long as LINK columns behave like AppSheet's (D3). |
-| D14 | `DATA_INSPECTION` grew by ~1,150 rows in September (PSI ~290). The file's grids hold ~3.95M cells of the 10M limit, of which `DATA_INSPECTION` is 1.48M (5,366 rows × 276, 3,000 of them empty) and `Copy of DATA_INSPECTION` 0.92M. At ~317k cells/month the file reaches 10M in about 19 months (around mid-2028). | Not caused by Mobile 100% Inspection, but it limits it. See §11. |
+| Master data | `psi_users`, `factories`, `cells`, `pos`, `defects`, `areas`, `sub_areas`, `families`, `area_map` | One-time import, then the admin app (§5) |
+| Submissions | `submissions`, `submission_findings`, `submission_photos` | The API, once per Submit PO (§6) |
+| Operations | `devices`, `admins`, `audit_log`, `settings` | The admin app and scripts |
+| Reporting | views `v_submissions`, `v_findings`, `v_defect_totals`, `v_top5` | Read-only (§8) |
+| Photos | objects in the photo store | The API |
 
-## 2. Sheets and who writes them
+Rules that hold for every table: primary keys are explicit; text copied from a master table into a submission is a **snapshot** (so later edits to master data never change history); no table has `ON DELETE CASCADE` from master data to submissions; submissions are never updated or deleted.
 
-| Sheet | Mobile 100% Inspection | Notes |
+## 2. What the old data taught us (kept)
+
+These findings from the old spreadsheet still shape the rules below.
+
+| # | Finding | Rule here |
 |---|---|---|
-| `USER_LIST` | reads | Login names (§3.1) |
-| `DB_CELL` | reads | Factory / Cell (§3.2) |
-| `ALL_PO_MASTER` | reads | PO search and PO fields (§3.3) |
-| `DEFECT_LIST` | reads | Defect names and classification (§3.4) |
-| `M100_AREA_MAP` | reads (new) | Area mapping (§4.1) |
-| `DATA_INSPECTION` | appends 1 row per Submit PO | Existing format (§5–7) |
-| `M100_DEFECT_DETAIL` | appends (new) | Where on the shoe, by inspection type (§4.2) |
-| `M100_SUBMISSION` | appends 1 row per Submit PO (new) | Idempotency and audit (§4.3) |
-| `SUMMARY`, `CFA DATA`, `REPACKING_DATA`, `Copy of DATA_INSPECTION`, `Sheet19`, `Sheet20` | never touched | — |
+| D1 | A PSI session has 0–24 distinct defects (median 10); one pair can carry several defects. | No slot limit any more: findings are rows (§4). |
+| D2 | `QTY INSPECTION` ≠ `A-GRADE` + `TOTAL DEFECT` under ADR-008, so RFT + Defect Rate ≠ 100%. | Stored as computed by ADR-008 (§6.3, §9). |
+| D3 | PO fields (`MODEL`, `DESTINATION`) carried non-breaking spaces copied from the PO master. | Master text is stored **as imported**, never trimmed or normalised by the import; the search ignores them (§3.3). |
+| D4 | 132 historical slots held hand-typed defect names outside `DEFECT_LIST`. | Mobile 100% Inspection writes only defects that exist in `defects`. |
+| D5 | `PARTIAL OF QTY PO` was free text (`1`, `1200`, `P1 1200`). | Two structured numbers (§4.1); the text form `P1 1.200 OF 10.002` is a derived display value (§4.1). |
+| D6 | 99% of old slots had photos, at both levels. | Decided: one photo per Top 5 defect, PSI lv.2 only (FR-10, §4.3). |
 
-The API never edits or deletes an existing row in any sheet (BR-07). The only cells it writes after an append are the cells of the row it has just appended (§8).
+## 3. Master data
 
-## 3. Master data (read)
+All master tables have `id` or a natural key, `active boolean` (inactive rows are hidden but kept, because submissions refer to them), `created_at`, `updated_at`. A single row in `settings` (`key = 'master_version'`) is a counter incremented **in the same transaction** as any master change; the tablet's `/master-data` ETag is derived from it.
 
-The API reads each sheet whole, caches it (FR-13: refresh on demand, at most every 30 minutes), and validates it at startup (§10).
+### 3.1 `psi_users`
 
-### 3.1 `USER_LIST` — `ID`, `USERNAME`, `TYPE INSPECTION`
-
-- Login list = distinct (`USERNAME`, `TYPE INSPECTION`) where `TYPE INSPECTION` ∈ {`PSI lv.1`, `PSI lv.2`}, sorted by name. On 16 Oct 2026: 14 people (6 lv.1, 8 lv.2).
-- `ROIS FATHUR ROHIM` appears twice as `PSI lv.1` (IDs 4 and 36): shown once.
-- `EVA JULIYANI` is both `CFA` and `PSI lv.1`: shown once, as `PSI lv.1`.
-- A name listed at both PSI levels would be shown twice, once per level (none today).
-- The session stores `USERNAME` and `TYPE INSPECTION` as text, exactly as in the sheet; `ID` is not used.
-
-### 3.2 `DB_CELL` — `ID`, `FACTORY`, `CELL`
-
-- Factory list = distinct `FACTORY` values of the form `F <number>`, in sheet order: today `F 1` … `F 5`. `PWA` and `BOTTOM` (cells `PWA` and `-`) are **not offered** (decided 16 Oct 2026). A new factory such as `F 6` appears automatically once it is added to `DB_CELL`.
-- Cell list = `CELL` for the chosen factory (`F3-10`).
-
-### 3.3 `ALL_PO_MASTER` — `PO`, `ARTICLE`, `MODEL`, `DESTINATION`, `ORDER QTY`, `PODD`, `CRD`, `Balance Prod`, `FINISH PRODUCTION`
-
-- About 71,500 rows; all values are text, dates as ISO text (`2026-01-12`). `PO` keeps leading zeros and prefixes (`0902028839`, `CX-0902368685`).
-- Search (FR-03): substring match on `PO`, `ARTICLE`, `MODEL`, case-insensitive, after 3 characters, at most 20 results. Which POs are offered is still open (OQ-06).
-- The PO fields written to `DATA_INSPECTION` are copied byte for byte (D12).
-
-### 3.4 `DEFECT_LIST` — `CTQ DEFECT CODE`, `DEFECT CLASSIFICATION`, `DEFECT NAME`, `CLASSIFICATION`
-
-- 98 rows; row *r* (2–99) is `DEFECT_ID` D(*r*−1), e.g. row 2 = D001 (ADR-009).
-- Mind the names: `DEFECT_LIST.DEFECT CLASSIFICATION` is the CTQ category ("Outer carton"); the **severity** is `DEFECT_LIST.CLASSIFICATION` (`MINOR` / `MAJOR` / `CRITICAL`). The severity is what goes into `DATA_INSPECTION.DEFECT CLASSIFICATION n`.
-- D049 and D071 are both "POOR TOUCH UP/PAINTING, MARKING LINE" (MINOR).
-
-## 4. New sheets
-
-Created once by the maintainer (or a setup script run with their approval), with exactly these columns and no spare rows or columns, so they cost only the cells they use.
-
-### 4.1 `M100_AREA_MAP` (read) — one row per mapping, 437 rows
-
-| Column | Example | Rule |
+| Column | Type | Rule |
 |---|---|---|
-| `MAP_ID` | `MAP-035-03` | Unique |
-| `AREA_ID` | `A03` | A01–A12 |
-| `AREA_NAME` | `Quarter` | |
-| `AREA_ORDER` | `3` | Display order |
-| `SUB_AREA_ID` | `SA03L` | Belongs to `AREA_ID` |
-| `SUB_AREA_NAME` | `Lateral Quarter` | |
-| `SUB_AREA_ORDER` | `3` | |
-| `FAMILY_ID` | `F03` | |
-| `FAMILY_NAME` | `Stitching` | |
-| `DEFECT_ID` | `D035` | D001–D098 |
-| `DEFECT_NAME` | `BROKEN STITCHING/LOOSE STITCHING/SKIPPED STITCHING/OPEN SEAM` | Must equal `DEFECT_LIST` row of `DEFECT_ID` |
-| `CLASSIFICATION` | `MAJOR` | Must equal `DEFECT_LIST.CLASSIFICATION` |
-| `ACTIVE` | `TRUE` | `FALSE` hides the row without deleting it |
+| `id` | `integer` identity PK | |
+| `username` | `text` not null | Exactly as shown on screen; no NIK (ADR-006) |
+| `level` | `text` not null | `PSI lv.1` or `PSI lv.2` (check constraint) |
+| `active` | `boolean` | default true |
 
-Loaded from `Footwear_Defect_Mapping_Database_v2.xlsx` (sheets `Defect_Area_Map`, `Area_Master`, `SubArea_Master`, `Defect_Family`, `Defect_Master`) by a one-time import.
+Unique on (`username`, `level`). The login list (FR-01) is the active rows sorted by `username`, each shown with its level. A name present at both levels appears twice, once per level.
 
-### 4.2 `M100_DEFECT_DETAIL` (write) — one row per area + sub-area + defect + inspection type
+Import rule from the old `USER_LIST`: keep only `TYPE INSPECTION` in (`PSI lv.1`, `PSI lv.2`), de-duplicate on (`USERNAME`, `TYPE INSPECTION`). On 16 Oct 2026 this gives 14 people (6 lv.1, 8 lv.2); `ROIS FATHUR ROHIM` (listed twice) and `EVA JULIYANI` (also a CFA) each appear once.
 
-| Column | Example | Rule |
-|---|---|---|
-| `DI_ID` | `5be0c1a7` | `ID` of the `DATA_INSPECTION` row |
-| `SUBMISSION_UUID` | `0f6b…` | From the tablet |
-| `INSPECTION_TYPE` | `REWORK` | `REWORK` or `B-GRADE` |
-| `AREA_ID` | `A03` | |
-| `SUB_AREA_ID` | `SA03L` | |
-| `FAMILY_ID` | `F03` | |
-| `DEFECT_ID` | `D035` | |
-| `DEFECT_NAME` | `BROKEN STITCHING/…` | Copy, for readability |
-| `CLASSIFICATION` | `MAJOR` | Copy |
-| `QTY` | `2` | ≥ 1 |
-| `SLOT` | `3` | The `DATA_INSPECTION` slot holding this defect, or empty if it overflowed (§6.3) |
+### 3.2 `factories` and `cells`
 
-Header fields (date, inspector, PO, cell…) are not repeated: join on `DI_ID`. Names of areas and families come from `M100_AREA_MAP`. This keeps the sheet at 11 columns (§11).
-
-### 4.3 `M100_SUBMISSION` (write) — one row per Submit PO
-
-Needed because a session made only of NO DEFECT pairs has no detail rows, so the detail sheet alone can't prove a submission was written.
-
-| Column | Example | Rule |
-|---|---|---|
-| `SUBMISSION_UUID` | `0f6b…` | Unique; idempotency key |
-| `DI_ID` | `5be0c1a7` | |
-| `SEALED_AT` | `16/10/2026 14:32:05` | When the PSI tapped KIRIM (WIB), datetime serial |
-| `WRITTEN_AT` | `16/10/2026 14:32:09` | When the API finished |
-| `QTY_REWORK` | `10` | Number of REWORK inspections |
-| `QTY_BGRADE` | `2` | Number of B-GRADE inspections |
-| `QTY_NO_DEFECT` | `18` | |
-| `PHOTO_COUNT` | `5` | |
-| `PARTIAL_NO` | `1` | Empty when the PO isn't partial |
-| `PARTIAL_QTY` | `1200` | Empty when the PO isn't partial |
-| `OVERFLOW_DEFECTS` | `0` | Distinct defects that didn't fit in 25 slots |
-| `APP_VERSION` | `1.0.0` | |
-
-Written last (§8); a row here means the submission is complete.
-
-## 5. `DATA_INSPECTION` row — header and totals
-
-Column letters are the sheet's. "Copy" means copied unchanged from the source.
-
-| Col | Header | Value written | Type / format |
-|---|---|---|---|
-| A | `ID` | New 8-hex ID (§8.1) | text |
-| B | `DATE` | Date of `SEALED_AT` (WIB) | date serial, `dd/mm/yyyy` |
-| C | `INSPECTOR` | `USERNAME` | text |
-| D | `TYPE INSPECTION` | `PSI lv.1` / `PSI lv.2` | text |
-| E | `INSPECTION BY` | empty (decided 16 Oct 2026) | |
-| F | `CFA NAME` | empty (decided) | |
-| G | `HISTORYCAL PO` | empty (decided) | |
-| H | `FACTORY` | from login, e.g. `F 3` | text |
-| I | `CELL` | from login, e.g. `F3-10` | text |
-| J | `CATEGORY` | always `SHOES` (decided 16 Oct 2026) | text |
-| K | `PO` | Copy of `ALL_PO_MASTER.PO` | text (TEXT format) |
-| L | `ARTICLE` | Copy | text |
-| M | `MODEL` | Copy (byte for byte, D12) | text |
-| N | `DESTINATION` | Copy (byte for byte) | text |
-| O | `QTY ORDER` | `ORDER QTY` as a number | number, `#,##0` |
-| P | `CRD` | `CRD` ISO text → date | date serial, `dd/mm/yyyy` |
-| Q | `PARTIAL OF QTY PO` | PO PARTIAL off: empty. On: `P<n> <qty> OF <QTY ORDER>`, numbers in Indonesian format, e.g. `P1 1.200 OF 10.002` (ADR-013) | text |
-| R | `QTY INSPECTION` | Qty Inspection (BR-01) | number |
-| S–JH | 25 defect slots | §6 | |
-| JI | `A-GRADE` | Qty A-Grade | number |
-| JJ | `B-GRADE` | Qty B-Grade; empty when 0 (as existing rows) | number |
-| JK | `C-GRADE` | empty | |
-| JL | `TOTAL DEFECT` | Qty Defect = sum of all defects, including any overflow (§6.3) | number |
-| JM | `RFT` | round(A-Grade ÷ Qty Inspection, 3) | number, `0.0%` |
-| JN | `DEFECT RATE` | round(Qty Defect ÷ Qty Inspection, 3) | number, `0.0%` |
-| JO | `STATUS PO` | empty (ADR-012) | |
-| JP | `PIC ADM` | empty (ADR-012) | |
-
-Submit PO is refused when Qty Inspection is 0 (FR-11), so the rates always have a denominator.
-
-## 6. Defect slots
-
-Slot *n* (1–25) occupies 10 columns starting at column 19 + 10(*n*−1): `DEFECTn`, `DEFECT NAMEn`, `DEFECT CLASSIFICATION n`, `QTY DEFECT n`, then `PHOTO(3n−2)`, `LINK(3n−2)`, `PHOTO(3n−1)`, `LINK(3n−1)`, `PHOTO(3n)`, `LINK(3n)`. Slot 1 = S–AB, slot 2 = AC–AL, … slot 25 = IY–JH.
-
-### 6.1 One slot per defect
-
-The session's findings are grouped by `DEFECT_ID`, adding up quantities across areas, sub-areas and inspection types. D049 and D071 stay separate slots even though their names are equal (allowed, D7).
-
-### 6.2 Slot order
-
-1. Higher total quantity first;
-2. then higher severity (CRITICAL, MAJOR, MINOR);
-3. then the defect recorded first.
-
-This is the Top 5 order of FR-05 (AC-05.1), so slots 1–5 are the Top 5 shown on Home.
-
-### 6.3 More than 25 distinct defects
-
-Slots 1–25 take the first 25 defects in that order. The rest are written only to `M100_DEFECT_DETAIL` with `SLOT` empty, and counted in `M100_SUBMISSION.OVERFLOW_DEFECTS`. `TOTAL DEFECT` and `DEFECT RATE` still include them, so the row's totals stay correct even though the slots don't add up. A photographed defect is moved ahead of unphotographed ones only if it would otherwise overflow, so no photo is lost. (Existing PSI sessions never exceeded 24 slots, D6.)
-
-### 6.4 Used slot
-
-| Column | Value |
+| Table | Columns |
 |---|---|
-| `DEFECTn` | `ADD` |
-| `DEFECT NAMEn` | `DEFECT_LIST.DEFECT NAME` |
-| `DEFECT CLASSIFICATION n` | `DEFECT_LIST.CLASSIFICATION` |
-| `QTY DEFECT n` | total quantity (number) |
-| `PHOTO(3n−2)` | the photo path when the defect has a photo (PSI lv.2, §7), otherwise empty |
-| `PHOTO(3n−1)`, `PHOTO(3n)` | always empty |
-| `LINK(3n−3+j)` | the LINK formula (§7), always |
+| `factories` | `id` PK, `name` unique (`F 1` … `F 5`), `active` |
+| `cells` | `id` PK, `factory_id` FK, `code` unique (`F3-10`), `active` |
 
-### 6.5 Unused slot
+Only factories of the form `F <number>` are offered at login (decided 16 Oct 2026); `PWA` and `BOTTOM` from the old `DB_CELL` are not imported. A factory with a single active cell has it selected automatically (FR-01.3).
 
-`DEFECTn` empty, `DEFECT NAMEn` = `-`, `DEFECT CLASSIFICATION n`, `QTY DEFECT n` and the three `PHOTO` cells empty, the three `LINK` cells = the LINK formula (D3, D5).
+### 3.3 `pos`
 
-## 7. Photos (ADR-011)
-
-**Mechanism (decided 16 Oct 2026).** The analysis (D3, D4) shows that the LINK columns are formulas AppSheet copies into every new row. Writing a bare Drive URL into them would break that for AppSheet's own future rows. The design that keeps both apps working:
-
-1. The API uploads each photo to Google Drive, into the folder AppSheet already uses for this table, `DATA_INSPECTION_Images` (in the sheet owner's Drive, in the app's data folder).
-2. File name: `<ID>.PHOTO<k>.<HHmmss>.jpg`, where *k* = 3(*n*−1)+1 for the defect in slot *n* and `HHmmss` is the sealed time in WIB. Example: the photo of the defect in slot 2 of row `5be0c1a7` sealed at 14:32:05 → `5be0c1a7.PHOTO4.143205.jpg`.
-3. `PHOTOk` = `DATA_INSPECTION_Images/<file name>`.
-4. `LINKk` = the same formula as every other row, pointing at its own row's `PHOTOk` cell. It evaluates to `https://www.appsheet.com/template/gettablefileurl?appName=100PERCENTINLINEIMPACTIVA-227477299&tableName=DATA_INSPECTION&fileName=DATA_INSPECTION_Images/5be0c1a7.PHOTO4.143205.jpg`, which opens the photo from Google Drive, exactly like AppSheet's links.
-
-Result: the photo is in Google Drive, its link is in `LINK1` … `LINK75`, the AppSheet app shows Mobile 100% Inspection photos, and `SUMMARY` picks up the links as before.
-
-**Who uploads.** A service account has no Drive storage and can't own files in a personal Drive, and this Drive belongs to a personal account, so there is no Shared Drive or domain-wide delegation. The API therefore uploads with the OAuth credentials of the sheet owner's account, **`fnd.ahmad12@gmail.com`** (decided 16 Oct 2026), which owns `DATA_INSPECTION_Images`. The owner grants consent once with the `https://www.googleapis.com/auth/drive` scope (the narrower `drive.file` only reaches files the app created itself, not the existing folder); the resulting refresh token is a server secret, never stored in the repo or on tablets. If the owner changes the password or revokes access, uploads stop and Submit PO is disabled until consent is given again (§10 check 6). Sheets access stays with the service account (ADR-004), shared as Editor on the spreadsheet.
-
-**Photo rule (decided 16 Oct 2026, FR-10).**
-- **PSI lv.2:** exactly one photo for each defect in the Top 5 at Submit PO (BR-04). It goes into the first photo pair of the defect's slot, so in practice `PHOTO1`, `PHOTO4`, `PHOTO7`, `PHOTO10`, `PHOTO13` (slots 1–5). A defect photographed while in the Top 5 that later dropped out keeps its photo in the first pair of its own slot (AC-10.4).
-- **PSI lv.1:** no photos. Every `PHOTO` cell of the row is empty; the `LINK` formulas are still written.
-- JPEG, at most 960 px on the long edge (AC-10.1), about 100–200 KB.
-
-**Formula text.** The API does not hard-code the formula. At startup it reads the 75 LINK formulas of the last data row, checks that each refers to the `PHOTO` cell on its left in the same row, and keeps them as templates; for a new row it substitutes the row number. If the templates are missing or differ between columns, Submit PO is disabled and the API reports it (§10).
-
-## 8. Writing a submission
-
-### 8.1 ID
-
-`ID` = the first 8 hex characters of SHA-256(`SUBMISSION_UUID`), lowercase. If that ID already exists in `DATA_INSPECTION` for a different submission, take the next 8 characters. Deriving the ID from the UUID makes every step below safe to repeat.
-
-### 8.2 Sequence (single-writer queue in the API)
-
-1. **Already written?** If `M100_SUBMISSION` has the UUID, return its `DI_ID` (BR-06).
-2. **Photos.** For each photo, look for a file with its name in `DATA_INSPECTION_Images`; upload only if missing.
-3. **Row exists?** If `DATA_INSPECTION` already has the ID (an earlier attempt stopped after this step), take its row number and go to 5.
-4. **Append** the row: `spreadsheets.values.append` on `DATA_INSPECTION!A:JP`, `valueInputOption=RAW`, `insertDataOption=OVERWRITE`, with every value of §5–6 and the LINK cells left empty. The response's `updatedRange` gives the row number *N*.
-5. **Complete** in one `spreadsheets.batchUpdate`:
-   - copy formats of row *N*−1 to row *N* (`copyPaste`, `PASTE_FORMAT`), which gives the date, number, text and percent formats of D2;
-   - write the 75 LINK formulas for row *N* (`updateCells`);
-   - append the detail rows to `M100_DEFECT_DETAIL` (`appendCells`);
-   - append the row to `M100_SUBMISSION` (`appendCells`).
-6. Return `DI_ID` to the tablet.
-
-Two Sheets writes per submission (steps 4 and 5) plus small reads that are always done fresh, never from a cache, because they decide whether to write: the ID columns of `M100_SUBMISSION` (step 1) and `DATA_INSPECTION` (step 3), and a check that the appended row *N* holds our ID before step 5 (doc 03 §5.4). This replaces "one batch request" in ADR-002 and NFR-06/07: the Sheets API can't append a row and fill formulas that reference its own row number in one request without knowing the row in advance, and guessing the row would race with AppSheet. If step 5 fails, the row exists without LINK formulas for a few seconds; the retry repeats step 5 only. Steps 1–5 run under the 429 back-off of NFR-07.
-
-### 8.3 Values
-
-Numbers are written as numbers, dates as serial numbers (days since 30 Dec 1899, WIB date), text as strings, empty cells as empty strings. Nothing is written as pre-formatted text ("2.400", "18,8%").
-
-## 9. How Mobile 100% Inspection numbers differ from existing rows
-
-Example session: 10 REWORK pairs with 8 defects, 2 B-GRADE pairs with 3 defects, 18 NO DEFECT pairs.
-
-| Column | Mobile 100% Inspection (ADR-008) | Existing PSI convention (D9) |
+| Column | Type | Rule |
 |---|---|---|
-| `QTY INSPECTION` | 30 | 30 |
-| `A-GRADE` | 18 (NO DEFECT taps) | 30 − 11 = 19 |
-| `B-GRADE` | 3 (per finding) | small number entered by hand |
-| `TOTAL DEFECT` | 11 | 11 |
-| `RFT` | 60.0% | 63.3% |
-| `DEFECT RATE` | 36.7% | 36.7% |
-| RFT + Defect Rate | 96.7% | always 100% |
+| `po` | `text` PK | Keeps leading zeros and prefixes (`0902028839`, `CX-0902368685`); never converted to a number (AC-03.5) |
+| `article`, `model`, `destination` | `text` | As imported |
+| `order_qty` | `integer` not null | ≥ 1 |
+| `podd`, `crd` | `date` null | Old ISO text `2026-01-12`; null if empty or unreadable |
+| `finished` | `boolean` | From old `FINISH PRODUCTION` / `Balance Prod` if imported (PRD OQ-06 decides whether it filters) |
+| `active` | `boolean` | |
+| `source` | `text` | `import:<file>` or `admin` |
 
-Both rates use the same formulas; only `A-GRADE` is counted differently. A report that assumes `A-GRADE` = `QTY INSPECTION` − `TOTAL DEFECT`, or that RFT + Defect Rate = 100%, will disagree with Mobile 100% Inspection rows. Mobile 100% Inspection rows can be told apart by their `M100_SUBMISSION` entry (join on `ID` = `DI_ID`).
+About 71,500 rows. **Search (FR-03.2):** case-insensitive substring match on `po`, `article`, `model`, after 3 characters, at most 20 rows. Implemented with the `pg_trgm` extension and one GIN index on `lower(po || ' ' || article || ' ' || model)`; non-breaking spaces are replaced by spaces **in the index expression only**, never in the stored data.
 
-## 10. Startup validation (API)
+### 3.4 `defects`
 
-Submit PO is disabled, and the reason is logged and shown in the gear menu, if any of these fail:
+| Column | Type | Rule |
+|---|---|---|
+| `id` | `text` PK | `D001` … `D098` (ADR-009) |
+| `name` | `text` not null | Exactly as in the old `DEFECT_LIST`, mixed case and brackets included; never shortened (doc 06) |
+| `severity` | `text` not null | `MINOR`, `MAJOR`, `CRITICAL` (check). This is the old `DEFECT_LIST.CLASSIFICATION` |
+| `ctq_category` | `text` null | The old `DEFECT_LIST.DEFECT CLASSIFICATION` ("Outer carton"), kept for reference only |
+| `ctq_code` | `text` null | The old `CTQ DEFECT CODE` |
 
-1. All seven read sheets exist with the headers in §3–4, in that order.
-2. `DATA_INSPECTION` has exactly the 276 headers of the current layout (`ID` … `PIC ADM`).
-3. `DEFECT_LIST` has 98 rows, and for every `DEFECT_ID` in `M100_AREA_MAP` the name and classification match its `DEFECT_LIST` row.
-4. Every `SUB_AREA_ID` in `M100_AREA_MAP` belongs to its `AREA_ID`; `MAP_ID` is unique.
-5. The 75 LINK formula templates were read and are consistent (§7).
-6. The API can list `DATA_INSPECTION_Images` with its Drive credentials.
+98 rows at import; row *r* (2–99) of the old sheet is `D(r−1)`. D049 and D071 are both "POOR TOUCH UP/PAINTING, MARKING LINE" (MINOR) and stay two defects.
 
-Login and inspection keep working offline while Submit PO is disabled; submissions wait in the outbox.
+### 3.5 Area map
 
-## 11. Capacity
-
-| Item | Cells |
+| Table | Columns |
 |---|---|
-| Whole file today (all grids) | ~3.95M of 10M |
-| `DATA_INSPECTION` growth, all sources | ~317k / month (≈1,150 rows × 276) |
-| Mobile 100% Inspection, if it replaces PSI AppSheet rows (~290 / month) | no extra `DATA_INSPECTION` cells; `M100_DEFECT_DETAIL` ≈ 290 × ~12 rows × 11 = 38k / month; `M100_SUBMISSION` ≈ 3k / month |
-| Time to 10M at today's pace | ~19 months (around mid-2028) |
+| `areas` | `id` PK (`A01`…`A12`), `name`, `sort` |
+| `sub_areas` | `id` PK (`SA03L`), `area_id` FK, `name`, `sort` |
+| `families` | `id` PK (`F03`), `name` |
+| `area_map` | `id` PK (`MAP-035-03`), `area_id`, `sub_area_id`, `family_id`, `defect_id` FKs, `active`; unique (`sub_area_id`, `family_id`, `defect_id`) |
 
-Recommendations for the sheet owner, outside Mobile 100% Inspection's scope: remove `Copy of DATA_INSPECTION` (0.92M cells) and the ~3,000 empty rows at the bottom of `DATA_INSPECTION` (0.83M), and plan a yearly archive of `DATA_INSPECTION` into a separate file. The repository layer (ADR-004) lets Mobile 100% Inspection move to another store when that time comes.
+437 mapping rows at import, from `Footwear_Defect_Mapping_Database_v2.xlsx` (sheets `Defect_Area_Map`, `Area_Master`, `SubArea_Master`, `Defect_Family`, `Defect_Master`). Medial Quarter offers the same defects as Lateral Quarter (AC-07.1). The name and severity of a defect are not repeated in `area_map`; there is one source (`defects`), which removes the old check that the two copies agree.
 
-## 12. Decisions taken during review
+**Integrity rules** (enforced by constraints and by the import/admin validation, §5): every `sub_areas.area_id` exists; every `area_map` row refers to existing rows; a `sub_area` belongs to exactly one area; `areas` has exactly the 12 area ids A01–A12 (the shoe-map pills of doc 06 are bound to them); every active `defects` row appears in at least one active `area_map` row (warning, not an error).
 
-| # | Question | Default in this document |
+## 4. Submissions
+
+One row of `submissions` is one Submit PO (ADR-003).
+
+### 4.1 `submissions`
+
+| Column | Type | Rule |
 |---|---|---|
-| Q1 | ~~Photo link mechanism~~ | **Decided 16 Oct 2026:** AppSheet's `DATA_INSPECTION_Images` folder + the existing LINK formula (§7) |
-| Q2 | ~~Photos per defect, PSI lv.1~~ | **Decided 16 Oct 2026:** one photo per Top 5 defect for PSI lv.2; PSI lv.1 uploads no photos (§7) |
-| Q3 | ~~Uploading account~~ | **Decided 16 Oct 2026:** the sheet owner `fnd.ahmad12@gmail.com` (§7) |
-| Q4 | ~~Header columns~~ | **Decided 16 Oct 2026:** `CATEGORY` = `SHOES`; `INSPECTION BY`, `CFA NAME`, `HISTORYCAL PO`, `C-GRADE` empty; `PARTIAL OF QTY PO` from the PO PARTIAL input (§5) |
-| Q5 | ~~`M100_SUBMISSION`~~ | **Decided 16 Oct 2026:** added (§4.3) |
-| Q6 | ~~Factories at login~~ | **Decided 16 Oct 2026:** only `F <number>` factories; `PWA` and `BOTTOM` hidden (§3.2) |
-| Q7 | ~~Text of `PARTIAL OF QTY PO`~~ | **Decided 16 Oct 2026:** two structured inputs, written as `P<n> <qty> OF <QTY ORDER>` (`P1 1.200 OF 10.002`) |
+| `id` | `uuid` PK | The **submission UUID** created by the tablet when the PSI taps KIRIM. Idempotency key (BR-06) |
+| `display_no` | `bigint` identity, unique | Human number for the admin app and reports (`M100-000123`) |
+| `payload_sha256` | `bytea` not null | SHA-256 of the JSON part exactly as received (doc 04 §4.3) |
+| `sealed_at` | `timestamptz` not null | When the PSI tapped KIRIM |
+| `received_at` | `timestamptz` not null default now() | When the API wrote it |
+| `inspection_date` | `date` not null | Date of `sealed_at` in WIB (stored, so reports need no time-zone math) |
+| `app_version` | `text` | |
+| `device_id` | `uuid` FK `devices` | The tablet that sent it |
+| `username`, `level` | `text` not null | Snapshot of the PSI (checked against the token) |
+| `factory`, `cell` | `text` not null | Snapshot (`F 3`, `F3-10`) |
+| `po`, `article`, `model`, `destination` | `text` not null | Snapshot copied from `pos` at write time |
+| `order_qty` | `integer` not null | Snapshot |
+| `podd`, `crd` | `date` null | Snapshot |
+| `partial_no` | `smallint` null | 1–99; null when the PO is not partial (ADR-013) |
+| `partial_qty` | `integer` null | 1 … `order_qty`; null when not partial. Check: both null or both set |
+| `qty_rework`, `qty_bgrade_inspections`, `qty_no_defect` | `integer` not null | Inspections started per type (the tablet's `counts`) |
+| `qty_inspection` | `integer` not null | `rework + bgrade_inspections + no_defect`, ≥ 1 (check) |
+| `qty_a_grade` | `integer` not null | = `qty_no_defect` (BR-01) |
+| `qty_b_grade` | `integer` not null | Sum of `qty` of B-GRADE findings |
+| `qty_defect` | `integer` not null | Sum of `qty` of all findings |
+| `rft` | `numeric(8,5)` not null | `qty_a_grade / qty_inspection` (a fraction, 0.60000 = 60,0%) |
+| `defect_rate` | `numeric(8,5)` not null | `qty_defect / qty_inspection`; can exceed 1 |
+| `photo_count` | `smallint` not null | Number of `submission_photos` rows |
+
+**Partial text.** The sheet's `P1 1.200 OF 10.002` is a display value, computed when needed (admin app, exports) as `P<partial_no> <partial_qty> OF <order_qty>` with Indonesian number format. It is not stored. The Home info strip shows `P1 · 1.200 dari 10.002`.
+
+**Immutability.** A trigger rejects every `UPDATE` and `DELETE` on `submissions`, `submission_findings` and `submission_photos`; role `m100_app` also has no DELETE grant. There is no void in release 1.
+
+Constraints (database level, so a bug in the API cannot store inconsistent numbers): `qty_inspection = qty_rework + qty_bgrade_inspections + qty_no_defect`; `qty_a_grade = qty_no_defect`; `qty_b_grade <= qty_defect`; the check on `partial_*` above. The API computes all totals itself from the tablet's counts and findings (doc 04 §4.1); the database re-checks `qty_defect` and `qty_b_grade` against the findings in the same transaction (§6.3).
+
+### 4.2 `submission_findings`
+
+One row per inspection type + area + sub-area + defect.
+
+| Column | Type | Rule |
+|---|---|---|
+| `id` | `bigint` identity PK | |
+| `submission_id` | `uuid` FK, not null | `ON DELETE RESTRICT` |
+| `inspection_type` | `text` | `REWORK` or `B-GRADE` |
+| `area_id`, `sub_area_id`, `family_id`, `defect_id` | `text` | FKs to the master tables |
+| `defect_name`, `severity` | `text` | Snapshot of `defects` at write time |
+| `qty` | `integer` | ≥ 1 |
+| `first_recorded_at` | `timestamptz` | When the PSI first tapped it; used for ranking ties |
+
+Unique on (`submission_id`, `inspection_type`, `area_id`, `sub_area_id`, `defect_id`). Index on `defect_id` and on (`area_id`).
+
+### 4.3 `submission_photos`
+
+| Column | Type | Rule |
+|---|---|---|
+| `id` | `bigint` identity PK | |
+| `submission_id` | `uuid` FK | |
+| `defect_id` | `text` | The defect the photo belongs to |
+| `object_key` | `text` not null | Key in the photo store, §7 |
+| `sha256` | `bytea` | Of the JPEG, matched against the tablet's value |
+| `size_bytes` | `integer` | ≤ 1 MB |
+
+Unique on (`submission_id`, `defect_id`): at most one photo per defect (AC-10.5). **Photo rule** (decided 16 Oct 2026, FR-10, BR-04): a PSI lv.2 submission has exactly one photo for each defect in its Top 5 (more photos only for defects that were photographed while in the Top 5 and later left it, AC-10.4); a PSI lv.1 submission has none.
+
+## 5. Master data: import and administration
+
+### 5.1 One-time import (`scripts/import-master`)
+
+Run by QIP Digital from CSV/XLSX exports of the old sheets and the mapping workbook; no Google access is needed.
+
+| Input | Target | Notes |
+|---|---|---|
+| `USER_LIST` (csv) | `psi_users` | §3.1 rules |
+| `DB_CELL` (csv) | `factories`, `cells` | §3.2 rules |
+| `ALL_PO_MASTER` (csv) | `pos` | All text kept as is; dates parsed from ISO text; rows with empty `PO` or non-numeric `ORDER QTY` are reported and skipped |
+| `DEFECT_LIST` (csv) | `defects` | Row order gives `D001…`; the file must have exactly 98 rows or the import stops |
+| `Footwear_Defect_Mapping_Database_v2.xlsx` | `areas`, `sub_areas`, `families`, `area_map` | 12 areas, 437 rows; every `DEFECT_ID` must exist in `defects` and its name must equal the workbook's name |
+
+The import runs in one transaction, prints a report (rows read, inserted, skipped, with reasons), supports `--dry-run`, and can be repeated: it upserts by natural key and never deletes. It writes one `audit_log` row.
+
+### 5.2 Administration (FR-14, doc 05 §20)
+
+After the import, master data is maintained in the admin web app by people with an `admins` account:
+
+| Subject | Operations |
+|---|---|
+| PSI users | add, rename, change level, deactivate / reactivate |
+| Factories and cells | add, rename, deactivate / reactivate |
+| POs | search, add or edit one PO, **import a CSV/XLSX of POs** (upsert by `po`, dry-run report first, never deletes) |
+| Defects and area map | view; deactivate / reactivate a defect or a map row; import the mapping workbook again (same validation as §5.1) |
+| Submissions | list (DataTable), filter, open, view photos, export CSV (read-only) |
+| Admins | add, deactivate, reset password |
+
+Every change writes an `audit_log` row (`at`, `actor`, `action`, `entity`, `entity_id`, `details` JSON with old and new values) and increments `master_version` when it affects what tablets download.
+
+### 5.3 Operations tables
+
+| Table | Columns |
+|---|---|
+| `devices` | Managed by the CLI `device:add` / `device:revoke` / `device:list` (no admin screen). `id` uuid PK, `label` unique, `key_sha256` bytea unique, `created_at`, `revoked_at` null, `last_seen_at` null. Only the SHA-256 of the device key is stored (ADR-014) |
+| `admins` | `id` PK, `username` unique, `password_hash` (argon2id), `active`, `created_at`, `last_login_at`, `failed_logins`, `locked_until` |
+| `audit_log` | `id` bigint identity, `at` timestamptz, `actor` text (`admin:<username>`, `script:<name>`, `system`), `action`, `entity`, `entity_id`, `details` jsonb |
+| `settings` | `key` text PK, `value` text — `master_version`, `submit_enabled` |
+
+## 6. Writing a submission
+
+### 6.1 Order of operations
+
+```mermaid
+sequenceDiagram
+  participant T as Tablet
+  participant A as API
+  participant P as PhotoStore
+  participant D as PostgreSQL
+  T->>A: POST /submissions (multipart)
+  A->>A: device key, token, rate limit, validate (doc 04 §4.2)
+  A->>D: SELECT submission by uuid
+  alt already written, same hash
+    A-->>T: 200 (stored result)
+  else already written, different hash
+    A-->>T: 409 SUBMISSION_UUID_REUSED
+  else new
+    A->>P: put photos (parallel, deterministic keys)
+    A->>D: BEGIN; INSERT submission, findings, photos; COMMIT
+    A-->>T: 201 (displayNo, totals)
+  end
+```
+
+1. **Look up the UUID.** If a row exists with the same `payload_sha256`, return its stored result (`200`); with a different hash, `409` (BR-06).
+2. **Validate** (doc 04 §4.2) using the master tables, in one read-only transaction at `REPEATABLE READ`, so a master edit during validation cannot produce a half-valid result.
+3. **Put photos** into the store under deterministic keys (§7). Putting the same key again overwrites it with identical bytes, so this step is safe to repeat. A row must never point to a missing object, so photos go first.
+4. **Write the rows** in **one transaction**: `INSERT INTO submissions … ON CONFLICT (id) DO NOTHING RETURNING …`; if nothing was returned a concurrent attempt won, so read it and answer as in step 1; otherwise insert the findings and photo rows with the snapshot columns filled from the master tables inside the same transaction, then re-check `qty_defect` and `qty_b_grade` against the findings (`SELECT sum(qty)`); a mismatch rolls back and returns `500 INTERNAL`.
+5. **Answer** `201` with `displayNo` and the totals.
+
+### 6.2 Crashes and retries
+
+| Crashed after | Left behind | The retry (same UUID, same bytes) |
+|---|---|---|
+| Validation | nothing | starts normally |
+| Some photos put | objects without rows | overwrites them, continues |
+| Transaction begun, not committed | nothing (rolled back) | writes it |
+| Commit, before the answer | a complete submission | step 1 returns `200` with the stored result |
+
+Objects whose key has no `submission_photos` row and are older than 24 hours are removed by a weekly sweep (`scripts/sweep-photos`, `--dry-run` first). A submission is therefore always complete or absent; nothing needs repair.
+
+### 6.3 Totals
+
+Computed by the API from the tablet's `counts` and `findings` with the ADR-008 rules and **verified in the database** (§4.1). Formulas: Qty Inspection = rework + B-GRADE inspections + NO DEFECT; Qty A-Grade = NO DEFECT; Qty Defect = Σ `qty`; Qty B-Grade = Σ `qty` of B-GRADE findings; `rft` = A-Grade ÷ Qty Inspection; `defect_rate` = Qty Defect ÷ Qty Inspection. Submit PO is refused when Qty Inspection is 0 (FR-11), so the rates always have a denominator. Fractions are stored with 5 decimals; screens and exports show percentages with one decimal and an Indonesian decimal comma.
+
+### 6.4 Time
+
+`sealed_at` comes from the tablet and is rejected if more than 5 minutes in the future (R7). `received_at` is the server clock. `inspection_date` is the WIB date of `sealed_at`.
+
+## 7. Photo storage
+
+- **Interface.** `PhotoStore` (doc 03 §5.2): `put`, `get` (stream), `exists`, `delete`, `probe`. Implementations: `S3PhotoStore` (any S3-compatible server, using `@aws-sdk/client-s3` with path-style addressing) and `DiskPhotoStore` (a folder, `PHOTO_DIR`).
+- **Bucket and key.** Bucket `m100-photos`, private, no public access. Key: `submissions/<yyyy>/<MM>/<submission uuid>/<defect id>.jpg`, for example `submissions/2026/10/0f6b6c1e-6a52-4c9f-9a3e-5d7a2b0c41f2/D035.jpg`. The year and month come from `inspection_date`.
+- **Content.** JPEG, ≤ 960 px on the long edge, ≤ 1 MB, about 100–200 KB (AC-10.1). The API checks the JPEG signature and SHA-256; it does not re-encode.
+- **Access.** Tablets never read photos back. Admins view a photo through `GET /v1/admin/photos/{id}`, which checks the admin session and streams the object; no pre-signed URLs and no public address are used.
+- **Volume.** About 5 photos × ~290 submissions a month ≈ 1,500 objects ≈ 225 MB a month ≈ 2.7 GB a year at today's PSI rate; plan for 3× that with 30+ tablets.
+- **Retention.** Kept indefinitely. Delete only through a reviewed script after a written decision.
+
+## 8. Reporting
+
+Leader Quality no longer reads `DATA_INSPECTION` for this data (ADR-018). Three routes, none of which write:
+
+1. **Admin app:** filterable submission list, detail with photos, CSV export (columns of `v_submissions` plus Top 5).
+2. **Views** for reporting tools, readable by the database role `m100_report` (read-only, no access to base tables or to `devices`/`admins`):
+
+| View | One row per | Content |
+|---|---|---|
+| `v_submissions` | submission | `display_no`, `inspection_date`, `sealed_at` (WIB), `username`, `level`, `factory`, `cell`, PO fields, `partial_text`, all `qty_*`, `rft`, `defect_rate`, `photo_count` |
+| `v_findings` | finding | submission keys plus area, sub-area, family, defect, severity, `inspection_type`, `qty` |
+| `v_defect_totals` | submission + defect | total `qty` over areas and types, `rank_in_submission` by the Top 5 order (quantity, then severity, then first recorded), `has_photo` |
+| `v_top5` | submission + rank ≤ 5 | `v_defect_totals` filtered |
+
+3. A BI tool (Looker Studio, Metabase, Power BI) connected to the views with `m100_report`. The owner plans a central QIP dashboard that will read these views (PRD OQ-13).
+
+## 9. How the numbers differ from the old AppSheet rows
+
+Unchanged from the old design: under ADR-008 one pair can carry several defects, so Qty Inspection ≠ A-Grade + Qty Defect, and RFT + Defect Rate does not add to 100%. Example: 10 REWORK pairs with 8 defects, 2 B-GRADE pairs with 3 defects, 18 NO DEFECT pairs → Qty Inspection 30, A-Grade 18, B-Grade 3, Qty Defect 11, RFT 60,0%, Defect Rate 36,7%. A report that expects the old AppSheet convention (A-Grade = Qty Inspection − Total Defect) will disagree with Mobile 100% Inspection data; the views carry a column `counting_rule = 'ADR-008'` so a combined report can tell the two sources apart.
+
+## 10. Readiness checks (API)
+
+The API reports each check in `GET /system/status`. Submit PO is disabled (`503 SUBMIT_DISABLED`) and the reason is shown in the gear menu if any fails:
+
+| Id | Check |
+|---|---|
+| `DB` | The database answers and the migrations are at the expected version |
+| `MASTER_DATA` | `psi_users`, `cells`, `defects` (98), `areas` (12) and `area_map` are not empty; the integrity rules of §3.5 hold |
+| `PHOTO_STORE` | A probe object can be put, read and deleted |
+| `SUBMIT_ENABLED` | `settings.submit_enabled` is true (an admin or script can switch submitting off for maintenance) |
+
+Checks run at start, every 5 minutes, and every 30 seconds while any is failing, so a repaired store re-enables submitting without a restart. Login and inspection keep working offline on tablets while Submit PO is disabled; submissions wait in the outbox.
+
+## 11. Capacity and backup
+
+| Item | Estimate |
+|---|---|
+| Rows | ≈ 290 submissions a month today (design: 3,000), each ≈ 12 findings → < 40k findings a month; the database stays far below 1 GB for years |
+| `pos` | ≈ 71,500 rows ≈ 15 MB with its index |
+| Photos | §7 |
+| Backup | Nightly `pg_dump` (custom format) and a copy of the photo store to another disk or machine, 14 daily and 12 monthly copies; a restore test at pilot start and every quarter (doc 03 §7.6). Recovery point: up to 24 hours; tablets keep unsent sessions and photos for 7 days after confirmation |
+
+## 12. Decisions taken in this document
+
+| # | Decision | Why |
+|---|---|---|
+| Q1 | One `submissions` row plus findings and photos rows replaces the 276-column row; no slots, no LINK formulas. | The wide row existed to fit AppSheet; PostgreSQL needs none of it |
+| Q2 | The submission UUID is the primary key; `display_no` is the human number. | The tablet already creates a UUID and idempotency becomes a constraint |
+| Q3 | Snapshots of user, PO and defect text are copied into each submission and finding. | History must not change when master data is edited |
+| Q4 | Submissions are fully immutable: no edit, no delete, no void in release 1. A mistaken submission is handled outside the app by the database owner and noted in the runbook. | Keeps reports trustworthy; replaces "append only" (BR-07) |
+| Q5 | Photos go to the store before the transaction; a weekly sweep removes orphans. | A row never points to a missing object, and no repair step is needed |
+| Q6 | Percentages are stored as fractions with 5 decimals. | Display rounding is a screen concern |
+| Q7 | Master data is imported once from CSV/XLSX exports, then edited in the admin app. | Answer of 20 Oct 2026; no Google access needed |
+| Q8 | Photos are read back only through the admin API. | No public or pre-signed URLs to protect |

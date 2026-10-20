@@ -1,17 +1,18 @@
 openapi: 3.1.0
 info:
   title: Mobile 100% Inspection API
-  version: 1.1.0
+  version: 2.0.0
   summary: Backend for the Mobile 100% Inspection PWA (PT Parkland World Indonesia, QIP Digital Team).
   description: |
     Contract between the tablet PWA and the NestJS API. Behaviour, rules and examples are in
-    `04-api-contract.md`; spreadsheet mapping in `02-data-design.md`.
+    `04-api-contract.md`; database schema in `02-data-design.md` (PostgreSQL, ADR-018). Tablet endpoints
+    first, then the `/admin` endpoints used by the admin web app.
     All times are ISO 8601 with offset +07:00 (WIB). All errors use `application/problem+json`.
 servers:
   - url: https://{host}/v1
     variables:
       host:
-        default: m100-api.example.internal
+        default: m100.qdms.web.id
         description: Decided in doc 03 (hosting, PRD OQ-03).
 tags:
   - name: system
@@ -19,6 +20,7 @@ tags:
   - name: master-data
   - name: po
   - name: submissions
+  - name: admin
 security:
   - deviceKey: []
     bearerAuth: []
@@ -45,7 +47,7 @@ paths:
     get:
       tags: [system]
       operationId: getSystemStatus
-      summary: Whether Submit PO is currently possible (startup validation, doc 02 §10).
+      summary: Whether Submit PO is currently possible (readiness checks, doc 02 §10).
       security:
         - deviceKey: []
       responses:
@@ -194,17 +196,12 @@ paths:
                 contentType: application/json
       responses:
         '201':
-          description: Written to the spreadsheet now.
+          description: Written to the database now.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SubmissionResult' }
         '200':
           description: This UUID was already written earlier; same result returned.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/SubmissionResult' }
-        '202':
-          description: Accepted and queued; poll GET /submissions/{submissionUuid}.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SubmissionResult' }
@@ -215,23 +212,141 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/Unavailable' }
 
-  /submissions/{submissionUuid}:
+  # ---------------------------------------------------------------- admin (doc 04 section 8)
+  /admin/auth/login:
+    post:
+      tags: [admin]
+      operationId: adminLogin
+      summary: Admin login; sets the HttpOnly session cookie (8 hours).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        '204': { description: Logged in; cookie set. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '423': { description: Account locked for 10 minutes after 5 failures (ADMIN_LOCKED). }
+  /admin/auth/logout:
+    post:
+      tags: [admin]
+      operationId: adminLogout
+      security: [{ adminCookie: [] }]
+      responses:
+        '204': { description: Logged out. }
+  /admin/me:
     get:
-      tags: [submissions]
-      operationId: getSubmission
-      summary: Status of a submission sent earlier.
-      parameters:
-        - in: path
-          name: submissionUuid
-          required: true
-          schema: { type: string, format: uuid }
+      tags: [admin]
+      operationId: adminMe
+      security: [{ adminCookie: [] }]
       responses:
         '200':
-          description: Known submission.
+          description: The signed-in admin.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SubmissionResult' }
+              schema: { type: object, properties: { username: { type: string }, lastLoginAt: { type: string, format: date-time } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /admin/psi-users:
+    get:
+      tags: [admin]
+      operationId: adminListPsiUsers
+      security: [{ adminCookie: [] }]
+      responses:
+        '200': { description: All PSI users including inactive., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminPsiUser' } } } } }
+    post:
+      tags: [admin]
+      operationId: adminCreatePsiUser
+      security: [{ adminCookie: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdminPsiUserInput' } } } }
+      responses:
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/AdminPsiUser' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/psi-users/{id}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdatePsiUser
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdminPsiUserInput' } } } }
+      responses:
+        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/AdminPsiUser' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/pos:
+    get:
+      tags: [admin]
+      operationId: adminSearchPos
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: query, name: q, schema: { type: string } }]
+      responses:
+        '200': { description: Up to 50 POs., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Po' } } } } }
+  /admin/pos/import:
+    post:
+      tags: [admin]
+      operationId: adminImportPos
+      summary: Upload a CSV or XLSX of POs; upsert by `po`, never delete.
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: query, name: dryRun, schema: { type: boolean, default: true } }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } }
+      responses:
+        '200': { description: Import report., content: { application/json: { schema: { $ref: '#/components/schemas/ImportReport' } } } }
+        '422': { description: IMPORT_INVALID with row errors., content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /admin/area-map/import:
+    post:
+      tags: [admin]
+      operationId: adminImportAreaMap
+      summary: Upload the mapping workbook (doc 02 section 5.1).
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: query, name: dryRun, schema: { type: boolean, default: true } }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } }
+      responses:
+        '200': { description: Import report., content: { application/json: { schema: { $ref: '#/components/schemas/ImportReport' } } } }
+        '422': { description: IMPORT_INVALID., content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /admin/submissions:
+    get:
+      tags: [admin]
+      operationId: adminListSubmissions
+      security: [{ adminCookie: [] }]
+      parameters:
+        - { in: query, name: from, schema: { type: string, format: date } }
+        - { in: query, name: to, schema: { type: string, format: date } }
+        - { in: query, name: factory, schema: { type: string } }
+        - { in: query, name: cell, schema: { type: string } }
+        - { in: query, name: username, schema: { type: string } }
+        - { in: query, name: po, schema: { type: string } }
+        - { in: query, name: page, schema: { type: integer, default: 1 } }
+      responses:
+        '200': { description: A page of submissions., content: { application/json: { schema: { type: object, properties: { total: { type: integer }, items: { type: array, items: { $ref: '#/components/schemas/AdminSubmissionSummary' } } } } } } }
+  /admin/submissions/{id}:
+    get:
+      tags: [admin]
+      operationId: adminGetSubmission
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Submission with findings and photo ids., content: { application/json: { schema: { $ref: '#/components/schemas/AdminSubmissionSummary' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/photos/{id}:
+    get:
+      tags: [admin]
+      operationId: adminGetPhoto
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+      responses:
+        '200': { description: The JPEG., content: { image/jpeg: { schema: { type: string, format: binary } } } }
         '404': { $ref: '#/components/responses/NotFound' }
 
 components:
@@ -245,6 +360,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    adminCookie:
+      type: apiKey
+      in: cookie
+      name: m100_admin
+      description: 'HttpOnly session cookie from POST /admin/auth/login. State-changing requests also send header X-Requested-With = m100-admin.'
 
   responses:
     Unauthorized:
@@ -253,10 +373,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     NotFound:
-      description: >-
-        Codes PO_NOT_FOUND, SUBMISSION_NOT_FOUND. SUBMISSION_NOT_FOUND on a status poll
-        means the API has no record of the UUID (for example after a restart): the client
-        resends the same submission (doc 04 section 5).
+      description: Codes PO_NOT_FOUND, NOT_FOUND.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -284,7 +401,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     Unavailable:
-      description: Codes SUBMIT_DISABLED, GOOGLE_UNAVAILABLE. Retryable.
+      description: Codes SUBMIT_DISABLED, DB_UNAVAILABLE, PHOTO_STORE_UNAVAILABLE. Retryable.
       headers:
         Retry-After:
           schema: { type: integer }
@@ -325,7 +442,6 @@ components:
             - USER_NOT_FOUND
             - CELL_NOT_FOUND
             - PO_NOT_FOUND
-            - SUBMISSION_NOT_FOUND
             - SUBMISSION_UUID_REUSED
             - VALIDATION_FAILED
             - PHOTO_MISSING
@@ -333,7 +449,14 @@ components:
             - PAYLOAD_TOO_LARGE
             - RATE_LIMITED
             - SUBMIT_DISABLED
-            - GOOGLE_UNAVAILABLE
+            - DB_UNAVAILABLE
+            - PHOTO_STORE_UNAVAILABLE
+            - ADMIN_AUTH_REQUIRED
+            - ADMIN_LOGIN_FAILED
+            - ADMIN_LOCKED
+            - NOT_FOUND
+            - CONFLICT
+            - IMPORT_INVALID
             - INTERNAL
         detail: { type: string, description: 'Indonesian, ready to show to the PSI.' }
         retryable: { type: boolean }
@@ -360,7 +483,7 @@ components:
             type: object
             required: [id, ok]
             properties:
-              id: { type: string, examples: [HEADERS, DEFECT_LIST, AREA_MAP, LINK_TEMPLATES, DRIVE_ACCESS] }
+              id: { type: string, examples: [DB, MASTER_DATA, PHOTO_STORE, SUBMIT_ENABLED] }
               ok: { type: boolean }
               message: { type: string }
 
@@ -531,8 +654,8 @@ components:
         submissionUuid: { type: string, format: uuid }
         status:
           type: string
-          enum: [queued, writing, written, failed]
-        diId: { type: string, pattern: '^[0-9a-f]{8}$', description: 'DATA_INSPECTION ID once written.' }
+          enum: [written]
+        displayNo: { type: string, examples: ['M100-000123'], description: 'Human number of the submission (doc 02 section 4.1).' }
         writtenAt: { type: string, format: date-time }
         totals:
           type: object
@@ -543,5 +666,58 @@ components:
             qtyDefect: { type: integer }
             rft: { type: number }
             defectRate: { type: number }
-            overflowDefects: { type: integer }
-        problem: { $ref: '#/components/schemas/Problem' }
+
+    AdminPsiUser:
+      type: object
+      required: [id, username, level, active]
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        level: { $ref: '#/components/schemas/PsiLevel' }
+        active: { type: boolean }
+    AdminPsiUserInput:
+      type: object
+      properties:
+        username: { type: string }
+        level: { $ref: '#/components/schemas/PsiLevel' }
+        active: { type: boolean }
+    ImportReport:
+      type: object
+      required: [dryRun, read, inserted, updated, skipped]
+      properties:
+        dryRun: { type: boolean }
+        read: { type: integer }
+        inserted: { type: integer }
+        updated: { type: integer }
+        skipped: { type: integer }
+        errors:
+          type: array
+          items: { type: object, properties: { row: { type: integer }, message: { type: string } } }
+    AdminSubmissionSummary:
+      type: object
+      required: [id, displayNo, sealedAt, username, level, po]
+      properties:
+        id: { type: string, format: uuid }
+        displayNo: { type: string }
+        sealedAt: { type: string, format: date-time }
+        username: { type: string }
+        level: { $ref: '#/components/schemas/PsiLevel' }
+        factory: { type: string }
+        cell: { type: string }
+        po: { type: string }
+        partialText: { type: [string, 'null'], examples: ['P1 1.200 OF 10.002'] }
+        qtyInspection: { type: integer }
+        qtyDefect: { type: integer }
+        qtyAGrade: { type: integer }
+        qtyBGrade: { type: integer }
+        rft: { type: number }
+        defectRate: { type: number }
+        photoCount: { type: integer }
+        findings:
+          type: array
+          description: Only in the detail response.
+          items: { type: object }
+        photos:
+          type: array
+          description: Only in the detail response.
+          items: { type: object, properties: { id: { type: integer }, defectId: { type: string } } }

@@ -1,10 +1,10 @@
-# Mobile 100% Inspection — Implementation Plan (draft v0.4)
+# Mobile 100% Inspection — Implementation Plan (draft v0.5)
 
 | | |
 |---|---|
-| Status | **Draft.** Phases 0–4 are ready to build (docs 01, 02, 03, 04, 07 exist). HTTPS (ADR-016) and the server (Windows, operated by QIP Digital) are decided; Phase 4 starts with the server pre-checks of doc 03 §7.3 (TQ-5). |
+| Status | **Draft.** Rewritten for PostgreSQL + photo store + admin app (ADR-018). Phases 0–4 are ready to build (docs 01–05, 07 exist). HTTPS (ADR-016) and the server (Windows, QIP Digital) are decided. The photo store is a plain folder for release 1 (TQ-6 decided); open before Phase 4: the server pre-checks (TQ-5). |
 | Executed by | Claude Code, one task per session, following `CLAUDE.md` |
-| Last updated | 16 Oct 2026 |
+| Last updated | 20 Oct 2026 |
 
 ## How to use this plan
 
@@ -15,7 +15,7 @@
 ## Phase 0 — Foundation
 
 ### T0.1 Scaffold the monorepo
-pnpm workspace with `apps/web` (React 18 + TS + Vite + vite-plugin-pwa), `apps/api` (NestJS, empty module only), `packages/shared`. ESLint, Prettier, Vitest, Playwright, strict TypeScript, `.env.example`, root scripts `dev`, `test`, `lint`, `typecheck`, `e2e`.
+pnpm workspace with `apps/web` (React 18 + TS + Vite + vite-plugin-pwa), `apps/api` (NestJS, empty module only), `apps/admin` (React + Vite, empty page), `packages/shared`, `db/migrations/`. ESLint, Prettier, Vitest, Playwright, strict TypeScript, `.env.example`, root scripts `dev`, `test`, `lint`, `typecheck`, `e2e`.
 - [ ] `pnpm install && pnpm typecheck && pnpm test && pnpm lint` all pass on a clean clone.
 - [ ] `pnpm dev` serves a blank page titled "Mobile 100% Inspection".
 - [ ] `CLAUDE.md` → Commands updated with the real commands.
@@ -41,7 +41,7 @@ Import `design-system/tokens.css` (with self-hosted fonts instead of the Google 
 
 ## Phase 1 — Offline PWA with local data (no backend)
 
-Master data comes from a `MasterDataSource` interface. Phase 1 implements it with local fixtures (`apps/web/src/data/fixtures/`: a few fake PSI users of both levels, two factories with cells, ~10 fake POs); Phase 2 swaps in the API implementation without changing screens. Fixtures must not contain real names from `USER_LIST`.
+Master data comes from a `MasterDataSource` interface. Phase 1 implements it with local fixtures (`apps/web/src/data/fixtures/`: a few fake PSI users of both levels, two factories with cells, ~10 fake POs); Phase 2 swaps in the API implementation without changing screens. Fixtures must not contain real names from the old `USER_LIST`.
 
 ### T1.1 Persistence
 Dexie schema for login, PO list, sessions (per user, per PO), photos and outbox. Zustand store hydrated from Dexie.
@@ -79,14 +79,13 @@ Pre-checks, confirmation dialog, sealing the session with a UUID into the outbox
 
 ## Before Phase 2 — what the product owner prepares (not Claude's work)
 
-1. A **copy** of the spreadsheet "100%INLINE IMPACTIVA" (File → Make a copy), used for all development and tests. Its ID goes in `.env` as `SHEET_ID`.
-2. A Google Cloud project with the Sheets API and Drive API enabled, a **service account** with a JSON key (saved in `secrets/`), and the copy shared with the service account's e-mail as Editor.
-3. A **test Drive folder** (ID in `DRIVE_IMAGES_FOLDER_ID`) owned by `fnd.ahmad12@gmail.com`.
-4. Before T3.5 only: an OAuth client (desktop type) in the same project, with the consent screen set to **In production** (doc 03 §6), and the owner's consent for the `drive` scope.
+1. **Master data files** exported from the old spreadsheet (File → Download → CSV/XLSX), kept out of the repo's public history: `USER_LIST`, `DB_CELL`, `ALL_PO_MASTER`, `DEFECT_LIST` and the area-mapping workbook (`reference/mapping/` already holds the mapping). They are imported once (T2.4). No Google Cloud project, service account or OAuth is needed any more.
+2. **A development PostgreSQL 16** (local Windows service or Docker on the developer machine) with an empty database `m100_dev` and the roles of doc 03 §6 (`m100_app`, `m100_migrate`, `m100_report`). The `.env` has `DATABASE_URL` and `MIGRATE_DATABASE_URL`.
+3. **A photo folder** for development (`PHOTO_STORE=disk`, `PHOTO_DIR`). The S3 variant (T3.4) is optional for release 1 and is tested against a throw-away S3-compatible container; it is not deployed.
 
-## Phase 2 — API and master data (read-only) · Ready
+## Phase 2 — Database, API and master data · Ready
 
-Read-only against the **copy**. Spec: doc 03 §5, doc 04 §2–3, doc 02 §3, §10.
+Spec: doc 02 (all), doc 03 §5, doc 04 §2–3, §8.
 
 ### T2.1 API skeleton
 NestJS app with validated configuration (doc 03 §7.4), pino logging with `X-Request-Id`, `GET /health`, a global filter that returns `application/problem+json` with the codes of doc 04 §6, a throttler of 60 requests per minute per device, and a test helper that validates responses against `docs/04-openapi.yaml`.
@@ -94,101 +93,128 @@ NestJS app with validated configuration (doc 03 §7.4), pino logging with `X-Req
 - [ ] The 61st request in a minute from one device gets `429 RATE_LIMITED` with `Retry-After`.
 - [ ] An unknown route returns problem+json, not HTML.
 
-### T2.2 Repositories, Google clients and fakes
-Read-side repository interfaces of doc 03 §5.2, `SheetsClient` with the retry/back-off helper (doc 03 §5.7), in-memory fakes that can inject 429, timeouts and crashes, and the script `setup:sheets` that creates `M100_AREA_MAP`, `M100_DEFECT_DETAIL` and `M100_SUBMISSION` in the copy from `reference/mapping/` (doc 02 §4).
-- [ ] Back-off: `429` waits 2^n s plus jitter up to 1 s, capped at 32 s; `5xx` is retried; `400` is not.
-- [ ] `setup:sheets --dry-run` lists the sheets, columns and row counts (437 map rows) and writes nothing; the real run refuses a sheet that already exists with other headers and never runs against a spreadsheet other than `SHEET_ID`.
+### T2.2 Schema and migrations
+`db/migrations/` as explicit SQL (no auto-sync): every table, constraint, index, trigger and view of doc 02 §3–§8, extension `pg_trgm`, roles and grants (doc 03 §6), `settings` rows. A `pnpm db:migrate` command using `MIGRATE_DATABASE_URL`; a test database is created per test run.
+- [ ] Migrations apply to an empty database and are recorded; running them again changes nothing.
+- [ ] The immutability trigger: every UPDATE and DELETE on submissions, findings and photos fails.
+- [ ] The check constraints reject a submission whose totals disagree with its counts (doc 02 §4.1).
+- [ ] `m100_report` can SELECT the views and nothing else; `m100_app` cannot DELETE from submission tables.
 
-### T2.3 Master data, start-up checks, `/master-data`, `/system/status`
-Doc 02 §3 and §10; cache with ETag and `304`; checks `HEADERS`, `DEFECT_LIST`, `AREA_MAP`, `LINK_TEMPLATES`, `DRIVE_ACCESS`, `SHEETS_ACCESS`; re-check every 30 minutes and every 2 minutes while disabled.
-- [ ] Against the copy: 14 login names, `ROIS FATHUR ROHIM` once, `EVA JULIYANI` as PSI lv.1 only, factories `F 1`…`F 5` (no `PWA`, no `BOTTOM`).
-- [ ] Renaming one header in the fake sets `submitEnabled=false` with the failing check id; restoring it re-enables within 2 minutes.
-- [ ] A failed refresh keeps serving the last good copy.
+### T2.3 Repositories and the PhotoStore
+Postgres repositories for master data, POs, devices, admins, audit log and submissions; `PhotoStore` interface with `DiskPhotoStore` (doc 03 §5.2).
+- [ ] Repository tests run against the real test database.
+- [ ] `DiskPhotoStore.put` is atomic (temp file + rename), idempotent for the same key and bytes, and refuses a key that escapes `PHOTO_DIR`.
 
-### T2.4 Devices and authentication
-`devices.json` loader that reloads on change; scripts `device:add`, `device:revoke`, `device:list` (the first prints the key, the setup link and a QR code; `device:add --batch tablets.csv` creates many keys and one printable sheet of QR codes; doc 03 §7.5); device guard; `POST /auth/login`, `POST /auth/refresh`; 30-day JWT with the claims of doc 04 §2.
+### T2.4 Master data import (`import-master`) and readiness
+The CLI `import-master` (doc 02 §5.1) for users, factories/cells, POs, defects and area map, with `--dry-run`; the cached `/master-data` with ETag (`settings.master_version`); readiness checks `DB`, `MASTER_DATA`, `PHOTO_STORE`, `SUBMIT_ENABLED` and `/system/status` (doc 02 §10, doc 03 §5.3).
+- [ ] From the real files: 14 login names, `ROIS FATHUR ROHIM` once, `EVA JULIYANI` as PSI lv.1 only, factories `F 1`…`F 5` (no `PWA`, no `BOTTOM`), 98 defects, 437 map rows, about 71,500 POs; a second run changes nothing.
+- [ ] A dry run writes nothing and reports counts; any invalid row stops the real run before any write.
+- [ ] Stopping the database sets `SUBMIT_ENABLED` false with the failing check id; starting it re-enables within 30 seconds.
+
+### T2.5 Devices and authentication
+Device guard (SHA-256 lookup, constant-time compare); `POST /auth/login`, `POST /auth/refresh`; 30-day JWT with `aud`=`tablet` and the claims of doc 04 §2; CLI `device:add` (single and `--batch`) that prints key, setup link and a QR code, `device:revoke` and `device:list`; each writes an `audit_log` row.
 - [ ] Only the SHA-256 of a key is stored. A revoked device is rejected with `DEVICE_KEY_INVALID` even with an unexpired token.
 - [ ] `USER_NOT_FOUND` and `CELL_NOT_FOUND` as `422`; refresh works when fewer than 7 days remain.
 - [ ] A batch of 40 unique labels creates 40 keys and one printable sheet; a duplicate label is refused.
 
-### T2.5 PO index and search
-`GET /pos`, `GET /pos/{po}` (doc 04 §3.3, doc 03 §5.3).
-- [ ] Fewer than 3 characters → `422`; at most 20 results; leading zeros and prefixes kept (`0902028839`, `CX-0902368685`); `MODEL` and `DESTINATION` returned byte for byte.
-- [ ] Search over a synthetic 71,500-row index: p95 under 50 ms.
+### T2.6 PO search
+`GET /pos`, `GET /pos/{po}` (doc 04 §3.3) with `pg_trgm`.
+- [ ] Fewer than 3 characters → `422`; at most 20 results; leading zeros and prefixes kept (`0902028839`, `CX-0902368685`); `model` and `destination` returned byte for byte.
+- [ ] Over the full imported PO set: p95 under 100 ms.
 
-### T2.6 Web: switch from fixtures to the API
+### T2.7 Web: switch from fixtures to the API
 `ApiMasterDataSource`, the setup page (doc 03 §4.9), login against the API, token refresh, PO search through the API, cache behaviour.
-- [ ] AC-01.1 … AC-01.4 and AC-13.1 … AC-13.4 against the API on `localhost` backed by fakes.
+- [ ] AC-01.1 … AC-01.4 and AC-13.1 … AC-13.4 against the API on `localhost` and the test database.
 - [ ] The setup link stores the key and removes the fragment from the address.
 - [ ] After one online launch the app starts, logs in from cache and works with the network off.
 
-## Phase 3 — Submit PO to the spreadsheet · Ready
+## Phase 3 — Submit PO · Ready
 
-Spec: doc 03 §5.4–5.8, doc 02 §5–8, doc 04 §4–5. Build against the fakes first; the real copy comes last.
+Spec: doc 02 §4, §6–8, doc 03 §5.4–5.8, doc 04 §4–5. All against the real test database.
 
-### T3.1 Slot planner and row builder (pure functions)
-`computeTotals`, `planSlots`, `buildDataInspectionRow`, `buildCompleteRequest`, `photoFileName`, `submissionId`, `sheetDate`, `partialText` (doc 03 §5.5). Golden files are made from a real row of the **copy** with names replaced.
-- [ ] The doc 02 §9 example gives `QTY INSPECTION` 30, `A-GRADE` 18, `B-GRADE` 3, `TOTAL DEFECT` 11, `RFT` 0.600, `DEFECT RATE` 0.367.
-- [ ] The row has 276 cells in the order of doc 02 §5–6; unused slots follow doc 02 §6.5; D049 and D071 get separate slots.
-- [ ] Slots 1–5 equal the tablet's `top5()` for the same findings.
-- [ ] More than 25 defects: overflow only in the detail rows, `TOTAL DEFECT` still complete, photographed defects never overflow.
-- [ ] PSI lv.2: `PHOTO` only in `PHOTO(3n−2)`; PSI lv.1: no `PHOTO` cell filled; `P1 1.200 OF 10.002` formatting.
+### T3.1 Pure functions
+`computeTotals`, `top5`, `photoKey`, `partialText`, `inspectionDate` (doc 03 §5.5).
+- [ ] The doc 02 §9 example gives Qty Inspection 30, A-Grade 18, B-Grade 3, Qty Defect 11, RFT 0,600, Defect Rate 0,367.
+- [ ] `top5` on the API equals `top5` on the tablet for the same findings (shared package).
+- [ ] `P1 1.200 OF 10.002` formatting; `photoKey` uses the WIB month.
 
 ### T3.2 Request parsing and validation
 Multipart parsing with limits, and every check of doc 04 §4.2 with the error shapes of doc 04 §6.
-- [ ] One test per check; all failures returned together in one `VALIDATION_FAILED`; `PHOTO_MISSING` lists the defects; `PHOTO_NOT_ALLOWED` for PSI lv.1; `413` over 8 MB; a non-JPEG part is refused.
+- [ ] One test per check; all failures returned together in one `VALIDATION_FAILED`; `PHOTO_MISSING` lists the defects; `PHOTO_NOT_ALLOWED` for PSI lv.1; `413` over 8 MB; a non-JPEG part is refused; totals that disagree with the findings are refused.
 
-### T3.3 Writer pipeline on the fakes
-Steps 1–6 of doc 02 §8.2 with the fresh lookups and the verify read (doc 03 §5.4), one worker, 429 back-off.
-- [ ] A crash injected after photos, after append, before and inside the batch: the retry always leaves exactly one `DATA_INSPECTION` row, one set of detail rows, one `M100_SUBMISSION` row and one file per photo.
-- [ ] If the fake gives our row number to another writer first, the pipeline appends again and writes the formulas only to the verified row.
+### T3.3 Submission write
+`POST /submissions` as in doc 02 §6.1 / doc 03 §5.4: UUID lookup, validation at `REPEATABLE READ`, photos first, one transaction, `201`/`200`/`409`.
+- [ ] Same UUID and bytes twice (also in parallel) → one submission, one answer `201` and the others `200`. Same UUID and different bytes → `409 SUBMISSION_UUID_REUSED`, nothing written.
+- [ ] A fake store that throws after two photos, and a failure injected before commit: the retry leaves exactly one submission, one set of findings, and one file per photo; no submission row ever points to a missing file.
+- [ ] Snapshot columns (factory, cell, PO fields, defect names and severity) equal the master data at write time and do not change when master data is edited afterwards.
+- [ ] Database down → `503 DB_UNAVAILABLE`; store down → `503 PHOTO_STORE_UNAVAILABLE`; `SUBMIT_ENABLED` false → `503 SUBMIT_DISABLED`; submission log line (NFR-10).
 
-### T3.4 Submission endpoints and job registry
-`POST /submissions` (`201`, `200`, `202` after 20 s), `GET /submissions/{uuid}` (including the `404` rule), `409 SUBMISSION_UUID_REUSED`, `503 SUBMIT_DISABLED`, submission log line (NFR-10).
-- [ ] Same UUID and bytes twice → one row, second answer `200`. Same UUID and different bytes → `409`, nothing written.
-- [ ] Slow fake (> 20 s) → `202`, then `written` through `GET`.
-- [ ] After a simulated restart, `GET` of an unfinished UUID answers `404` and a resend completes it.
+### T3.4 S3 PhotoStore (optional, can be postponed)
+`S3PhotoStore` (`@aws-sdk/client-s3`, path-style) and the weekly orphan sweep CLI `sweep-photos` (`--dry-run`).
+- [ ] The same photo-store test suite passes for disk and S3 implementations.
+- [ ] The sweep removes only objects older than 24 hours without a `submission_photos` row.
 
-### T3.5 Google implementations: Sheets writes and Drive photos
-`InspectionRepository` (append, verify read, `batchUpdate` with `copyPaste` formats, 75 LINK formulas from the templates, detail and submission rows) and `PhotoStore` with the owner's OAuth; the script `drive:authorize` that performs the one-time consent.
-- [ ] (Manual, env-gated, on the copy and the test folder) The new row has the same formats and LINK formulas as the row above it, apart from the row number; the file exists with the exact name `<ID>.PHOTO<k>.<HHmmss>.jpg`; `M100_DEFECT_DETAIL` and `M100_SUBMISSION` rows exist.
-- [ ] Revoking the OAuth token turns `DRIVE_ACCESS` red within 2 minutes and submissions answer `503 SUBMIT_DISABLED`.
-
-### T3.6 Web: sealing and the outbox sender
-The seal transaction, the sender loop following doc 04 §5 exactly, the four states, the header counter and the gear-menu list (doc 03 §4.6).
+### T3.5 Web: sealing and the outbox sender
+The seal transaction, the sender loop following doc 04 §5 exactly (synchronous answers, 60 s timeout), the four states, the header counter and the gear-menu list (doc 03 §4.6).
 - [ ] AC-11.1 … AC-11.4 against a stub API.
 - [ ] Wi-Fi off → submit → close app → Wi-Fi on → reopen: exactly one submission sent (AC-11.2).
-- [ ] Every row of the doc 04 §5 table has a test, including `404` while Mengirim and a retryable `failed`.
+- [ ] Every row of the doc 04 §5 table has a test, including a timeout followed by a resend of the same bytes that gets `200`.
 - [ ] Two PSI on one tablet: A seals, logs out, B logs in; A's submission is sent under A's name.
 
-### T3.7 End-to-end on the fakes
-Playwright: web against the real API process backed by the fake Sheets and Drive.
-- [ ] PSI lv.2 flow with five photos produces the expected row, detail rows and files; PSI lv.1 flow produces no photos.
-- [ ] PO PARTIAL on and off writes the right `PARTIAL OF QTY PO` (AC-03.7).
+### T3.6 End-to-end
+Playwright: web against the real API process and database.
+- [ ] PSI lv.2 flow with five photos produces the expected submission, findings and photo files; PSI lv.1 flow produces no photos.
+- [ ] PO PARTIAL on and off stores the right partial (AC-03.7).
 
-### T3.8 Load and fault tests
-- [ ] 50 simulated tablets, five photos each, within 5 minutes, with random `429`s: no loss, no duplicate; p95 per submission reported (doc 03 §5.4 says what to do if it exceeds 6 s).
-- [ ] Google unavailable for 10 minutes, then back: every submission ends written exactly once.
+### T3.7 Load and fault tests
+- [ ] 50 simulated tablets, five photos each, within 5 minutes: no loss, no duplicate; p95 per submission reported.
+- [ ] Database stopped for 10 minutes, then started: every submission ends stored exactly once.
 
-## Phase 4 — Deploy and pilot · Ready after the server pre-checks (doc 03 §7.3, TQ-5); the parallel run also needs OQ-05
+## Phase 3b — Admin web app · Ready (can run parallel to Phase 3)
+
+Spec: PRD FR-14, doc 05 §20, doc 04 §8.
+
+### T3b.1 Admin API and authentication
+`AdminModule`: login (argon2id, lockout, cookie JWT `aud`=`admin`, `X-Requested-With` check), logout, `/admin/me`, CLI `admin:create` (also `--reset`), audit-log writing for every change.
+- [ ] 5 wrong passwords lock the account 10 minutes (`ADMIN_LOCKED`); a tablet token is refused on admin endpoints and the reverse.
+- [ ] A state-changing request without the header is refused; every change appears in `audit_log` with admin, target and summary.
+- [ ] The last active admin cannot be deactivated.
+
+### T3b.2 Master data CRUD and imports
+PSI users, factories/cells, POs, defects/area map endpoints; imports with `dryRun`; each change bumps `master_version`.
+- [ ] Duplicate natural keys → `409 CONFLICT`; an import with any invalid row applies nothing (AC-14.3).
+- [ ] After a change, `/master-data` returns a new ETag (AC-14.1); deactivated rows disappear from `/master-data` but stay readable on old submissions (AC-14.2).
+
+### T3b.3 Submissions endpoints (read-only)
+Submissions list/detail/photos/export.csv, admins CRUD, audit-log read.
+- [ ] No endpoint changes a submission (AC-14.4); the database rejects a manual UPDATE or DELETE.
+- [ ] CSV export matches the filter, uses UTF-8 with BOM, a comma for lists and a dot for decimals in raw columns (documented), and the photo endpoint returns the JPEG only to an admin.
+
+### T3b.4 Admin web screens
+`apps/admin` with the screens A0–A7 of doc 05 §20 and the 3-step import flow.
+- [ ] Each screen's states (loading, empty, error, saved) are reproducible in Playwright; login lockout and the 3-step import are covered.
+- [ ] Keyboard-only use works; touch targets ≥ 44 px.
+
+## Phase 4 — Deploy and pilot · Ready after the server pre-checks (doc 03 §7.3, TQ-5)
 
 ### T4.1 Deployment files
-PowerShell `install.ps1` and `upgrade.ps1`, WinSW service definitions for Caddy (with the Cloudflare DNS module) and the API, the `Caddyfile` for `m100.qdms.web.id` (doc 03 §7.2.1), the Windows Firewall rule, cache headers and CSP (doc 03 §6–7). No bash scripts: the server is Windows.
-- [ ] On a clean Windows VM, `install.ps1` leaves both services running; they come back after a reboot; `upgrade.ps1` switches release and a rollback restores the previous one; logs rotate.
-- [ ] Caddy obtains a Let's Encrypt certificate for `m100.qdms.web.id` through the Cloudflare DNS challenge, and `https://m100.qdms.web.id/v1/health` opens from the factory Wi-Fi without a warning.
+PowerShell `install.ps1` and `upgrade.ps1`, WinSW service definitions for Caddy (with the Cloudflare DNS module) and the API, PostgreSQL installation and database/role creation, the `Caddyfile` for `m100.qdms.web.id` including `/admin/` (doc 03 §7.2.1), the Windows Firewall rule, cache headers and CSP, the nightly backup task (`pg_dump` + photo copy, retention 14 daily / 12 monthly), and a restore script. No bash scripts: the server is Windows.
+- [ ] On a clean Windows VM, `install.ps1` leaves all services running in the right order (PostgreSQL before the API); they come back after a reboot; `upgrade.ps1` takes a dump, runs migrations, switches release and a rollback restores the previous code; logs rotate.
+- [ ] Caddy obtains a Let's Encrypt certificate through the Cloudflare DNS challenge, and `https://m100.qdms.web.id/v1/health` and `/admin/` open from the factory Wi-Fi without a warning.
+- [ ] **Restore test:** the nightly backup is restored on another machine; submission counts match and sample photos open (doc 03 §7.6).
 
 ### T4.2 Device checklist on a real Redmi Pad 2
 Install, setup-link storage visible in the installed app, camera `capture`, offline start, certificate trust, 1280 × 800 layout (doc 03 R8, R9).
 - [ ] Every item passes, or the fallback of doc 03 §4.9 is applied.
 
 ### T4.3 Runbook and PSI instruction card
-Cloudflare and DNS setup (doc 03 §7.2.1), domain renewal date and account owners, server install, secrets, Drive consent (consent screen **In production**), `device:add`, backup and restore, upgrade, revoke, troubleshooting, and a one-page card for PSI ("never clear site data while submissions are waiting").
-- [ ] A person who did not write the runbook reinstalls the system on a clean server from it.
+Cloudflare and DNS setup (doc 03 §7.2.1), domain renewal date and account owners, server install, `.env` and secrets, initial `admin:create` and `import-master`, tablet setup, backup and restore, upgrade, revoke, troubleshooting, and a one-page card for PSI ("never clear site data while submissions are waiting").
+- [ ] A person who did not write the runbook reinstalls the system on a clean server from it and restores a backup.
 
-### T4.4 Pilot and parallel run
-One or two tablets against the production spreadsheet, in parallel with the AppSheet app (OQ-05), compared daily.
+### T4.4 Pilot
+One or two tablets in production for a defined period. The old AppSheet process continues separately; the pilot compares totals for the same POs by hand (OQ-05, OQ-13).
 - [ ] Goals G1–G5 of the PRD are met over the pilot period; a go / no-go note is written.
 
 ### T4.5 Rollout to all tablets
 Device keys in batch, setup of every tablet (doc 03 §7.5), the PSI instruction card handed out, the waiting counters watched during the first week.
-- [ ] Every tablet shows "Tablet terdaftar", lets a PSI log in, and has completed one test submission agreed with the sheet owner.
+- [ ] Every tablet shows "Tablet terdaftar", lets a PSI log in, and has completed one test submission checked in the admin app.

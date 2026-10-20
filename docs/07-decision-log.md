@@ -4,23 +4,24 @@ Each entry records one decision: the situation, what was decided, and what it co
 
 | ADR | Decision | Status | Date |
 |---|---|---|---|
-| 001 | The existing "100%INLINE IMPACTIVA" spreadsheet is the database | Accepted | 15 Oct 2026 |
-| 002 | Write DATA_INSPECTION in its existing format, plus a new detail sheet | Accepted | 15 Oct 2026 |
+| 001 | The existing "100%INLINE IMPACTIVA" spreadsheet is the database | **Superseded by 018** | 15 Oct 2026 |
+| 002 | Write DATA_INSPECTION in its existing format, plus a new detail sheet | **Superseded by 018** | 15 Oct 2026 |
 | 003 | One Submit PO = one session = one DATA_INSPECTION row | Accepted | 15 Oct 2026 |
-| 004 | Backend: NestJS API with the spreadsheet behind a repository layer | Accepted | 15 Oct 2026 |
+| 004 | Backend: NestJS API with the spreadsheet behind a repository layer | Accepted (NestJS and repository layer stay; the spreadsheet part is superseded by 018) | 15 Oct 2026 |
 | 005 | Frontend: Progressive Web App (React + Vite) | Accepted | 15–16 Oct 2026 |
 | 006 | Login by choosing the PSI's name; no NIK, no password | Accepted | 15 Oct 2026 |
-| 007 | No admin role inside the app | Accepted | 15 Oct 2026 |
+| 007 | No admin role inside the app | **Superseded by 018** | 15 Oct 2026 |
 | 008 | Inspection counting rules (Rework / B-Grade / No Defect) | Accepted | 15 Oct 2026 |
 | 009 | Defect identity and the area mapping database | Accepted | 15 Oct 2026 |
 | 010 | Product name: Mobile 100% Inspection | Accepted | 15 Oct 2026 |
-| 011 | Photos uploaded to Google Drive; links in LINK1–LINK75 | Accepted | 16 Oct 2026 |
-| 012 | `STATUS PO` and `PIC ADM` are left empty | Accepted | 16 Oct 2026 |
+| 011 | Photos uploaded to Google Drive; links in LINK1–LINK75 | **Superseded by 018** (the photo rule stays) | 16 Oct 2026 |
+| 012 | `STATUS PO` and `PIC ADM` are left empty | **Superseded by 018** (the columns no longer exist) | 16 Oct 2026 |
 | 013 | `PARTIAL OF QTY PO` is captured when the PO is added | Accepted | 16 Oct 2026 |
 | 014 | Per-tablet device key plus a 30-day user token | Accepted | 16 Oct 2026 |
 | 015 | API hosted on an existing PWI server; HTTPS required | Accepted (HTTPS method: ADR-016) | 16 Oct 2026 |
 | 016 | HTTPS through a domain of our own (`qdms.web.id`, Cloudflare DNS, Let's Encrypt via Caddy) | Accepted | 16 Oct 2026 |
-| 017 | Server shape: Caddy + NestJS, no database, the tablet is the durable store | **Proposed** | 16 Oct 2026 |
+| 017 | Server shape: Caddy + NestJS, no database, the tablet is the durable store | **Superseded by 018** | 16 Oct 2026 |
+| 018 | PostgreSQL + object storage (MinIO or another S3-compatible store) replace Google Sheets and Drive | Accepted (photo store: plain folder for release 1) | 20 Oct 2026 |
 
 ---
 
@@ -244,3 +245,28 @@ Defect Rate = Qty Defect ÷ Qty Inspection. Pass Rate (RFT) = Qty A-Grade ÷ Qty
 - One server, no standby: during an outage submissions wait on the tablets (doc 03 R10).
 - Docker is not used on the reference server (Windows); Docker Compose remains possible elsewhere (doc 03 §7.3, T2). Design target: 50 tablets (more than 30 are planned).
 - A real database becomes necessary only if a read endpoint (OQ-08) or history needs it; the repository layer (ADR-004) allows it later.
+
+---
+
+## ADR-018 — PostgreSQL and an object store replace Google Sheets and Drive
+
+**Status: Accepted** by the product owner on 20 Oct 2026 (photo store decided on 20 Oct 2026: a plain folder for release 1, see below). Supersedes ADR-001, ADR-002, ADR-007, ADR-011, ADR-012 and ADR-017, and the "spreadsheet" part of ADR-004.
+
+**Situation.** The design wrote into the live "100%INLINE IMPACTIVA" spreadsheet through a Google service account and the owner's Drive OAuth. Setting up the Google Cloud project proved hard for the team (consent screen, scopes, token lifetime), the design needed a long write pipeline to fit the Sheets API (append, verify, batch, 429 back-off, single-writer queue, 202 and polling), and the team is more familiar with PostgreSQL and NestJS.
+
+**Decision.**
+1. **PostgreSQL 16** is the system of record. A submission is one transaction: one `submissions` row, its `submission_findings` rows and its `submission_photos` rows (doc 02 v2.0).
+2. **Photos** are stored by an object store behind a `PhotoStore` interface that speaks the S3 API (MinIO as requested, or any S3-compatible store), with a plain-folder implementation as fallback (doc 03 §5.2).
+3. The product is **separate from the old spreadsheet and AppSheet** (answer of 20 Oct 2026: "pisah total"). Mobile 100% Inspection no longer writes to `DATA_INSPECTION`, no longer needs the 276-column layout, the LINK formulas, the 25 slots or `M100_*` sheets, and uses no Google API at all.
+4. **Master data** (PSI users, factories and cells, POs, defects, area map) is **imported once** from the existing sheets (exported as CSV/XLSX), then maintained through a small **admin web app** (answer of 20 Oct 2026). There is now an admin role; PSI keep name-only login (ADR-006).
+5. The API answers a submission **synchronously** (`201` or `200`); the in-memory queue, `202` and `GET /submissions/{uuid}` disappear. Idempotency is the primary key (the tablet's UUID) plus a payload hash.
+6. Submissions are immutable once written. Nothing is edited, deleted or voided through the app (owner decision 20 Oct 2026: the admin app covers master data, a read-only DataTable of inspections, admins and the audit log; tablets are registered with server commands). Replaces BR-07's "append only to sheets".
+7. Results are read from PostgreSQL: the admin app (list, detail, photos, CSV export) and read-only database views for reporting tools.
+
+**Consequences.**
+- Much simpler write path and no external quota, consent or token to maintain. The Google Cloud tasks, the Drive consent trap, the 10M-cell limit and the AppSheet LINK formula constraints (doc 02 v1.0 D3) vanish.
+- New things to run and back up on the Windows server: PostgreSQL (service), the photo store, nightly backups of both (doc 03 §7.6). The server is no longer stateless; losing its disks loses submissions that tablets already deleted (photos after 7 days), so backups and a restore test are mandatory.
+- Leader Quality and anyone who read `DATA_INSPECTION` for Mobile 100% Inspection data lose that path. A reporting route must be agreed (PRD OQ-13). Historical AppSheet data stays where it is and is not migrated.
+- New work: an admin web app and master-data import (PRD FR-14, doc 05 §20, plan Phase 2b).
+- **Decision on the photo store (20 Oct 2026): a plain folder (`DiskPhotoStore`) for release 1.** The S3 implementation stays behind `PhotoStore` for a later move. Reporting (OQ-13): release 1 reads results through the admin app and CSV; the owner plans a separate central dashboard later, which will use the read-only views and role `m100_report`.
+- **MinIO caveat (verified 20 Oct 2026).** MinIO Community Edition's repository was archived in 2026, community binaries and Docker images stopped in October 2025, and only source builds remain ([summary](https://glukhov.org/data-infrastructure/object-storage/minio-dead/)). It still works if built from source or if an existing binary is used, but it will not receive community updates or security fixes. Because the design uses only the S3 API behind `PhotoStore`, the product can be swapped later (for example SeaweedFS or Garage, whose Windows support must be checked) or replaced by a plain folder. At the expected volume (about 1,500 photos a month, roughly 2–3 GB a year) a plain folder on a backed-up disk is sufficient; the object store is a convenience, not a need. **Open decision:** which store to run in release 1.
