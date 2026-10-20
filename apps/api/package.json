@@ -43,6 +43,7 @@
     "yaml": "2.9.1"
   },
   "jest": {
+    "testTimeout": 30000,
     "rootDir": "src",
     "testEnvironment": "node",
     "testRegex": ".*\\.spec\\.ts$",

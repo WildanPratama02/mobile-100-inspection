@@ -3,7 +3,7 @@ import { listMigrations, migrate } from './migrate';
 
 /** Everything a migration can create, so a second run can be compared object by object. */
 const CATALOG = `
-  SELECT 'relation' AS kind, c.relname || ':' || c.relkind || ':' || pg_get_userbyid(c.relowner)
+  SELECT 'relation' AS kind, c.relname || ':' || c.relkind::text || ':' || pg_get_userbyid(c.relowner)
          || ':' || coalesce(array_to_string(c.relacl, ','), '') AS item
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public'
   UNION ALL

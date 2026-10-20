@@ -209,11 +209,13 @@ describe('immutability trigger (BR-07, doc 02 §4.1)', () => {
 
 describe('master data constraints (doc 02 §3)', () => {
   it('reject an area_map row whose sub-area belongs to another area (§3.5)', async () => {
-    const wrong = db.as('m100_migrate', (c) =>
-      c.query(
-        `INSERT INTO area_map (id, area_id, sub_area_id, family_id, defect_id) VALUES ('MAP-X', 'A01', 'SA02', 'F01', 'D001')`,
-      ),
-    );
+    // A new family, so the unique key (sub-area, family, defect) cannot fire before the foreign key.
+    const wrong = db.as('m100_migrate', async (c) => {
+      await c.query(`INSERT INTO families (id, name) VALUES ('F02', 'STITCHING')`);
+      return c.query(
+        `INSERT INTO area_map (id, area_id, sub_area_id, family_id, defect_id) VALUES ('MAP-X', 'A01', 'SA02', 'F02', 'D001')`,
+      );
+    });
     expect(await sqlState(wrong)).toBe(FOREIGN_KEY_VIOLATION);
   });
 

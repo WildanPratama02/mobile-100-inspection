@@ -81,11 +81,16 @@ async function roleExists(client: ClientBase, role: string): Promise<boolean> {
 
 /**
  * Creates `role` without login if it is missing; leaves an existing role alone. Used where only the grants matter
- * (the test databases).
+ * (the test databases, whose files run in parallel and may race to create the same role).
  */
 export async function ensureRole(client: ClientBase, role: string): Promise<void> {
-  if (!(await roleExists(client, role))) {
+  if (await roleExists(client, role)) return;
+  try {
     await client.query(`CREATE ROLE ${client.escapeIdentifier(role)} NOLOGIN`);
+  } catch (error) {
+    // 42710 duplicate_object, or 23505 when the other session's insert into pg_authid wins the race.
+    const code = (error as { code?: string }).code;
+    if ((code !== '42710' && code !== '23505') || !(await roleExists(client, role))) throw error;
   }
 }
 
