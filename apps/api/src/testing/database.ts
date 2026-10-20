@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseEnv } from 'node:util';
-import { Client, type ClientBase } from 'pg';
+import { Client, type ClientBase, Pool } from 'pg';
 import { ensureRole, ROLES } from '../db/bootstrap';
 import { migrate } from '../db/migrate';
 
@@ -23,6 +23,11 @@ export interface TestDatabase {
    * `commit`, the transaction is committed instead.
    */
   as<T>(role: Role, fn: (db: ClientBase) => Promise<T>, options?: { commit?: boolean }): Promise<T>;
+  /**
+   * A pool into the test database whose sessions run as `role` (startup option `role`), the way the API runs as
+   * `m100_app`. Closed by `drop`.
+   */
+  pool(role: Role): Pool;
   drop(): Promise<void>;
 }
 
@@ -73,6 +78,7 @@ export async function createTestDatabase(
   const url = new URL(base.href);
   url.pathname = `/${name}`;
   const client = await connect(url, name);
+  const pools: Pool[] = [];
 
   const db: TestDatabase = {
     name,
@@ -89,7 +95,17 @@ export async function createTestDatabase(
         throw error;
       }
     },
+    pool(role) {
+      const pool = new Pool({
+        connectionString: url.href,
+        options: `-c role=${role}`,
+        application_name: `m100 test ${name} ${role}`,
+      });
+      pools.push(pool);
+      return pool;
+    },
     async drop() {
+      await Promise.all(pools.map((p) => p.end()));
       await client.end();
       const cleanup = await connect(base, 'cleanup');
       try {
