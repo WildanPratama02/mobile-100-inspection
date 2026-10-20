@@ -12,7 +12,7 @@ export interface Migration {
   /** File name without `.sql`, e.g. `0003_submissions`. */
   version: string;
   sql: string;
-  /** Hex SHA-256 of the file's bytes; an applied file must never change. */
+  /** Hex SHA-256 of the file's text with LF line endings; an applied file must never change. */
   sha256: string;
 }
 
@@ -41,11 +41,12 @@ export function listMigrations(dir: string = findMigrationsDir()): Migration[] {
   return files.map((name) => {
     const match = FILE.exec(name);
     if (!match?.[1]) throw new Error(`Migration file name must look like 0001_name.sql: ${name}`);
-    const bytes = readFileSync(join(dir, name));
+    // LF line endings, so a copy whose editor or unzip tool wrote CRLF on Windows still matches its record.
+    const sql = readFileSync(join(dir, name), 'utf8').replace(/\r\n/g, '\n');
     return {
       version: match[1],
-      sql: bytes.toString('utf8'),
-      sha256: createHash('sha256').update(bytes).digest('hex'),
+      sql,
+      sha256: createHash('sha256').update(sql, 'utf8').digest('hex'),
     };
   });
 }

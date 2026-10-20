@@ -3,6 +3,7 @@
  * `m100_report`, and the database owned by `m100_migrate`. Run by QIP Digital as a PostgreSQL superuser; safe to
  * run again (it then only resets the passwords). Migrations never create roles, they only grant.
  */
+import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 import type { ClientBase } from 'pg';
 
 export const ROLES = { migrate: 'm100_migrate', app: 'm100_app', report: 'm100_report' } as const;
@@ -21,6 +22,24 @@ export interface BootstrapReport {
 }
 
 const DATABASE_NAME = /^[a-z_][a-z0-9_]{0,62}$/;
+
+/** Printable ASCII: SASLprep leaves it unchanged, so the verifier below matches what the server would compute. */
+const PASSWORD = /^[\x20-\x7e]+$/;
+
+/**
+ * The SCRAM-SHA-256 verifier PostgreSQL stores for `password` (RFC 5802, RFC 7677; the format of `pg_authid`).
+ * Sending this instead of the password keeps the password out of the server log and `pg_stat_statements`, which
+ * record `CREATE ROLE … PASSWORD '…'` as written.
+ */
+export function scramVerifier(password: string, salt: Buffer = randomBytes(16)): string {
+  if (!PASSWORD.test(password)) throw new Error('Role passwords must be printable ASCII');
+  const iterations = 4096;
+  const salted = pbkdf2Sync(password, salt, iterations, 32, 'sha256');
+  const clientKey = createHmac('sha256', salted).update('Client Key').digest();
+  const storedKey = createHash('sha256').update(clientKey).digest();
+  const serverKey = createHmac('sha256', salted).update('Server Key').digest();
+  return `SCRAM-SHA-256$${iterations}:${salt.toString('base64')}$${storedKey.toString('base64')}:${serverKey.toString('base64')}`;
+}
 
 /** Reads the plan from `ADMIN_DATABASE_URL`, `MIGRATE_DATABASE_URL`, `DATABASE_URL` and `REPORT_DB_PASSWORD`. */
 export function bootstrapPlanFromEnv(env: Readonly<Record<string, string | undefined>>): {
@@ -63,6 +82,17 @@ export function bootstrapPlanFromEnv(env: Readonly<Record<string, string | undef
     throw new Error(`Cannot bootstrap the database:\n${problems.map((p) => `  ${p}`).join('\n')}`);
   }
   const reportPassword = env.REPORT_DB_PASSWORD?.trim();
+  const passwords: [string, string][] = [
+    ['MIGRATE_DATABASE_URL', decodeURIComponent(migrateUrl.password)],
+    ['DATABASE_URL', decodeURIComponent(appUrl.password)],
+    ...(reportPassword ? [['REPORT_DB_PASSWORD', reportPassword] as [string, string]] : []),
+  ];
+  const bad = passwords.filter(([, p]) => !PASSWORD.test(p)).map(([name]) => name);
+  if (bad.length > 0) {
+    throw new Error(
+      `Cannot bootstrap the database:\n${bad.map((name) => `  ${name}: the password must be printable ASCII`).join('\n')}`,
+    );
+  }
   return {
     adminUrl: admin.href,
     plan: {
@@ -107,8 +137,10 @@ export async function bootstrap(admin: ClientBase, plan: BootstrapPlan): Promise
     [ROLES.report, plan.reportPassword],
   ];
   for (const [role, password] of wanted) {
-    // Utility statements take no parameters, so the password goes in as an escaped literal.
-    const login = password ? `LOGIN PASSWORD ${admin.escapeLiteral(password)}` : 'NOLOGIN';
+    // Utility statements take no parameters, so the verifier (never the password) goes in as a literal.
+    const login = password
+      ? `LOGIN PASSWORD ${admin.escapeLiteral(scramVerifier(password))}`
+      : 'NOLOGIN';
     const options = `NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS ${login}`;
     const exists = await roleExists(admin, role);
     await admin.query(

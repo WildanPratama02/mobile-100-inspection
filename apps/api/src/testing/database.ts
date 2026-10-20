@@ -26,7 +26,8 @@ export interface TestDatabase {
   drop(): Promise<void>;
 }
 
-function adminUrl(): URL {
+/** The superuser URL of `TEST_ADMIN_DATABASE_URL`; throws, naming the variable, when it is not set. */
+export function adminUrl(): URL {
   const envFile = resolve(__dirname, '..', '..', '.env');
   let value = process.env.TEST_ADMIN_DATABASE_URL?.trim();
   if (!value && existsSync(envFile)) {

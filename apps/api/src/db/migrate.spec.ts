@@ -12,7 +12,16 @@ describe('listMigrations (T2.2)', () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('returns the .sql files in version order with the SHA-256 of their bytes', () => {
+  it('gives a CRLF copy of a file the same checksum as the LF original', () => {
+    writeFileSync(join(dir, '0001_a.sql'), 'SELECT 1;\nSELECT 2;\n');
+    const lf = listMigrations(dir)[0];
+    writeFileSync(join(dir, '0001_a.sql'), 'SELECT 1;\r\nSELECT 2;\r\n');
+    const crlf = listMigrations(dir)[0];
+
+    expect(crlf).toEqual(lf);
+  });
+
+  it('returns the .sql files in version order with the SHA-256 of their text', () => {
     writeFileSync(join(dir, '0002_b.sql'), 'SELECT 2;');
     writeFileSync(join(dir, '0001_a.sql'), 'SELECT 1;');
     writeFileSync(join(dir, 'README.md'), 'not a migration');
