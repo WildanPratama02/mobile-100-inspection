@@ -28,7 +28,8 @@ pnpm workspace monorepo:
 - `apps/web`: React 18 + TypeScript + Vite, `vite-plugin-pwa` (Workbox), Zustand (state), Dexie (IndexedDB for sessions, photos, outbox).
 - `apps/api`: NestJS + TypeScript on PostgreSQL 16 (`pg` pool; TypeORM for the admin CRUD entities; explicit SQL for the submission write). All database access behind repository interfaces; photos behind `PhotoStore` (`DiskPhotoStore` for release 1, `S3PhotoStore` optional).
 - `apps/admin`: React + Vite admin web app served at `/admin/` (Phase 3b; not scaffolded yet).
-- `db/migrations/`: explicit SQL migrations (T2.2; not created yet).
+- `db/migrations/`: explicit SQL migrations (T2.2), applied by `pnpm db:migrate`.
+- `apps/api/src/repositories/`: one interface + `Pg…` implementation per table group (T2.3); `apps/api/src/photos/`: `PhotoStore`, `DiskPhotoStore`, and the shared contract suite in `src/testing/photo-store-contract.ts`.
 - `packages/shared`: types, the counting engine, mapping loader, number/date formatters. Used by the apps and the API.
 
 Tests: Vitest (unit), Playwright (web end-to-end), Jest (NestJS default; repository tests against a real PostgreSQL test database). Node 22 LTS.

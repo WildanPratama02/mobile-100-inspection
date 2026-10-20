@@ -4,9 +4,11 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import type { DestinationStream } from 'pino';
 import { ConfigModule } from './config/config.module';
 import type { Config } from './config/env';
+import { DatabaseModule } from './db/database.module';
 import { ProblemFilter } from './errors/problem.filter';
 import { HealthModule } from './health/health.module';
 import { LoggingModule } from './logging/logging.module';
+import { PhotoStoreModule } from './photos/photo-store.module';
 import { DeviceThrottlerGuard, RATE_LIMIT } from './throttle/device-throttler.guard';
 
 export interface AppModuleOptions {
@@ -24,6 +26,8 @@ export class AppModule {
         ConfigModule.forConfig(config),
         LoggingModule.forConfig(config, options.logDestination),
         ThrottlerModule.forRoot({ throttlers: [RATE_LIMIT], setHeaders: false }),
+        DatabaseModule,
+        PhotoStoreModule,
         HealthModule,
       ],
       providers: [
