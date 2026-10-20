@@ -1,16 +1,21 @@
 ---
 paths:
   - "apps/api/**/*.ts"
+  - "db/**"
+  - "scripts/**"
 ---
 
-# API and spreadsheet rules
+# API and database rules
 
-- Spec: `docs/03-tdd.md` §5 (modules, pipeline, errors), `docs/02-data-design.md` (columns, write sequence), `docs/04-api-contract.md` + `04-openapi.yaml` (endpoints). Phase 4 (deployment) is blocked, see CLAUDE.md.
-- All Google access goes through the repository interfaces of doc 03 §5.2 (`UsersRepository`, `CellsRepository`, `DefectsRepository`, `AreaMapRepository`, `PoRepository`, `InspectionRepository`, `SubmissionLogRepository`, `PhotoStore`); controllers and services never call `googleapis` directly. Each interface has a Google implementation and an in-memory fake with fault injection.
-- Spreadsheet ID, Drive folder ID and credentials come from environment variables / `secrets/` only. Tests run against the in-memory fakes or the development **copy**, never production.
-- Append only (BR-07). A Submit PO is `values.append` (`RAW`) of the row, then **one** `spreadsheets.batchUpdate` (format copy, LINK formulas, detail rows, submission row). Read the ID columns of `M100_SUBMISSION` and `DATA_INSPECTION` fresh before writing, and verify that appended row N holds our ID before the batch (doc 03 §5.4).
-- The API computes every total itself from counts and findings (doc 04 §4.1). Use the shared `top5()` for slot order.
-- One worker writes to Sheets. Retry `429` with `2^n` s + up to 1 s jitter, cap 32 s; retry `5xx` and network errors for up to 10 minutes; never retry `400`. A Google `401/403/404` flips `SHEETS_ACCESS` or `DRIVE_ACCESS` and disables Submit PO (doc 03 §5.7).
-- Never log device keys, tokens or photo bytes. Compare device keys by SHA-256 in constant time.
-- Photos: accept JPEG only (signature `FF D8 FF`), ≤ 1 MB each, do not re-encode; upload before appending the row; file name from `photoFileName()`.
-- The server is Windows: build file paths with `node:path`, never assume case-sensitive file names, and do not write bash-only scripts.
+- Spec: `docs/03-tdd.md` §5 (modules, Submit PO procedure, errors), §6 (security, roles); `docs/02-data-design.md` (tables, constraints, import, write order, photo keys, views, readiness checks); `docs/04-api-contract.md` + `04-openapi.yaml` (endpoints, validation, error codes, admin API). Phase 4 (deployment) starts after the server pre-checks of doc 03 §7.3.
+- Controllers and services depend on repository interfaces and on `PhotoStore` (doc 03 §5.2), never on `pg` or the file system directly. Repositories have a PostgreSQL implementation only; their tests run against a real PostgreSQL 16 test database, not a fake.
+- Schema changes are explicit SQL files in `db/migrations/`, applied by `pnpm db:migrate` with `MIGRATE_DATABASE_URL` (role `m100_migrate`). No TypeORM `synchronize`, no schema auto-sync. The API runs as `m100_app`; `m100_report` reads the views only.
+- Parameterised SQL only. Connection strings, `jwt.key` and S3 keys come from `.env` / `secrets/`; never hard-code them, never commit them. Development and tests use their own databases (`m100_dev`, a test database per run), never the production one.
+- Submissions are immutable (BR-07, ADR-018): never UPDATE or DELETE `submissions`, `submission_findings` or `submission_photos`; the trigger and the grants enforce it. Master data is never deleted either, only deactivated (`active = false`).
+- A Submit PO follows doc 02 §6.1 exactly: look up the UUID (`200` for the same `payload_sha256`, `409 SUBMISSION_UUID_REUSED` for a different one); validate at `REPEATABLE READ`; put photos **before** the transaction; then one transaction with `INSERT … ON CONFLICT (id) DO NOTHING`, findings and photo rows with snapshot columns, and the SQL re-check of the sums. Synchronous answer only: no queue, no `202`, no status endpoint.
+- The API computes every total itself from counts and findings (doc 04 §4.1) with the functions in `packages/shared`; use the shared `rankDefects()` / `top5()` for the Top 5 so tablet and server never disagree. Accept fractional seconds in `sealedAt` and `firstRecordedAt` (doc 03 §4.6).
+- Photo keys: `submissions/<yyyy>/<MM>/<uuid>/<defectId>.jpg`, month from `sealedAt` in WIB (doc 02 §7). JPEG only (signature `FF D8 FF`), ≤ 1 MB each, SHA-256 checked, never re-encoded. `DiskPhotoStore` writes to a temp file and renames, and refuses a key that escapes `PHOTO_DIR`.
+- A database or photo-store error flips the matching readiness check (`DB`, `PHOTO_STORE`) and the request answers `503 DB_UNAVAILABLE` / `PHOTO_STORE_UNAVAILABLE` (doc 03 §5.7). A serialization failure or deadlock is retried once inside the request.
+- Tablet tokens (`aud` = `tablet`) and admin cookies (`aud` = `admin`) never work on each other's endpoints. Every admin change and every CLI change writes an `audit_log` row and, when tablets download it, bumps `settings.master_version`.
+- Never log device keys, tokens, passwords or photo bytes. Store only the SHA-256 of a device key and compare in constant time. Admin passwords are argon2id.
+- The server is Windows: build file paths with `node:path`, never assume case-sensitive file names, and write CLI tools in Node/TypeScript or PowerShell, never bash.

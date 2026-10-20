@@ -252,7 +252,7 @@ export interface RankedDefect {
 const SEVERITY: Readonly<Record<Classification, number>> = { CRITICAL: 0, MAJOR: 1, MINOR: 2 };
 
 /**
- * Defects in slot order (doc 02 §6.2, AC-05.1): higher quantity, then CRITICAL > MAJOR > MINOR, then the
+ * Defects in ranking order (AC-05.1, doc 02 §8 `v_defect_totals`): higher quantity, then CRITICAL > MAJOR > MINOR, then the
  * defect recorded first. Grouped by `DEFECT_ID`, never by name (ADR-009).
  */
 export function rankDefects(

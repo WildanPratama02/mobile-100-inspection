@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Document | 05 — UI/UX Flow and Screen Spec |
-| Version | v0.2 Draft, 20 Oct 2026 (admin screens added; synchronous submit, ADR-018) |
+| Version | v0.2 Draft, 20 Oct 2026 (U1, U2, U10 confirmed; U13 compact shoe map; U14–U16 outbox and Submit PO; admin screens and U17–U19 added; synchronous submit, ADR-018) |
 | Inputs | PRD v0.6 (FR-01…FR-14, AC, BR, NFR), the clickable prototype (`reference/prototype/app.html`, layout and behavior only), Design System v45 (namespace `M100`), doc 03 §4 (tablet design), doc 04 §5–6, §8 (outbox, error codes, admin API) |
 | Used by | The coding agent in Phase 1 (offline PWA). Doc 06 gives the parts; this document says where each part goes and what it does. |
 
@@ -14,7 +14,7 @@ If this document and the prototype disagree, **this document wins**. The prototy
 - Screens are named `S0 … S9`. Each has: purpose, what is on it, states, interactions, copy, and the requirements it satisfies.
 - Component names in `code` are from the Design System (`M100.*`). A component that is not listed in doc 06 is a layout container written in the app, using tokens only.
 - Screen text is Bahasa Indonesia; fixed shop-floor labels stay English and uppercase (doc 00). Quoted copy in this document is the exact text to use.
-- Decision IDs `U1…U12` (section 18) record the choices made here that the PRD left open. U1 (OQ-07), U2 (OQ-08) and U10 were confirmed by the owner on 20 Oct 2026.
+- Decision IDs `U1…U19` (section 18) record the choices made here that the PRD left open. U1 (OQ-07), U2 (OQ-08) and U10 were confirmed by the owner on 20 Oct 2026.
 
 ## 2. Screen map and navigation
 
@@ -57,7 +57,7 @@ flowchart TD
 | G8 | **Disabled looks grey** (`disabled` fill), and the reason is visible on the same screen (a hint line, a `Notice`, or the dialog's checks). |
 | G9 | **Haptics.** `navigator.vibrate(18)` on every recorded defect and on UNDO, where supported. |
 | G10 | **Screen on.** While an inspection is active the app requests a screen wake lock so the tablet does not sleep mid-inspection; released when the inspection ends or the app is hidden. Failure is silent. |
-| G11 | **Online indicator.** A small status word in the Home header: nothing when online and the outbox is empty; "Offline" (`Chip` neutral) when `navigator.onLine` is false; the outbox count when something is waiting (S3 header, S9). |
+| G11 | **Online indicator.** A small status word in the Home header: nothing when online and the outbox is empty; "Offline" (`Chip` neutral) when `navigator.onLine` is false; the outbox count when something is waiting (S3 header, S9). The count covers the logged-in PSI's own submissions (U14) in Menunggu or Mengirim (U15). |
 | G13 | **Logo.** The company mark `assets/parkland.png` is the app's logo (the product has no mark of its own). It appears on S0, S1, S2 (above the form), the S3 header, the S9 menu, the PDF export header, and as the PWA icon. Rules in section 4a. |
 | G12 | **No hidden gestures** except one: long press on a PO in the PO list to remove it (AC-03.4, Should). Everything else has a visible button. |
 
@@ -68,7 +68,7 @@ The same screens run in three layouts, chosen by the viewport (doc 06 "Responsiv
 | Layout | When | S3 Home | S6 Defect |
 |---|---|---|---|
 | **Regular** | landscape, height > 480 px | Header on top; below it a left PO column (≈ 22%) and a main area with Top 5 Defect and, on the right, the results box; the bottom row holds ADD DEFECT (wide), EXPORT PDF, EXPORT EXCEL, SUBMIT PO | Left: shoe map pane (≈ 56%). Right: command row, breadcrumb, drill-down list, history, bottom bar BACK / HOME / UNDO |
-| **Compact** | landscape, height ≤ 480 px | Same arrangement, smaller type and padding | Same arrangement |
+| **Compact** | landscape, height ≤ 480 px | Same arrangement, smaller type and padding | Same arrangement; the shoe map uses the compact pill docks (U13) |
 | **Stacked** | portrait or width ≤ 640 px | Info strip, PO list as a horizontal strip, results box, Top 5, then a bottom bar | Shoe map on top, then command row, list, history; bottom bar fixed to the screen edge with the safe-area inset |
 
 The page never scrolls sideways. Long defect names wrap inside their row. Only the list areas scroll (PO list, Top 5 when over five rows is not possible, drill-down list, history); the header, command row and bottom bars stay in place.
@@ -210,12 +210,12 @@ EXPORT PDF / EXPORT EXCEL create the file on the tablet from the current session
 
 | Case | Behaviour |
 |---|---|
-| Normal | The file is saved/shared through the Android share sheet or the download folder (`showSaveFilePicker` if available, otherwise a download). Toast "File dibuat: M100_0903359388_20261016.pdf". |
-| PSI lv.2 with missing Top 5 photos | A blocking `Dialog` (must answer) "Foto belum lengkap" listing the defect names missing a photo; button `Lengkapi foto` closes it. No file is made (prototype behavior, BR-04). |
+| Normal | The file is saved through the system save dialog (`showSaveFilePicker`) where the browser has one, otherwise downloaded to the download folder. Toast "File dibuat: M100_0903359388_20261016.pdf". Sharing through the Android share sheet (`navigator.share`) is **deferred** (decided at T1.6, 19 Oct 2026): the PSI shares the downloaded file from the Downloads app. |
+| PSI lv.2 with missing Top 5 photos | A blocking `Dialog` (must answer) "Foto belum lengkap" with the body "PSI lv.2 wajib menambahkan foto pada Top 5 Defect. Belum ada foto untuk:" and the defect names missing a photo (as in 13.1); button `Lengkapi foto` closes it. No file is made, for either format (prototype behavior, BR-04). |
 | Empty session | Allowed. The file shows zeros and "Belum ada defect." |
-| Export fails (storage full, user cancelled share) | Toast error "File gagal dibuat. Coba lagi." Cancelled share sheet: no toast. |
+| Export fails (storage full, write error) | Toast error "File gagal dibuat. Coba lagi." Closed save dialog: no toast. |
 
-The PDF header carries the company mark (doc 06 Logo), PO info, inspector, Factory/Cell, export time, the results, Top 5 with photos (lv.2), and the full defect list. File names: `M100_<PO>_<YYYYMMDD>.pdf` / `.xlsx` (AC-12.3).
+The PDF header on every page carries the company mark (doc 06 Logo) and "MOBILE 100% INSPECTION"; the body has the PO info, inspector, Factory/Cell, export time (WIB), the results, Top 5, the photos (lv.2) and the full defect list. The photos are every photo of a defect in the current findings: the Top 5 photos first in Top 5 order, then those of defects outside the Top 5 (AC-10.4) in ranking order (AC-05.1), each once and captioned with its defect name; a photo whose defect was undone completely is left out. The Excel file has the sheets "Ringkasan" (header, results, Top 5 with a Foto column for lv.2) and "Daftar Defect". File names: `M100_<PO>_<YYYYMMDD>.pdf` / `.xlsx`, the date in WIB (AC-12.3).
 
 ### 8.6 SUBMIT PO
 
@@ -358,7 +358,7 @@ After the photo returns:
 
 ### 12.2 S7b — View a photo
 
-`Dialog wide title="Foto defect"` showing the classification `Chip` and defect name, the photo, and two buttons: GANTI FOTO (`secondary`, camera icon; replaces the photo, AC-10.5) and HAPUS (`danger`). HAPUS asks nothing more: it removes the photo and returns the row to "Foto wajib", toast "Foto dihapus".
+`Dialog wide title="Foto defect"` showing the classification `Chip` and defect name, the photo, and two buttons: GANTI FOTO (`secondary`, camera icon; replaces the photo, AC-10.5) and HAPUS (`danger`). HAPUS asks nothing more: it removes the photo and returns the row to "Foto wajib", toast "Foto dihapus". If removing fails, toast error "Foto gagal dihapus. Coba lagi." and the photo stays (confirmed 19 Oct 2026).
 
 **Satisfies.** FR-10, AC-10.1…10.6, BR-04.
 
@@ -400,7 +400,7 @@ Home never blocks on the result. The PSI can start the next round on the same PO
 `Dialog title="Pengaturan"` (anchored to the gear on Regular; centred otherwise). From top to bottom:
 
 1. **Akun** — name, level `Chip`, "Factory/Cell F3-10".
-2. **Pengiriman** — the outbox list: one `OutboxItem` per submission (PO, time `HH:mm`, status Menunggu / Mengirim / Terkirim / Gagal, and the reason for Gagal; for Menunggu the last attempt). Newest first. "Terkirim" items stay for 7 days (doc 04 §5), then leave the list. Empty: "Tidak ada pengiriman." (AC-11.3). `Gagal` items also show the hint "Hubungi admin dengan nomor PO ini."
+2. **Pengiriman** — the outbox list: one `OutboxItem` per submission of the logged-in PSI (U14) (PO, time `HH:mm`, status Menunggu / Mengirim / Terkirim / Gagal, and the reason for Gagal; for Menunggu the last attempt, shown once the sender has recorded one). Newest first. "Terkirim" items stay for 7 days (doc 04 §5), then leave the list. Empty: "Tidak ada pengiriman." (AC-11.3). `Gagal` items also show the hint "Hubungi admin dengan nomor PO ini."
 3. **Data** — "Data master diperbarui {dd MMM HH:mm}" (AC-13.4).
 4. **LOGOUT** — `Button danger block` at the bottom (FR-02).
 
@@ -431,6 +431,8 @@ Exact texts beyond those quoted above, so that the coding agent does not invent 
 | NO DEFECT toast | No Defect tercatat. A-Grade +1 |
 | UNDO toasts | Defect terakhir dibatalkan / Inspeksi dibatalkan / No Defect dibatalkan |
 | Submit toasts | PO terkirim {HH:mm} / Tersimpan. Menunggu koneksi. / Sedang dikirim. |
+| Sealing failed on the tablet (KIRIM, toast error; nothing is sealed, the session stays as it was) | PO gagal disimpan. Coba lagi. (confirmed 20 Oct 2026) |
+| Waiting count badge, accessible label | {n} pengiriman menunggu |
 | Device not registered (401 DEVICE_KEY_INVALID) | Tablet belum terdaftar, hubungi admin |
 | Server error | Terjadi kesalahan server. Data tetap tersimpan di tablet. |
 
@@ -497,9 +499,13 @@ Layout containers written in the app (not in the design system): the Home grid, 
 | U10 | A partial stays on the PO after SUBMIT PO. | A partial shipment is inspected in several rounds; ADR-013 does not say to clear it. Confirmed by the owner on 20 Oct 2026. |
 | U11 | HAPUS on a photo needs no confirmation. | The photo can be retaken at once; an extra dialog costs more than the mistake. |
 | U12 | The gear menu holds account, outbox, master data time and LOGOUT; "Reset data demo" from the prototype does not exist. | Demo only. |
-| U13 | The admin app is a separate web app at `/admin/`, online only, with keyboard input allowed; it reuses tokens and the basic components but adds no new design-system component in release 1. | Administrators sit at a laptop; the tap-only rule exists for the line, not for the back office. |
-| U14 | Submissions are read-only in the admin app: no edit, delete or void. | BR-07; the owner chose to keep the admin app to master data, the inspection DataTable, admins and the audit log. |
-| U15 | Tablets are registered with server commands (`device:add`), not in the admin app; the audit log still records them. | Owner decision 20 Oct 2026; fewer screens in release 1. |
+| U13 | **Decided 19 Oct 2026.** When the shoe map is drawn shorter than its pills need (about 473 px for the design-system docks), the app places the same 12 pills on a second set of docks spread over the whole height (`SHOE_AREAS_COMPACT`). Anchors, leader-line targets, labels and the image box stay as in the design system; the command row and END INSPECTION stay in place; nothing scrolls. | In Compact (a landscape screen 480 px or less tall) the design-system docks put 44 px pills 75/720 of the map apart, so they cover each other and the command buttons. Touch sizes must not shrink (G2). |
+| U14 | **Decided 20 Oct 2026.** The outbox is shown per author: the header count and the S9 Pengiriman list hold only the logged-in PSI's submissions. Another PSI's waiting items stay on the tablet and are still sent with their author's token (doc 03 §4.4). | BR-09 and AC-02.3: a PSI never sees another PSI's data, and the outbox carries POs like the PO list does. |
+| U15 | **Decided 20 Oct 2026.** The waiting count is Menunggu + Mengirim. Gagal and Terkirim are not counted. | Both are still on their way; a Gagal item waits for an admin, not for the connection, and shows in S9 with its reason (AC-11.4). |
+| U16 | **Decided 20 Oct 2026.** In the Submit PO confirmation the summary takes two columns on a screen 480 px or less tall. | KIRIM stays on screen without scrolling in Compact. |
+| U17 | The admin app is a separate web app at `/admin/`, online only, with keyboard input allowed; it reuses tokens and the basic components but adds no new design-system component in release 1. | Administrators sit at a laptop; the tap-only rule exists for the line, not for the back office. |
+| U18 | Submissions are read-only in the admin app: no edit, delete or void. | BR-07; the owner chose to keep the admin app to master data, the inspection DataTable, admins and the audit log. |
+| U19 | Tablets are registered with server commands (`device:add`), not in the admin app; the audit log still records them. | Owner decision 20 Oct 2026; fewer screens in release 1. |
 
 ## 20. Admin web app (FR-14)
 

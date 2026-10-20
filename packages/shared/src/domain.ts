@@ -144,7 +144,7 @@ export interface Inspection {
 export interface Finding extends AreaMapEntry {
   inspectionType: InspectionType;
   qty: number;
-  /** Breaks ties in slot order (doc 02 §6.2). */
+  /** Breaks ties in the defect ranking (AC-05.1). */
   firstRecordedAt: string;
 }
 

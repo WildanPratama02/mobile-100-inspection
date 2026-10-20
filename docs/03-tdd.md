@@ -104,6 +104,7 @@ docs/
 | `photos` | `[sessionId, defectId]` | JPEG blob (≤ 960 px, ≤ 1 MB), SHA-256, taken-at |
 | `outbox` | `submissionUuid` | sealed submission (§4.6) |
 | `outboxPhotos` | `[submissionUuid, defectId]` | the photo blobs of a sealed session |
+| `view` | `username` | the screen (Home or Defect), the selected PO and the Defect drill-down path, so a restart returns to the same place (doc 05 §4, §8.4, §11.5, AC-06.2); per user because tablets are shared (BR-09) |
 
 **A session is the result of reducing its event list** with the pure functions of `packages/shared`. Persisting events instead of counters makes the rules of persistence trivial: one tap = one IndexedDB write of one event, and the screen is updated from the stored result (NFR-05, AC-06.2). UNDO is an event that the reducer interprets by the four cases of FR-08. Totals, Top 5 and the findings list of FR-09 are derived, never stored.
 
@@ -133,6 +134,12 @@ Pressing KIRIM runs **one Dexie transaction**:
 
 Either all four happen or none, so a session is never both live and sealed, and never lost. The tablet always resends the **stored string**, byte for byte, so the API's hash check (doc 04 §4.3) compares identical bytes; no canonical-JSON library is needed on either side.
 
+As built (T1.7):
+- Step 1 runs just before the transaction opens, because awaiting `crypto.subtle` inside a Dexie transaction ends that transaction. The transaction then checks that the session is still the PSI's open session, that its last event `seq` and the hash of each photo it submits are the ones step 1 read, and refuses otherwise. A refused or failed seal writes nothing, and the PSI sees "PO gagal disimpan. Coba lagi." (doc 05 §15).
+- Step 3 moves only the photos the submission names (PSI lv.2, one per defect still in the findings). A photo whose defect was undone completely is not sent and is removed along with the closed session.
+- Times in the submission keep milliseconds (`2026-10-16T14:32:05.123+07:00`, still ISO 8601), so the API breaks Top 5 ties on the same `firstRecordedAt` as the tablet (doc 04 §4.2 rule 7). The API must accept fractional seconds (T3.2).
+- `appVersion` is the `version` of `apps/web/package.json`.
+
 **Outbox sender** (a loop inside the app): runs when an item is sealed, when the browser fires `online`, when the app regains focus, and on a 30 s timer. It processes the oldest eligible item, follows the table in doc 04 §5 exactly, and sets `nextAttemptAt` with the back-off 5 s, 15 s, 1 min, 5 min, then every 5 min. It runs **only while the app is open**: items wait on the tablet until someone opens the app, and the header's waiting counter (AC-11.3) is what tells the PSI. Photos of a `Terkirim` item are deleted 7 days later.
 
 ### 4.7 Master data
@@ -142,6 +149,8 @@ On launch and at most every 30 minutes while open (AC-13.2) the app calls `GET /
 ### 4.8 Updating the app
 
 A new build produces a new service worker that **waits** instead of taking over. The app activates it only when no inspection is active (on the login screen, on Home with no active inspection, or at the next cold start), then reloads. It never reloads in the middle of an inspection. The version is sent as `appVersion` with every submission and stored in `submissions.app_version`. API changes are additive within `/v1` (doc 04 §1), so an old tablet keeps working until it updates.
+
+As built (T1.8): `main.tsx` registers the service worker (`virtual:pwa-register`, `registerType: 'prompt'`); `src/app/appUpdate.ts` notes a waiting version and activates it once the app is idle: Login, or Home while none of the PSI's sessions has an active inspection. The Defect screen never counts as idle, even with no inspection active. Under `pnpm dev` there is no service worker; the PWA end-to-end tests run against `vite preview` of a build.
 
 ### 4.9 Registering a tablet (device key)
 

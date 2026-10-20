@@ -10,7 +10,7 @@ describe('sha256Hex', () => {
 
   it('hashes a string as its UTF-8 bytes', async () => {
     expect(await sha256Hex('abc')).toBe(ABC);
-    // U+00A0 is two bytes in UTF-8 (doc 02 D12: names pass through byte for byte).
+    // U+00A0 is two bytes in UTF-8 (doc 02 §3.3: names pass through exactly as stored).
     expect(await sha256Hex('A B')).toBe(await sha256Hex(new Blob(['A B'])));
   });
 });

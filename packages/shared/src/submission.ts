@@ -52,7 +52,7 @@ export interface PhotoRef {
 /**
  * The photos a submission carries: PSI lv.2 only (AC-10.6), one per defect still in the findings, in order of
  * the defect's first finding. A photo stays with a defect that left the Top 5 (AC-10.4); one whose defect was
- * undone completely has no slot to go to (doc 02 §7) and is left out.
+ * undone completely has no finding to belong to (doc 02 §4.3) and is left out.
  */
 export function submissionPhotos<T extends PhotoRef>(
   state: SessionState,
