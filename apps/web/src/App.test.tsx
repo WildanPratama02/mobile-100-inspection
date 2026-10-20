@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { Po } from '@m100/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
+import { resetAppUpdatesForTest, startAppUpdates } from './app/appUpdate';
 import { createFixtureSources } from './data/fixtures/fixtureSources';
 import type { DataSources } from './data/sources';
 import { createDb, type M100Db } from './db/schema';
@@ -220,5 +221,58 @@ describe('logout (FR-02)', () => {
     await loginAs('DEWI CONTOH');
     expect(store.getState().pos.map((p) => p.po)).toEqual([PO.po]);
     expect(store.getState().sessions[PO.po]?.events).toHaveLength(1);
+  });
+});
+
+describe('a new app version (doc 03 §4.8)', () => {
+  let update: ReturnType<typeof vi.fn<() => Promise<void>>>;
+  let needRefresh: () => void;
+
+  beforeEach(() => {
+    update = vi.fn(() => Promise.resolve());
+    startAppUpdates((options) => {
+      needRefresh = () => act(() => options?.onNeedRefresh?.());
+      return update;
+    });
+  });
+
+  afterEach(() => resetAppUpdatesForTest());
+
+  it('takes over on the login screen', async () => {
+    openApp();
+    await screen.findByRole('heading', { name: 'Login PSI' });
+    expect(update).not.toHaveBeenCalled();
+    needRefresh();
+    expect(update).toHaveBeenCalledOnce();
+  });
+
+  it('waits for the inspection to end, then takes over once on Home', async () => {
+    const { store } = openApp();
+    await loginAs('DEWI CONTOH');
+    await act(async () => {
+      await store.getState().addPo(PO, null);
+      await store.getState().tap(PO.po, { type: 'START', inspection: 'REWORK' });
+    });
+    needRefresh();
+    expect(update).not.toHaveBeenCalled();
+
+    await act(() => store.getState().tap(PO.po, { type: 'END' }));
+    expect(update).toHaveBeenCalledOnce();
+    needRefresh();
+    expect(update).toHaveBeenCalledOnce();
+  });
+
+  it('never takes over on the Defect screen', async () => {
+    const { store } = openApp();
+    await loginAs('DEWI CONTOH');
+    await act(async () => {
+      await store.getState().addPo(PO, null);
+      await store.getState().setView({ screen: 'defect', selectedPo: PO.po });
+    });
+    needRefresh();
+    expect(update).not.toHaveBeenCalled();
+
+    await act(() => store.getState().setView({ screen: 'home' }));
+    expect(update).toHaveBeenCalledOnce();
   });
 });

@@ -3,6 +3,16 @@ import { defineConfig, devices } from '@playwright/test';
 // E2E_PORT lets a second checkout (git worktree) test its own dev server while another one holds 5173.
 const port = Number(process.env.E2E_PORT ?? 5173);
 const baseURL = `http://localhost:${port}`;
+// The service worker exists only in a build, so the PWA tests run against `vite preview` (E2E_PREVIEW_PORT likewise).
+const previewPort = Number(process.env.E2E_PREVIEW_PORT ?? 4173);
+const previewURL = `http://localhost:${previewPort}`;
+
+// Target: Redmi Pad 2 in landscape, about 1280 × 800 CSS px (NFR-01).
+const tablet = {
+  ...devices['Desktop Chrome'],
+  viewport: { width: 1280, height: 800 },
+  hasTouch: true,
+};
 
 export default defineConfig({
   testDir: './e2e',
@@ -11,20 +21,33 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL,
     trace: 'retain-on-failure',
   },
   projects: [
     {
-      // Target: Redmi Pad 2 in landscape, about 1280 × 800 CSS px (NFR-01).
       name: 'tablet-landscape',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 }, hasTouch: true },
+      testIgnore: /pwa\.spec\.ts/,
+      use: { ...tablet, baseURL },
+    },
+    {
+      name: 'pwa',
+      testMatch: /pwa\.spec\.ts/,
+      use: { ...tablet, baseURL: previewURL },
     },
   ],
-  webServer: {
-    command: `pnpm dev --port ${port}`,
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-  },
+  webServer: [
+    {
+      command: `pnpm dev --port ${port}`,
+      url: baseURL,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+    {
+      // Always a fresh build: a reused preview server could serve an old one.
+      command: `pnpm build && pnpm preview --port ${previewPort} --strictPort`,
+      url: previewURL,
+      reuseExistingServer: false,
+      timeout: 180_000,
+    },
+  ],
 });

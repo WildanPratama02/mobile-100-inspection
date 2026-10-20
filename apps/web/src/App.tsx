@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { DataSourcesContext, useDataSources } from './app/dataSources';
 import './app/app.css';
+import { useApplyUpdateWhenIdle } from './app/appUpdate';
 import { ToastProvider } from './app/toast';
 import { useWakeLock } from './app/useWakeLock';
 import type { DataSources } from './data/sources';
@@ -53,6 +54,8 @@ function Screens() {
     Object.values(s.sessions).some((session) => session.state.active),
   );
   useWakeLock(inspecting);
+  // A new version takes over only on Login, or on Home with no inspection active (doc 03 §4.8).
+  useApplyUpdateWhenIdle(status !== 'loading' && (!auth || (screen !== 'defect' && !inspecting)));
 
   useEffect(() => {
     // Restore the logged-in PSI's POs, sessions and screen from IndexedDB (doc 03 §4.3).

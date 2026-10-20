@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
@@ -6,6 +7,17 @@ import { APP_NAME } from '../../packages/shared/src/index.ts';
 import { appVersionDefine } from './version.config.ts';
 
 const sharedSrc = fileURLToPath(new URL('../../packages/shared/src/index.ts', import.meta.url));
+
+const tokens = JSON.parse(
+  readFileSync(fileURLToPath(new URL('../../design-system/tokens.json', import.meta.url)), 'utf8'),
+) as { color: { tokens: Array<{ name: string; value: { light: string } }> } };
+
+/** A light-theme colour token, for the manifest, which cannot read CSS variables. */
+function lightColor(name: string): string {
+  const token = tokens.color.tokens.find((t) => t.name === name);
+  if (!token) throw new Error(`design-system/tokens.json has no colour token "${name}"`);
+  return token.value.light;
+}
 
 export default defineConfig({
   define: appVersionDefine,
@@ -25,9 +37,13 @@ export default defineConfig({
       injectRegister: false,
       includeAssets: ['icons/*.png'],
       manifest: {
+        id: '/',
         name: APP_NAME,
         short_name: 'M100',
         lang: 'id',
+        // Splash and status bar of the installed app match the white header strip (`bg`).
+        background_color: lightColor('bg'),
+        theme_color: lightColor('bg'),
         display: 'standalone',
         orientation: 'landscape',
         start_url: '/',

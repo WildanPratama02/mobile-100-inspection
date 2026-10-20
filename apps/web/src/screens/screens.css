@@ -662,6 +662,8 @@
     min-height: 100dvh;
     display: flex;
     flex-direction: column;
+    /* The sticky bar ends the page, so it meets the screen edge even when scrolled to the end. */
+    padding-bottom: 0;
   }
   .defect__map {
     container-type: normal;
