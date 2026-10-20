@@ -72,7 +72,7 @@ Node 22 LTS ≥ 22.13 and pnpm 10 (`packageManager` in `package.json`; `engine-s
 
 - `pnpm install`
 - `pnpm e2e:install` (once per machine: Playwright's Chromium)
-- `pnpm dev` (web on `http://localhost:5173`; dev-only UI kit catalogue at `/ui`), `pnpm --filter api start:dev` (api on `127.0.0.1:3000`, builds `@m100/shared` first)
+- `pnpm dev` (web on `http://localhost:5173`; dev-only UI kit catalogue at `/ui`), `pnpm --filter api start:dev` (api on `127.0.0.1:3000` under `/v1`, e.g. `/v1/health`; builds `@m100/shared` first). The API reads `.env` from its working directory (`apps/api` for `start:dev`) and stops, naming the variables, unless `DATABASE_URL`, `PHOTO_STORE` (`disk` needs `PHOTO_DIR`; `s3` needs `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`), `JWT_KEY_FILE` and `TZ=Asia/Jakarta` are set; optional `PORT`, `LOG_LEVEL`, `MASTER_CHECK_SECONDS`, `SUBMIT_TIMEOUT_SECONDS` (doc 03 §7.4)
 - `pnpm test` (Vitest in `web` and `@m100/shared`, Jest in `api`), `pnpm lint`, `pnpm typecheck`, `pnpm e2e`
 - `pnpm e2e` also builds the web app and serves it with `vite preview` on `http://localhost:4173` for the `pwa` project (service worker, install, offline); the default project `tablet-landscape` uses the dev server. `pnpm --filter web e2e --project pwa` runs only the PWA tests.
 - `E2E_PORT=5174 E2E_PREVIEW_PORT=4174 pnpm e2e` from a git worktree when another checkout's dev server holds 5173 or its preview holds 4173 (Playwright would otherwise reuse that dev server and test the other checkout's code)

@@ -1,5 +1,35 @@
-import { Module } from '@nestjs/common';
+import { type DynamicModule, Module } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
+import type { DestinationStream } from 'pino';
+import { ConfigModule } from './config/config.module';
+import type { Config } from './config/env';
+import { ProblemFilter } from './errors/problem.filter';
+import { HealthModule } from './health/health.module';
+import { LoggingModule } from './logging/logging.module';
+import { DeviceThrottlerGuard, RATE_LIMIT } from './throttle/device-throttler.guard';
 
-/** Root module. Feature modules of doc 03 §5.1 are added from T2.1 on. */
+export interface AppModuleOptions {
+  /** Replaces stdout as the log destination (tests). */
+  logDestination?: DestinationStream;
+}
+
+/** Root module. Feature modules of doc 03 §5.1 are added task by task. */
 @Module({})
-export class AppModule {}
+export class AppModule {
+  static forConfig(config: Config, options: AppModuleOptions = {}): DynamicModule {
+    return {
+      module: AppModule,
+      imports: [
+        ConfigModule.forConfig(config),
+        LoggingModule.forConfig(config, options.logDestination),
+        ThrottlerModule.forRoot({ throttlers: [RATE_LIMIT], setHeaders: false }),
+        HealthModule,
+      ],
+      providers: [
+        { provide: APP_GUARD, useClass: DeviceThrottlerGuard },
+        { provide: APP_FILTER, useClass: ProblemFilter },
+      ],
+    };
+  }
+}
