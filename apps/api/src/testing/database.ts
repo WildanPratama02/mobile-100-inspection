@@ -5,8 +5,9 @@
  * with `SET ROLE`. Never points at `m100` or `m100_dev`.
  */
 import { randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { parseEnv } from 'node:util';
 import { Client, type ClientBase } from 'pg';
 import { ensureRole, ROLES } from '../db/bootstrap';
 import { migrate } from '../db/migrate';
@@ -27,8 +28,15 @@ export interface TestDatabase {
 
 function adminUrl(): URL {
   const envFile = resolve(__dirname, '..', '..', '.env');
-  if (!process.env.TEST_ADMIN_DATABASE_URL && existsSync(envFile)) process.loadEnvFile(envFile);
-  const value = process.env.TEST_ADMIN_DATABASE_URL?.trim();
+  let value = process.env.TEST_ADMIN_DATABASE_URL?.trim();
+  if (!value && existsSync(envFile)) {
+    // Not process.loadEnvFile: under Jest it fills the real process.env, not the test sandbox's copy. A BOM (as
+    // Notepad may write) would hide the first key from parseEnv.
+    const text = readFileSync(envFile, 'utf8');
+    value = parseEnv(
+      text.charCodeAt(0) === 0xfeff ? text.slice(1) : text,
+    ).TEST_ADMIN_DATABASE_URL?.trim();
+  }
   if (!value) {
     throw new Error(
       'TEST_ADMIN_DATABASE_URL is missing: database tests need a PostgreSQL superuser URL in apps/api/.env',
