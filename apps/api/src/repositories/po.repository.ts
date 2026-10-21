@@ -1,6 +1,6 @@
 /**
  * `pos` (doc 02 §3.3). Text is stored and returned exactly as imported: leading zeros and prefixes of `po`, and
- * non-breaking spaces in `model`, are kept (AC-03.5). The trigram search of `GET /pos` is T2.6.
+ * non-breaking spaces in `model`, are kept (AC-03.5).
  */
 import type { Po } from '@m100/shared';
 import type { Database, Queryable } from '../db/database';
@@ -23,6 +23,12 @@ export interface PoRepository {
   /** The PO, active or not (a submission check needs to tell "unknown" from "deactivated"). */
   findByPo(po: string, q?: Queryable): Promise<PoRecord | null>;
   /**
+   * Active POs whose `po`, `article` or `model` contains `text`, ignoring case, at most `limit` (doc 04 §3.3). PSI
+   * mostly type the last digits of a PO, so POs ending with `text` come first, then other `po` matches, then
+   * article/model matches; within each, the newest PODD first (none last), then `po`.
+   */
+  search(text: string, limit: number, q?: Queryable): Promise<Po[]>;
+  /**
    * Upserts by `po`; `source` is `import:<file>` or `admin` and is recorded only on rows that are new or changed.
    * `active` of an existing row is left as it is.
    */
@@ -42,6 +48,33 @@ export class PgPoRepository implements PoRepository {
       [po],
     );
     return rows[0] ?? null;
+  }
+
+  async search(text: string, limit: number, q: Queryable = this.db): Promise<Po[]> {
+    // `%`, `_` and `\` are literal; the text is lowered and its U+00A0 replaced in SQL, the same way as the
+    // indexed expression of `pos_search_trgm_idx`, which the first condition repeats exactly to hit the index.
+    // The per-field recheck drops a match that only spans the spaces joining po, article and model.
+    const literal = text.replace(/[\\%_]/g, '\\$&');
+    const { rows } = await q.query<Po>(
+      `SELECT po, article, model, destination, order_qty AS "orderQty",
+              to_char(podd, 'YYYY-MM-DD') AS podd, to_char(crd, 'YYYY-MM-DD') AS crd
+         FROM pos
+        WHERE active
+          AND lower(replace(po || ' ' || article || ' ' || model, U&'\\00A0', ' '))
+              LIKE lower(replace($1, U&'\\00A0', ' '))
+          AND (lower(po) LIKE lower(replace($1, U&'\\00A0', ' '))
+               OR lower(article) LIKE lower(replace($1, U&'\\00A0', ' '))
+               OR lower(replace(model, U&'\\00A0', ' ')) LIKE lower(replace($1, U&'\\00A0', ' ')))
+        ORDER BY CASE
+                   WHEN lower(po) LIKE lower(replace($2, U&'\\00A0', ' ')) THEN 0
+                   WHEN lower(po) LIKE lower(replace($1, U&'\\00A0', ' ')) THEN 1
+                   ELSE 2
+                 END,
+                 podd DESC NULLS LAST, po
+        LIMIT $3`,
+      [`%${literal}%`, `%${literal}`, limit],
+    );
+    return rows;
   }
 
   upsertMany(

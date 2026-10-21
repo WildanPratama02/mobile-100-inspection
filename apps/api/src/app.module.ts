@@ -13,6 +13,7 @@ import { HealthModule } from './health/health.module';
 import { LoggingModule } from './logging/logging.module';
 import { MasterDataModule } from './master-data/master-data.module';
 import { PhotoStoreModule } from './photos/photo-store.module';
+import { PoModule } from './pos/po.module';
 import { DeviceThrottlerGuard, RATE_LIMIT } from './throttle/device-throttler.guard';
 
 export interface AppModuleOptions {
@@ -35,6 +36,7 @@ export class AppModule {
         HealthModule,
         MasterDataModule,
         AuthModule,
+        PoModule,
       ],
       // Global guards run in this order: which device it is, its rate budget, then the PSI's token (doc 03 §5.1, §5.6).
       providers: [
