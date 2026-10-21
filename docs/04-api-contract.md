@@ -61,7 +61,11 @@ One document with everything the tablet needs offline. The tablet sends `If-None
 
 ### 3.3 `GET /pos`
 
-Case-insensitive substring match on `po`, `article` and `model` using the trigram index (doc 02 §3.3). `q` shorter than 3 characters → `422`. Which POs are included (all, or only unfinished) is PRD OQ-06; until it is decided, all active POs are searchable. Dates are returned as `YYYY-MM-DD` (`null` if empty).
+Case-insensitive substring match on `po`, `article` and `model` using the trigram index (doc 02 §3.3); a match must lie inside one of the three, not across them. `q` is trimmed first; shorter than 3 characters (or longer than 40) → `422`. `limit` is 1–20, default 20. Which POs are included (all, or only unfinished) is PRD OQ-06; until it is decided, all active POs are searchable. Dates are returned as `YYYY-MM-DD` (`null` if empty).
+
+**Order (§10 A8).** PSI usually type the last 3 or 4 digits of a PO, so the results are ordered: (1) `po` ends with `q`, (2) `po` contains `q` elsewhere, (3) only `article` or `model` contains `q`; within each group the newest PODD first (no PODD last), then `po`.
+
+`GET /pos/{po}` takes the exact PO number (URL-encoded; leading zeros and prefixes kept) and answers `404 PO_NOT_FOUND` for an unknown or deactivated PO. A database error on either endpoint answers `503 DB_UNAVAILABLE` (doc 03 §5.7).
 
 ## 4. Submitting a session
 
@@ -229,3 +233,4 @@ Used only by the admin web app (doc 05 §20), in a desktop browser. Cookie auth 
 | A5 | (v2.0) A tablet resends after any timeout; `200` means "already written" (§5). |
 | A6 | (v2.0) Admins use a separate cookie session with `aud` = `admin` and a password; PSI keep name-only login (§2). |
 | A7 | (21 Oct 2026, product owner, T2.5) `POST /auth/refresh` also accepts a token up to 30 days past its expiry, so the outbox's "`TOKEN_EXPIRED` → refresh, resend" (§5) works for a tablet left unused for weeks; refresh does not re-check the PSI or cell (§2). |
+| A8 | (21 Oct 2026, product owner, T2.6) `GET /pos` puts POs ending with `q` first, because PSI search by the last 3–4 digits; then other PO matches, then article/model matches, each newest PODD first. `q` is trimmed. `GET /pos/{po}` of a deactivated PO is `404` (§3.3). |

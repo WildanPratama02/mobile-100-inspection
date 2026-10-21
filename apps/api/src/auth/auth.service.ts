@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { type PsiLevel, toWibIso } from '@m100/shared';
 import { z } from 'zod';
-import { ApiProblem, type ProblemError } from '../errors/problem';
+import { ApiProblem } from '../errors/problem';
+import { validationFailed } from '../errors/validation';
 import { ReadinessService, RETRY_MS } from '../master-data/readiness.service';
 import type { Device } from '../repositories/device.repository';
 import {
@@ -42,13 +43,7 @@ export class AuthService {
    */
   async login(body: unknown, device: Device): Promise<LoginResponse> {
     const parsed = loginSchema.safeParse(body);
-    if (!parsed.success) {
-      const errors = parsed.error.issues.map((issue) => toProblemError(issue, body));
-      throw new ApiProblem('VALIDATION_FAILED', {
-        detail: `Data tidak lengkap: ${errors.map((e) => e.path || e.code).join(', ')}`,
-        errors,
-      });
-    }
+    if (!parsed.success) throw validationFailed(parsed.error, body);
     const { username, level, factory, cell } = parsed.data;
     const [user, found] = await this.read(async () => [
       await this.masterData.findActiveUser(username, level),
@@ -96,21 +91,4 @@ export class AuthService {
       throw new ApiProblem('DB_UNAVAILABLE', { retryAfter: RETRY_MS / 1000 });
     }
   }
-}
-
-function toProblemError(issue: z.core.$ZodIssue, body: unknown): ProblemError {
-  if (issue.code === 'unrecognized_keys') {
-    return { path: issue.keys.join(', '), code: 'UNKNOWN_FIELD', message: issue.message };
-  }
-  const field = issue.path[0];
-  const missing =
-    typeof field === 'string' &&
-    body !== null &&
-    typeof body === 'object' &&
-    (body as Record<string, unknown>)[field] === undefined;
-  return {
-    path: issue.path.join('.'),
-    code: missing ? 'REQUIRED' : 'INVALID',
-    message: issue.message,
-  };
 }

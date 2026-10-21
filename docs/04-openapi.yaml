@@ -125,6 +125,10 @@ paths:
       tags: [po]
       operationId: searchPos
       summary: Search ALL_PO_MASTER by PO, article or model (FR-03).
+      description: >-
+        Active POs only. `q` is trimmed, then matched case-insensitively inside `po`, `article` or `model`.
+        Order (doc 04 §10 A8): `po` ends with `q`, then `po` contains `q`, then article/model matches; within each,
+        newest PODD first (null last), then `po`.
       parameters:
         - in: query
           name: q
@@ -149,12 +153,14 @@ paths:
                     items: { $ref: '#/components/schemas/Po' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/Unavailable' }
 
   /pos/{po}:
     get:
       tags: [po]
       operationId: getPo
       summary: One PO by its exact number.
+      description: An unknown or deactivated PO is PO_NOT_FOUND.
       parameters:
         - in: path
           name: po
@@ -169,6 +175,7 @@ paths:
               schema: { $ref: '#/components/schemas/Po' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
 
   /submissions:
     post:
