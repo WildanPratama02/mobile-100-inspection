@@ -10,6 +10,7 @@ import { Database } from '../db/database';
 import { importMaster, pgImportRepositories } from '../import/import-master';
 import { parseMaster } from '../import/parse-master';
 import { createTestDatabase, type TestDatabase } from '../testing/database';
+import { registerDevice, type TestDevice } from '../testing/devices';
 import { testConfig } from '../testing/env';
 import { fixtureTables } from '../testing/master-fixtures';
 import { expectMatchesSpec, expectProblem } from '../testing/openapi';
@@ -17,6 +18,8 @@ import { ReadinessService } from './readiness.service';
 
 let testDb: TestDatabase;
 let photoDir: string;
+/** The tablet every request comes from; `/master-data` and `/system/status` need its key (doc 04 §2). */
+let device: TestDevice;
 const apps: NestExpressApplication[] = [];
 
 async function startApp(): Promise<NestExpressApplication> {
@@ -41,6 +44,7 @@ async function startApp(): Promise<NestExpressApplication> {
 beforeAll(async () => {
   testDb = await createTestDatabase({ migrated: true });
   photoDir = mkdtempSync(join(tmpdir(), 'm100-master-data-'));
+  device = await registerDevice(testDb.client);
 });
 
 afterAll(async () => {
@@ -52,14 +56,15 @@ afterAll(async () => {
 
 describe('GET /v1/master-data (doc 04 §3.2)', () => {
   let app: NestExpressApplication;
-  const http = () => request(app.getHttpServer());
+  const get = (path: string) =>
+    request(app.getHttpServer()).get(path).set('X-Device-Key', device.key);
 
   beforeAll(async () => {
     app = await startApp();
   });
 
   it('answers an empty document at version 0 before the import', async () => {
-    const res = await http().get('/v1/master-data');
+    const res = await get('/v1/master-data');
     expect(res.status).toBe(200);
     expectMatchesSpec(res, 'get', '/master-data');
     expect(res.headers.etag).toBe('"0"');
@@ -77,7 +82,7 @@ describe('GET /v1/master-data (doc 04 §3.2)', () => {
     await importMaster(db, pgImportRepositories(db), parseMaster(await fixtureTables()), {
       dryRun: false,
     });
-    const res = await http().get('/v1/master-data');
+    const res = await get('/v1/master-data');
     expect(res.status).toBe(200);
     expectMatchesSpec(res, 'get', '/master-data');
     expect(res.headers.etag).toBe('"1"');
@@ -112,7 +117,7 @@ describe('GET /v1/master-data (doc 04 §3.2)', () => {
   it.each(['"1"', 'W/"1"', '1', '"0", "1"', '*'])(
     'answers 304 without a body for If-None-Match %s',
     async (tag) => {
-      const res = await http().get('/v1/master-data').set('If-None-Match', tag);
+      const res = await get('/v1/master-data').set('If-None-Match', tag);
       expect(res.status).toBe(304);
       expect(res.headers.etag).toBe('"1"');
       expect(res.text).toBeFalsy();
@@ -120,7 +125,7 @@ describe('GET /v1/master-data (doc 04 §3.2)', () => {
   );
 
   it('answers the full document for an older version', async () => {
-    const res = await http().get('/v1/master-data').set('If-None-Match', '"0"');
+    const res = await get('/v1/master-data').set('If-None-Match', '"0"');
     expect(res.status).toBe(200);
   });
 
@@ -128,11 +133,11 @@ describe('GET /v1/master-data (doc 04 §3.2)', () => {
     await testDb.client.query(`UPDATE defects SET active = false WHERE id = 'D001'`);
     await testDb.client.query(`UPDATE psi_users SET active = false WHERE username = 'TEST ANDI'`);
     // Before the version changes, the cached copy is still current by definition.
-    expect((await http().get('/v1/master-data')).body).toMatchObject({ version: '1' });
+    expect((await get('/v1/master-data')).body).toMatchObject({ version: '1' });
     await testDb.client.query(
       `UPDATE settings SET value = (value::bigint + 1)::text WHERE key = 'master_version'`,
     );
-    const res = await http().get('/v1/master-data').set('If-None-Match', '"1"');
+    const res = await get('/v1/master-data').set('If-None-Match', '"1"');
     expect(res.status).toBe(200);
     expect(res.headers.etag).toBe('"2"');
     const body = res.body as {
@@ -148,7 +153,7 @@ describe('GET /v1/master-data (doc 04 §3.2)', () => {
   it('serves the last good copy while the database is down, and flips the DB check', async () => {
     await testDb.allowConnections(false);
     try {
-      const res = await http().get('/v1/master-data');
+      const res = await get('/v1/master-data');
       expect(res.status).toBe(200);
       expect(res.headers.etag).toBe('"2"');
       expect(
@@ -160,7 +165,9 @@ describe('GET /v1/master-data (doc 04 §3.2)', () => {
 
       // An API started while the database is down has no copy yet.
       const fresh = await startApp();
-      const unavailable = await request(fresh.getHttpServer()).get('/v1/master-data');
+      const unavailable = await request(fresh.getHttpServer())
+        .get('/v1/master-data')
+        .set('X-Device-Key', device.key);
       expectProblem(unavailable, 503, 'DB_UNAVAILABLE');
       expectMatchesSpec(unavailable, 'get', '/master-data');
       expect(unavailable.headers['retry-after']).toBe('30');
@@ -174,7 +181,9 @@ describe('GET /v1/system/status (doc 04 §3, doc 02 §10)', () => {
   it('returns the readiness checks as the spec says', async () => {
     const app = await startApp();
     await app.get(ReadinessService).check();
-    const res = await request(app.getHttpServer()).get('/v1/system/status');
+    const res = await request(app.getHttpServer())
+      .get('/v1/system/status')
+      .set('X-Device-Key', device.key);
     expect(res.status).toBe(200);
     expectMatchesSpec(res, 'get', '/system/status');
     expect(res.body).toMatchObject({ submitEnabled: true, masterDataVersion: '2' });

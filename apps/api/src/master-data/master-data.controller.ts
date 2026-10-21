@@ -1,12 +1,14 @@
 import { Controller, Get, Headers, Inject, Res } from '@nestjs/common';
 import type { Response } from 'express';
+import { Auth } from '../auth/auth.decorator';
 import { type MasterDataDocument, MasterDataService } from './master-data.service';
 
 /**
  * `GET /v1/master-data` (doc 04 §3.2): the document with `ETag` = `master_version`; `304` when `If-None-Match`
- * names the current version. The device key guard comes with T2.5.
+ * names the current version. Needs only the device key: the login screen uses it (doc 04 §2).
  */
 @Controller('master-data')
+@Auth('device')
 export class MasterDataController {
   constructor(@Inject(MasterDataService) private readonly service: MasterDataService) {}
 

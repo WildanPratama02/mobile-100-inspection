@@ -84,6 +84,7 @@ paths:
       tags: [auth]
       operationId: refreshToken
       summary: Exchange a valid token that is close to expiry for a new one.
+      description: Also accepts a token of the same device that expired less than 30 days ago; the new token has the same claims and lives 30 days. Older tokens get TOKEN_INVALID (doc 04 §10 A7).
       responses:
         '200':
           description: New token.
