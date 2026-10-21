@@ -1,6 +1,6 @@
 /**
  * The login lists built from the master sheets (doc 02 §3.1–3.2). Pure functions: the API builds the
- * `/master-data` document with them, and the Phase 1 fixtures go through the same rules.
+ * `/master-data` document with them, and the web test fixtures go through the same rules.
  */
 import type { Cell, Factory, PsiLevel, User } from './domain';
 

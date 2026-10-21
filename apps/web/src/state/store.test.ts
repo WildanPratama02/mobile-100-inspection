@@ -9,13 +9,14 @@ import {
 } from '@m100/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sha256Hex } from '../app/sha256';
-import type { LoginData, MasterDataSource } from '../data/sources';
+import { ApiError, OfflineError, type MasterData, type MasterDataSource } from '../data/sources';
 import * as repo from '../db/repo';
 import { createDb, type Auth, type M100Db, type OutboxRow } from '../db/schema';
 import {
   createAppStore,
   DEFAULT_VIEW,
   hasOpenData,
+  needsRenewal,
   selectedPo,
   SubmitBlockedError,
   unsubmittedCount,
@@ -297,49 +298,215 @@ describe('hasOpenData (AC-03.4)', () => {
   });
 });
 
-describe('login data (AC-01.4, doc 03 §4.3)', () => {
-  const DATA: LoginData = {
+describe('master data (AC-01.4, AC-13.1, AC-13.2, doc 03 §4.7)', () => {
+  const DATA: MasterData = {
     version: 'v1',
     fetchedAt: '2026-10-16T08:00:00+07:00',
     users: [{ username: 'ANDI CONTOH', level: 'PSI lv.1' }],
     factories: [{ factory: 'F 1', cells: ['F1-01'] }],
+    areas: [],
+    families: [],
+    defects: [],
+    map: [],
   };
-  const ok = (data: LoginData): MasterDataSource => ({ getLoginData: () => Promise.resolve(data) });
-  const down: MasterDataSource = { getLoginData: () => Promise.reject(new Error('offline')) };
+  const etagOf = (data: MasterData) => `"${data.version}"`;
+  /** A source that answers `304` when asked with the ETag of `data`, and records what it was asked with. */
+  function serving(data: MasterData) {
+    const asked: Array<string | null> = [];
+    const source: MasterDataSource = {
+      get: (etag) => {
+        asked.push(etag);
+        return Promise.resolve(
+          etag === etagOf(data) ? 'unchanged' : { document: data, etag: etagOf(data) },
+        );
+      },
+    };
+    return { source, asked };
+  }
+  const down = (code?: string): MasterDataSource => ({
+    get: () =>
+      Promise.reject(
+        code ? new ApiError(401, code, 'Tablet belum terdaftar.') : new OfflineError(),
+      ),
+  });
 
   beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
-  it('loads from the source and keeps a copy on the tablet', async () => {
+  it('loads from the source and keeps a copy with its ETag on the tablet', async () => {
     const store = createAppStore(db, now);
-    await store.getState().loadLoginData(ok(DATA));
-    expect(store.getState()).toMatchObject({ loginData: DATA, loginDataStatus: 'ready' });
-    expect(await repo.getMasterData(db)).toMatchObject({ etag: 'v1', document: DATA });
+    expect(await store.getState().loadMasterData(serving(DATA).source)).toBe(true);
+    expect(store.getState()).toMatchObject({ masterData: DATA, masterDataStatus: 'ready' });
+    expect(store.getState().masterDataCheckedAt).not.toBeNull();
+    expect(await repo.getMasterData(db)).toMatchObject({ etag: '"v1"', document: DATA });
+  });
+
+  it('asks with the stored ETag and keeps the copy on 304, noting when it was checked', async () => {
+    const { source, asked } = serving(DATA);
+    await createAppStore(db, now).getState().loadMasterData(source);
+    const before = (await repo.getMasterData(db))?.fetchedAt;
+    const store = await reopen();
+    expect(await store.getState().loadMasterData(source)).toBe(true);
+    expect(asked).toEqual([null, '"v1"']);
+    expect(store.getState().masterData).toEqual(DATA);
+    const after = await repo.getMasterData(db);
+    expect(after?.fetchedAt).not.toBe(before);
+    expect(store.getState().masterDataCheckedAt).toBe(after?.fetchedAt);
   });
 
   it('uses the stored copy when the source fails', async () => {
-    await createAppStore(db, now).getState().loadLoginData(ok(DATA));
+    await createAppStore(db, now).getState().loadMasterData(serving(DATA).source);
     const store = await reopen();
-    await store.getState().loadLoginData(down);
-    expect(store.getState()).toMatchObject({ loginData: DATA, loginDataStatus: 'ready' });
+    expect(await store.getState().loadMasterData(down())).toBe(false);
+    expect(store.getState()).toMatchObject({ masterData: DATA, masterDataStatus: 'ready' });
   });
 
-  it('fails with nothing cached, and a retry recovers', async () => {
+  it('fails with nothing cached, names an API refusal, and a retry recovers', async () => {
     const store = createAppStore(db, now);
-    await store.getState().loadLoginData(down);
-    expect(store.getState()).toMatchObject({ loginData: null, loginDataStatus: 'failed' });
-    await store.getState().loadLoginData(ok(DATA));
-    expect(store.getState()).toMatchObject({ loginData: DATA, loginDataStatus: 'ready' });
+    await store.getState().loadMasterData(down());
+    expect(store.getState()).toMatchObject({
+      masterData: null,
+      masterDataStatus: 'failed',
+      masterDataProblem: null,
+    });
+    await store.getState().loadMasterData(down('DEVICE_KEY_INVALID'));
+    expect(store.getState().masterDataProblem).toBe('DEVICE_KEY_INVALID');
+    await store.getState().loadMasterData(serving(DATA).source);
+    expect(store.getState()).toMatchObject({
+      masterData: DATA,
+      masterDataStatus: 'ready',
+      masterDataProblem: null,
+    });
   });
 
   it('replaces the stored copy with a fresh one', async () => {
-    await createAppStore(db, now).getState().loadLoginData(ok(DATA));
+    await createAppStore(db, now).getState().loadMasterData(serving(DATA).source);
     const fresh = { ...DATA, version: 'v2', users: [] };
     const store = await reopen();
-    await store.getState().loadLoginData(ok(fresh));
-    expect(store.getState().loginData).toEqual(fresh);
-    expect((await repo.getMasterData(db))?.etag).toBe('v2');
+    await store.getState().loadMasterData(serving(fresh).source);
+    expect(store.getState().masterData).toEqual(fresh);
+    expect((await repo.getMasterData(db))?.etag).toBe('"v2"');
+  });
+
+  it('ignores a stored copy that is not a whole document', async () => {
+    await repo.saveMasterData(db, {
+      etag: 'fixture-1',
+      fetchedAt: '2026-10-16T08:00:00+07:00',
+      document: { version: 'fixture-1', users: [], factories: [] },
+    });
+    const { source, asked } = serving(DATA);
+    const store = createAppStore(db, now);
+    await store.getState().loadMasterData(source);
+    expect(asked).toEqual([null]);
+    expect(store.getState().masterData).toEqual(DATA);
+  });
+});
+
+describe('device key (doc 03 §4.9)', () => {
+  it('is stored, read back at the next start and kept by logout (doc 03 §4.4)', async () => {
+    const store = createAppStore(db, now);
+    await store.getState().hydrate();
+    expect(store.getState().deviceKey).toBeNull();
+    await store.getState().saveDeviceKey('kunci-uji');
+    await store.getState().login(A);
+    await store.getState().logout();
+    expect(store.getState().deviceKey).toBe('kunci-uji');
+    expect((await reopen()).getState().deviceKey).toBe('kunci-uji');
+  });
+});
+
+describe('renewToken (doc 04 §2)', () => {
+  // `now` is about 2026-10-16T01:00Z.
+  const WITH_TOKEN: Auth = {
+    ...A,
+    token: 'token-lama',
+    tokenExpiresAt: '2026-11-10T01:00:00.000Z',
+  };
+  const EXPIRING: Auth = { ...WITH_TOKEN, tokenExpiresAt: '2026-10-20T01:00:00.000Z' };
+  const RENEWED = { token: 'token-baru', tokenExpiresAt: '2026-11-15T01:00:00.000Z' };
+
+  async function loggedIn(auth: Auth): Promise<AppStore> {
+    const store = createAppStore(db, now);
+    await store.getState().hydrate();
+    await store.getState().login(auth);
+    return store;
+  }
+
+  it('leaves a token with 7 days or more alone', async () => {
+    const refresh = vi.fn(() => Promise.resolve(RENEWED));
+    const store = await loggedIn(WITH_TOKEN);
+    expect(needsRenewal(WITH_TOKEN, now())).toBe(false);
+    await expect(store.getState().renewToken({ refresh })).resolves.toBe('token-lama');
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('renews a token with fewer than 7 days left and stores it', async () => {
+    const refresh = vi.fn(() => Promise.resolve(RENEWED));
+    const store = await loggedIn(EXPIRING);
+    await expect(store.getState().renewToken({ refresh })).resolves.toBe('token-baru');
+    expect(refresh).toHaveBeenCalledWith('token-lama');
+    expect(store.getState().auth).toEqual({ ...EXPIRING, ...RENEWED });
+    expect((await reopen()).getState().auth).toEqual({ ...EXPIRING, ...RENEWED });
+  });
+
+  it('renews any token with force', async () => {
+    const refresh = vi.fn(() => Promise.resolve(RENEWED));
+    const store = await loggedIn(WITH_TOKEN);
+    await expect(store.getState().renewToken({ refresh }, { force: true })).resolves.toBe(
+      'token-baru',
+    );
+  });
+
+  it('does nothing without a token', async () => {
+    const refresh = vi.fn(() => Promise.resolve(RENEWED));
+    const store = await loggedIn(A);
+    await expect(store.getState().renewToken({ refresh }, { force: true })).resolves.toBeNull();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('logs the PSI out on TOKEN_INVALID and keeps their POs (AC-02.2)', async () => {
+    const store = await loggedIn(EXPIRING);
+    await store.getState().addPo(PO, null);
+    const refresh = () =>
+      Promise.reject(new ApiError(401, 'TOKEN_INVALID', 'Sesi login tidak valid.'));
+    await expect(store.getState().renewToken({ refresh })).rejects.toBeInstanceOf(ApiError);
+    expect(store.getState().auth).toBeNull();
+    expect(await repo.listPos(db, A.username)).toHaveLength(1);
+  });
+
+  it('keeps the login when the API cannot be reached', async () => {
+    const store = await loggedIn(EXPIRING);
+    const refresh = () => Promise.reject(new OfflineError());
+    await expect(store.getState().renewToken({ refresh })).rejects.toBeInstanceOf(OfflineError);
+    expect(store.getState().auth).toEqual(EXPIRING);
+  });
+
+  it('does not hold back a tap while the API answers (NFR-03)', async () => {
+    const store = await loggedIn(EXPIRING);
+    await store.getState().addPo(PO, null);
+    let answer: (value: typeof RENEWED) => void = () => undefined;
+    const pending = store.getState().renewToken({
+      refresh: () => new Promise((resolve) => (answer = resolve)),
+    });
+    await store.getState().tap(PO.po, { type: 'START', inspection: 'REWORK' });
+    expect(store.getState().sessions[PO.po]?.state.active).not.toBeNull();
+    answer(RENEWED);
+    await expect(pending).resolves.toBe('token-baru');
+  });
+
+  it('keeps the login of another PSI who logged in meanwhile', async () => {
+    const store = await loggedIn(EXPIRING);
+    let answer: (value: typeof RENEWED) => void = () => undefined;
+    const pending = store.getState().renewToken({
+      refresh: () => new Promise((resolve) => (answer = resolve)),
+    });
+    await store.getState().logout();
+    await store.getState().login({ ...B, token: 'token-b', tokenExpiresAt: null });
+    answer(RENEWED);
+    await expect(pending).resolves.toBe('token-b');
+    expect(store.getState().auth?.username).toBe(B.username);
+    expect((await repo.getAuth(db))?.token).toBe('token-b');
   });
 });
 

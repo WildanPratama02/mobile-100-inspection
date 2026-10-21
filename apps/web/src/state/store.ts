@@ -36,7 +36,13 @@ import {
   type SubmitBlock,
 } from '@m100/shared';
 import { sha256Hex } from '../app/sha256';
-import type { LoginData, MasterDataSource } from '../data/sources';
+import {
+  ApiError,
+  isMasterData,
+  type AuthApi,
+  type MasterData,
+  type MasterDataSource,
+} from '../data/sources';
 import * as repo from '../db/repo';
 import {
   createDb,
@@ -87,17 +93,37 @@ export interface AppState {
   /** The PSI's own sealed submissions, newest first (AC-11.3, doc 05 U14). */
   outbox: readonly OutboxRow[];
   view: View;
-  /** Names and factories/cells for the login screen; `null` until loaded or read from the cache. */
-  loginData: LoginData | null;
+  /** This tablet's key from the setup link (doc 03 §4.9); `null` when the tablet is not set up. */
+  deviceKey: string | null;
+  /** The `/master-data` document (users, cells, area map); `null` until loaded or read from the cache (AC-13.1). */
+  masterData: MasterData | null;
+  /** When the copy was last confirmed current by the API, `200` or `304` (AC-13.4). */
+  masterDataCheckedAt: string | null;
   /** `failed`: nothing could be loaded and nothing is cached (AC-01.4). */
-  loginDataStatus: 'idle' | 'loading' | 'ready' | 'failed';
+  masterDataStatus: 'idle' | 'loading' | 'ready' | 'failed';
+  /** The API's `code` for the last failed load (`DEVICE_KEY_INVALID` …), `null` for no answer or success. */
+  masterDataProblem: string | null;
 
   // Arrow-typed so components can take them out of the state unbound.
   hydrate: () => Promise<void>;
-  /** Shows the cached copy at once, then refreshes it from `source` (doc 03 §4.3). Never rejects. */
-  loadLoginData: (source: MasterDataSource) => Promise<void>;
+  /** Stores the key of the setup link; it stays through logout (doc 03 §4.4). */
+  saveDeviceKey: (key: string) => Promise<void>;
+  /**
+   * Shows the cached copy at once, then asks `source` with the cached ETag (doc 03 §4.7). Never rejects; `false`
+   * when the API could not be asked or refused.
+   */
+  loadMasterData: (source: MasterDataSource) => Promise<boolean>;
   login: (auth: Auth) => Promise<void>;
   logout: () => Promise<void>;
+  /**
+   * `POST /auth/refresh` when fewer than 7 days remain, or always with `force` (doc 04 §2); resolves to the token
+   * to use. `TOKEN_INVALID` logs the PSI out, keeping their data (AC-02.2); the PSI logs in again. Rejects when the
+   * API can't be asked.
+   */
+  renewToken: (
+    api: Pick<AuthApi, 'refresh'>,
+    options?: { force?: boolean },
+  ) => Promise<string | null>;
   addPo: (po: Po, partial: PoPartial | null) => Promise<void>;
   setPartial: (po: string, partial: PoPartial | null) => Promise<void>;
   removePo: (po: string) => Promise<void>;
@@ -146,6 +172,14 @@ export function submitBlock(
 export function photosToSubmit(level: Auth['level'], session: PoSession): PhotoRow[] {
   const stored = Object.values(session.photos).filter((p): p is PhotoRow => p !== undefined);
   return submissionPhotos(session.state, level, stored);
+}
+
+/** The token is renewed when fewer than 7 days of its 30 remain (doc 04 §2). */
+export const RENEW_BEFORE_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function needsRenewal(auth: Auth, now: string): boolean {
+  if (!auth.token || !auth.tokenExpiresAt) return false;
+  return Date.parse(auth.tokenExpiresAt) - Date.parse(now) < RENEW_BEFORE_MS;
 }
 
 export const DEFAULT_VIEW: View = {
@@ -249,37 +283,69 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
     return {
       status: 'loading',
       ...LOGGED_OUT,
-      loginData: null,
-      loginDataStatus: 'idle',
+      deviceKey: null,
+      masterData: null,
+      masterDataCheckedAt: null,
+      masterDataStatus: 'idle',
+      masterDataProblem: null,
 
       hydrate: () =>
         serial(async () => {
-          const data = await loadUserData(db, await repo.getAuth(db));
-          set({ ...data, status: 'ready' });
+          const [data, deviceKey] = await Promise.all([
+            repo.getAuth(db).then((auth) => loadUserData(db, auth)),
+            repo.getDeviceKey(db),
+          ]);
+          set({ ...data, deviceKey, status: 'ready' });
+        }),
+
+      saveDeviceKey: (key) =>
+        serial(async () => {
+          await repo.saveDeviceKey(db, key);
+          set({ deviceKey: key });
         }),
 
       // Outside `serial`: a slow refresh must never hold back a tap queued behind it (NFR-03).
-      loadLoginData: async (source) => {
-        if (!get().loginData) set({ loginDataStatus: 'loading' });
+      loadMasterData: async (source) => {
+        if (!get().masterData) set({ masterDataStatus: 'loading' });
+        let cached: Awaited<ReturnType<typeof repo.getMasterData>> = null;
         try {
-          const cached = await repo.getMasterData(db);
-          if (cached && !get().loginData) {
-            set({ loginData: cached.document as LoginData, loginDataStatus: 'ready' });
+          cached = await repo.getMasterData(db);
+          if (cached && isMasterData(cached.document) && !get().masterData) {
+            set({
+              masterData: cached.document,
+              masterDataCheckedAt: cached.fetchedAt,
+              masterDataStatus: 'ready',
+            });
           }
         } catch (error) {
           console.error(error);
         }
+        const usable = cached && isMasterData(cached.document) ? cached : null;
         try {
-          const fresh = await source.getLoginData();
-          set({ loginData: fresh, loginDataStatus: 'ready' });
-          await repo.saveMasterData(db, {
-            etag: fresh.version,
-            fetchedAt: fresh.fetchedAt,
-            document: fresh,
-          });
+          const answer = await source.get(usable?.etag ?? null);
+          const checkedAt = now();
+          if (answer === 'unchanged' && usable) {
+            await repo.saveMasterData(db, { ...usable, fetchedAt: checkedAt });
+            set({ masterDataCheckedAt: checkedAt, masterDataProblem: null });
+          } else if (answer !== 'unchanged') {
+            await repo.saveMasterData(db, {
+              etag: answer.etag,
+              fetchedAt: checkedAt,
+              document: answer.document,
+            });
+            set({
+              masterData: answer.document,
+              masterDataCheckedAt: checkedAt,
+              masterDataStatus: 'ready',
+              masterDataProblem: null,
+            });
+          }
+          return true;
         } catch (error) {
           console.error(error);
-          if (!get().loginData) set({ loginDataStatus: 'failed' });
+          set({ masterDataProblem: error instanceof ApiError ? error.code : null });
+          if (!get().masterData) set({ masterDataStatus: 'failed' });
+          return false;
         }
       },
 
@@ -294,6 +360,41 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
           await repo.clearAuth(db);
           set({ ...LOGGED_OUT, status: 'ready' });
         }),
+
+      // The request runs outside `serial`, so taps never wait for the network (NFR-03); only the write queues.
+      renewToken: async (api, { force = false } = {}) => {
+        const auth = get().auth;
+        if (!auth?.token) return null;
+        if (!force && !needsRenewal(auth, now())) return auth.token;
+        const stillCurrent = () => {
+          const current = get().auth;
+          return current?.username === auth.username && current.token === auth.token
+            ? current
+            : null;
+        };
+        let renewed: Pick<Auth, 'token' | 'tokenExpiresAt'>;
+        try {
+          renewed = await api.refresh(auth.token);
+        } catch (error) {
+          if (error instanceof ApiError && error.code === 'TOKEN_INVALID') {
+            await serial(async () => {
+              if (!stillCurrent()) return;
+              await repo.clearAuth(db);
+              set({ ...LOGGED_OUT, status: 'ready' });
+            });
+          }
+          throw error;
+        }
+        return serial(async () => {
+          const current = stillCurrent();
+          // Another login or logout came first; its token stands.
+          if (!current) return get().auth?.token ?? null;
+          const next: Auth = { ...current, ...renewed };
+          await repo.saveAuth(db, next);
+          set({ auth: next });
+          return next.token;
+        });
+      },
 
       // ADD TO PO LIST also selects the PO (doc 05 §9.2).
       addPo: (po, partial) =>

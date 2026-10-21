@@ -33,6 +33,17 @@ export async function clearAuth(db: M100Db): Promise<void> {
   await db.auth.delete('current');
 }
 
+// ---- Device key (doc 03 §4.9): per tablet, kept by logout (doc 03 §4.4) ----
+
+export async function getDeviceKey(db: M100Db): Promise<string | null> {
+  const row = await db.meta.get('deviceKey');
+  return typeof row?.value === 'string' && row.value !== '' ? row.value : null;
+}
+
+export async function saveDeviceKey(db: M100Db, key: string): Promise<void> {
+  await db.meta.put({ key: 'deviceKey', value: key });
+}
+
 // ---- Master data (doc 03 §4.3: the last good copy is used when a refresh fails) ----
 
 export async function getMasterData(db: M100Db): Promise<MasterDataRow | null> {

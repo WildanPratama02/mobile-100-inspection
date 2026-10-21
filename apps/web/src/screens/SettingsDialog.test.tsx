@@ -1,5 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fixtureMasterData } from '../data/fixtures/fixtureSources';
+import { OfflineError } from '../data/sources';
 import * as repo from '../db/repo';
 import { createDb, type Auth, type M100Db, type OutboxRow } from '../db/schema';
 import { AppStoreContext, createAppStore, type AppStore } from '../state/store';
@@ -99,5 +101,23 @@ describe('Pengiriman in the gear menu (AC-11.3, doc 05 §14)', () => {
     );
     expect(outbox.getByText('Tidak ada pengiriman.')).toBeInTheDocument();
     expect(screen.queryByText('0902028839')).not.toBeInTheDocument();
+  });
+});
+
+describe('Data in the gear menu (AC-13.4, doc 05 §14)', () => {
+  it('shows when master data was last confirmed current, in WIB', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await repo.saveMasterData(db, {
+      etag: '"3"',
+      fetchedAt: '2026-10-21T07:05:00.000Z',
+      document: fixtureMasterData(),
+    });
+    // Offline: the cached copy and its time stay.
+    await store.getState().loadMasterData({ get: () => Promise.reject(new OfflineError()) });
+    await renderMenu();
+    expect(screen.getByRole('region', { name: 'Data' })).toHaveTextContent(
+      'Data master diperbarui 21 Okt 14:05',
+    );
+    vi.restoreAllMocks();
   });
 });

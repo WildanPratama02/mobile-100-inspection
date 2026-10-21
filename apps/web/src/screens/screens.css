@@ -22,6 +22,18 @@
   color: var(--ink-2);
 }
 
+/* ---- S0 Setup (same box as S1) ---- */
+.setup__check {
+  color: var(--success);
+}
+.setup__body {
+  margin: 0;
+  text-align: center;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--ink-2);
+}
+
 /* ---- S2 Login ---- */
 /* Regular/Compact: brand left; logo above the form, centred, on the right. Stacked: logo, brand, form. */
 .login {
@@ -501,7 +513,8 @@
   justify-content: flex-end;
   gap: var(--space-2);
 }
-.settings__outbox {
+.settings__outbox,
+.settings__data {
   display: grid;
   gap: var(--space-2);
 }

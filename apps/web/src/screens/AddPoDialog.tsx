@@ -8,7 +8,13 @@ import { useDataSources } from '../app/dataSources';
 import { Overlay } from '../app/Overlay';
 import { useToast } from '../app/toastContext';
 import { useOnline } from '../app/useOnline';
-import { PO_QUERY_MIN, PO_RESULTS_MAX, PoSearchError } from '../data/sources';
+import {
+  ApiError,
+  OfflineError,
+  PO_QUERY_MIN,
+  PO_RESULTS_MAX,
+  SERVER_ERROR,
+} from '../data/sources';
 import { useAppStore } from '../state/store';
 import { Button, Dialog, List, Notice, SelectField } from '../ui';
 import { NO_PARTIAL, partialOf } from './partial';
@@ -19,7 +25,11 @@ import './screens.css';
 export const SEARCH_DELAY_MS = 250;
 
 /** The answer to one query; a query without its answer yet is still searching. */
-type Answer = { q: string; found: Po[] } | { q: string; detail: string };
+type Answer =
+  | { q: string; found: Po[] }
+  | { q: string; detail: string }
+  // No answer from the API although the tablet seemed online (AC-13.3).
+  | { q: string; offline: true };
 
 export interface AddPoDialogProps {
   onClose: () => void;
@@ -52,13 +62,11 @@ export function AddPoDialog({ onClose }: AddPoDialogProps) {
         (error: unknown) => {
           if (!current) return;
           console.error(error);
-          setAnswer({
-            q,
-            detail:
-              error instanceof PoSearchError
-                ? error.detail
-                : 'Terjadi kesalahan server. Data tetap tersimpan di tablet.',
-          });
+          setAnswer(
+            error instanceof OfflineError
+              ? { q, offline: true }
+              : { q, detail: error instanceof ApiError ? error.detail : SERVER_ERROR },
+          );
         },
       );
     }, SEARCH_DELAY_MS);
@@ -113,7 +121,7 @@ export function AddPoDialog({ onClose }: AddPoDialogProps) {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
-            {!online ? (
+            {!online || (result && 'offline' in result) ? (
               <Notice tone="warning">
                 Cari PO butuh koneksi. Hubungkan Wi-Fi, lalu coba lagi.
               </Notice>

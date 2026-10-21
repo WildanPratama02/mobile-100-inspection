@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { LoginRejectedError, PO_RESULTS_MAX, PoSearchError } from '../sources';
-import { createFixtureSources } from './fixtureSources';
+import { createFixtureSources, fixtureMasterData } from './fixtureSources';
 import { DB_CELL, USER_LIST } from './masterSheets';
 import { ALL_PO_MASTER } from './pos';
 
 describe('fixture master data', () => {
-  it('holds users of other types, which the login list leaves out (AC-01.1)', async () => {
+  it('holds users of other types, which the login list leaves out (AC-01.1)', () => {
     const types = new Set(USER_LIST.map((r) => r.typeInspection));
     expect(types).toEqual(new Set(['PSI lv.1', 'PSI lv.2', 'CFA', 'T1QM', 'AQL3RD PARTY']));
 
-    const { users } = await createFixtureSources().masterData.getLoginData();
+    const { users } = fixtureMasterData();
     expect(users).toEqual([
       { username: 'ANDI CONTOH', level: 'PSI lv.1' },
       { username: 'BUNGA CONTOH', level: 'PSI lv.1' },
@@ -20,9 +20,9 @@ describe('fixture master data', () => {
     ]);
   });
 
-  it('offers F <number> factories only', async () => {
+  it('offers F <number> factories only', () => {
     expect(DB_CELL.some((r) => r.factory === 'PWA')).toBe(true);
-    const { factories } = await createFixtureSources().masterData.getLoginData();
+    const { factories } = fixtureMasterData();
     expect(factories).toEqual([
       { factory: 'F 1', cells: ['F1-01'] },
       { factory: 'F 3', cells: ['F3-10', 'F3-11', 'F3-12'] },

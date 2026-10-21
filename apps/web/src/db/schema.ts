@@ -22,11 +22,13 @@ export interface MetaRow {
   value: unknown;
 }
 
-/** The `/master-data` document as received (filled from Phase 2). */
+/** The `/master-data` document as received, with its ETag (doc 03 §4.7). */
 export interface MasterDataRow {
   id: 'current';
   etag: string | null;
+  /** When the API last confirmed this copy current (`200` or `304`); shown in the gear menu (AC-13.4). */
   fetchedAt: string;
+  /** Checked with `isMasterData` before use: a copy from an older app version may not be whole. */
   document: unknown;
 }
 
@@ -36,7 +38,7 @@ export interface Auth {
   level: PsiLevel;
   factory: string;
   cell: string;
-  /** Issued by `POST /auth/login` from Phase 2; `null` with the Phase 1 fixtures. */
+  /** Issued by `POST /auth/login`; `null` only with the Vitest fixtures. */
   token: string | null;
   tokenExpiresAt: string | null;
 }

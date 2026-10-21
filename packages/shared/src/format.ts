@@ -102,3 +102,10 @@ export function formatTime(at: string | Date): string {
   const p = parts(WIB_TIME, typeof at === 'string' ? new Date(at) : at);
   return `${p.hour}:${p.minute}`;
 }
+
+/** A moment as WIB `dd MMM HH:mm` (`21 Okt 14:05`): when master data was last updated (doc 05 §14, AC-13.4). */
+export function formatDayTime(at: string | Date): string {
+  const moment = typeof at === 'string' ? new Date(at) : at;
+  const p = parts(WIB_TEXT, moment);
+  return `${p.day} ${p.month} ${formatTime(moment)}`;
+}

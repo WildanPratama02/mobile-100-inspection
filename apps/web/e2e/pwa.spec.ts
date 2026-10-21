@@ -1,6 +1,7 @@
 // The built app as a PWA: installable, and the whole Phase 1 flow with the network off after the first load
 // (T1.8; NFR-04, doc 03 §4.1, doc 05 §18). Runs against `vite preview` (project "pwa" in playwright.config.ts).
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
 import {
   addPo,
   bar,
@@ -59,10 +60,18 @@ test('after the first load, inspection, photos, results, export and SUBMIT PO wo
   await addPo(page, PO);
 
   await context.setOffline(true);
+  // The app shell must all come from the precache; API calls fail offline by design and the app falls back to
+  // what IndexedDB holds (doc 03 §4.1, AC-13.1).
   const failed: string[] = [];
-  page.on('requestfailed', (request) => failed.push(request.url()));
+  const apiTried: string[] = [];
+  page.on('requestfailed', (request) =>
+    (new URL(request.url()).pathname.startsWith('/v1/') ? apiTried : failed).push(request.url()),
+  );
   await page.reload();
   expect(await page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
+  // Logged in from the cache after one online launch (T2.7), master data checked and kept.
+  await expect(page.getByLabel('Akun')).toContainText('DEWI CONTOH');
+  await expect.poll(() => apiTried.some((url) => url.endsWith('/v1/master-data'))).toBe(true);
   await expect(page.getByText('Offline', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'PO LIST' })).toContainText(PO);
 

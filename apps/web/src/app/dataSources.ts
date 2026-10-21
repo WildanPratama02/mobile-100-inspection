@@ -1,10 +1,11 @@
 import { createContext, useContext } from 'react';
-import { createFixtureSources } from '../data/fixtures/fixtureSources';
 import type { DataSources } from '../data/sources';
 
-/** Phase 1: the fixtures. T2.6 provides the API implementation here instead. */
-export const DataSourcesContext = createContext<DataSources>(createFixtureSources());
+/** The API (`createApiSources`), given by `App`; Vitest gives the fixtures. */
+export const DataSourcesContext = createContext<DataSources | null>(null);
 
 export function useDataSources(): DataSources {
-  return useContext(DataSourcesContext);
+  const sources = useContext(DataSourcesContext);
+  if (!sources) throw new Error('useDataSources needs a DataSourcesContext provider');
+  return sources;
 }

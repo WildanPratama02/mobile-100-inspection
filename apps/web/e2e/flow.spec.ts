@@ -1,5 +1,6 @@
 // The whole Phase 1 flow, every number on Home checked after each step (T1.8; BR-01, BR-02, FR-04 … FR-08, FR-11).
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
 import {
   addPo,
   bar,

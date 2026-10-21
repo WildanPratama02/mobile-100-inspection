@@ -1,5 +1,6 @@
 // Defect screen: commands, shoe map, drill-down, history, BACK / HOME / UNDO (T1.4: FR-06 … FR-09, NFR-03).
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { crowdedPills, undersized } from './tap';
 
 const VIEWPORTS = [
