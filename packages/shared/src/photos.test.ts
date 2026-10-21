@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RankedDefect } from './counting';
 import type { DefectId } from './domain';
-import { missingPhotos, takesPhotos } from './photos';
+import { missingPhotos, photoKey, takesPhotos } from './photos';
 
 function ranked(defectId: DefectId, qty: number): RankedDefect {
   return {
@@ -41,5 +41,30 @@ describe('missingPhotos (BR-04)', () => {
 
   it('is empty for an empty Top 5', () => {
     expect(missingPhotos([], new Set())).toEqual([]);
+  });
+});
+
+describe('photoKey (doc 02 §7)', () => {
+  const uuid = '0f6b6c1e-6a52-4c9f-9a3e-5d7a2b0c41f2';
+
+  it('is submissions/<yyyy>/<MM>/<uuid>/<defectId>.jpg', () => {
+    expect(photoKey(uuid, 'D035', '2026-10-16T14:32:05+07:00')).toBe(
+      `submissions/2026/10/${uuid}/D035.jpg`,
+    );
+  });
+
+  it('takes the month in WIB, not UTC', () => {
+    expect(photoKey(uuid, 'D035', '2026-10-31T17:30:00Z')).toBe(
+      `submissions/2026/11/${uuid}/D035.jpg`,
+    );
+    expect(photoKey(uuid, 'D082', new Date('2026-12-31T17:00:00Z'))).toBe(
+      `submissions/2027/01/${uuid}/D082.jpg`,
+    );
+  });
+
+  it('gives the same key for the same moment in any offset, so a retry overwrites its photo', () => {
+    expect(photoKey(uuid, 'D049', '2026-11-01T00:30:00+07:00')).toBe(
+      photoKey(uuid, 'D049', '2026-10-31T17:30:00.000Z'),
+    );
   });
 });

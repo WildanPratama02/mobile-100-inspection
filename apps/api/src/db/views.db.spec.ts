@@ -1,4 +1,4 @@
-import { rankDefects } from '@m100/shared';
+import { inspectionDate, partialText, rankDefects } from '@m100/shared';
 import { createTestDatabase, type TestDatabase } from '../testing/database';
 import {
   defectOf,
@@ -80,6 +80,37 @@ describe('v_submissions (doc 02 §8, §9)', () => {
       counting_rule: 'ADR-008',
       model: 'RUNNER X',
     });
+  });
+
+  it('computes partial text and inspection date like packages/shared (doc 03 §5.5)', async () => {
+    const row = submissionRow();
+    const { rows } = await db.as('m100_report', (c) =>
+      c.query<{ partial_text: string }>('SELECT partial_text FROM v_submissions WHERE id = $1', [
+        example,
+      ]),
+    );
+    expect(rows[0]?.partial_text).toBe(
+      partialText(
+        { number: Number(row.partial_no), qty: Number(row.partial_qty) },
+        Number(row.order_qty),
+      ),
+    );
+  });
+
+  it('agrees with PostgreSQL on the WIB date of sealed_at, also around midnight WIB (doc 02 §6.4)', async () => {
+    const moments = [
+      '2026-10-16T16:59:59.999Z',
+      '2026-10-16T17:00:00.000Z',
+      '2026-10-31T17:30:00.000Z',
+      '2026-12-31T17:00:00.000Z',
+      '2026-10-16T14:32:05+07:00',
+    ];
+    const { rows } = await db.client.query<{ d: string }>(
+      `SELECT ((m::timestamptz) AT TIME ZONE 'Asia/Jakarta')::date::text AS d
+         FROM unnest($1::text[]) WITH ORDINALITY AS t(m, i) ORDER BY i`,
+      [moments],
+    );
+    expect(rows.map((r) => r.d)).toEqual(moments.map((m) => inspectionDate(m)));
   });
 
   it('shows WIB regardless of the session time zone', async () => {

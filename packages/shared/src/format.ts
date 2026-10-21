@@ -33,6 +33,13 @@ export function formatPartial(partial: PoPartial, orderQty: number): string {
   return `P${partial.number} · ${formatCount(partial.qty)} dari ${formatCount(orderQty)}`;
 }
 
+/**
+ * PO PARTIAL in the admin app, the exports and `v_submissions.partial_text`: `P1 1.200 OF 10.002` (doc 02 §4.1).
+ */
+export function partialText(partial: PoPartial, orderQty: number): string {
+  return `P${partial.number} ${formatCount(partial.qty)} OF ${formatCount(orderQty)}`;
+}
+
 /** A PO date `YYYY-MM-DD` as `dd MMM yyyy` (`16 Okt 2026`, doc 05 §9.1); empty or unreadable → `-`. */
 export function formatDate(date: string | null): string {
   const match = date === null ? null : /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
@@ -75,6 +82,17 @@ export function formatDateTime(at: Date): string {
 export function fileDate(at: Date): string {
   const p = parts(WIB_DIGITS, at);
   return `${p.year}${p.month}${p.day}`;
+}
+
+/**
+ * The WIB calendar day of a moment as `YYYY-MM-DD`: a submission's `inspection_date` and the month of its photo
+ * keys (doc 02 §6.4, §7).
+ */
+export function inspectionDate(sealedAt: string | Date): string {
+  const at = typeof sealedAt === 'string' ? new Date(sealedAt) : sealedAt;
+  if (Number.isNaN(at.getTime())) throw new RangeError(`Not a moment: ${String(sealedAt)}`);
+  const p = parts(WIB_DIGITS, at);
+  return `${p.year}-${p.month}-${p.day}`;
 }
 
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;

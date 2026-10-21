@@ -8,6 +8,8 @@ import {
   formatRate,
   formatDayTime,
   formatTime,
+  inspectionDate,
+  partialText,
   toWibIso,
 } from './format';
 
@@ -43,6 +45,14 @@ describe('formatPartial (doc 05 §15)', () => {
   });
 });
 
+describe('partialText (doc 02 §4.1)', () => {
+  it('shows the sheet value with Indonesian thousands', () => {
+    expect(partialText({ number: 1, qty: 1200 }, 10002)).toBe('P1 1.200 OF 10.002');
+    expect(partialText({ number: 12, qty: 5 }, 999)).toBe('P12 5 OF 999');
+    expect(partialText({ number: 99, qty: 1234567 }, 1234567)).toBe('P99 1.234.567 OF 1.234.567');
+  });
+});
+
 describe('formatDate (doc 05 §9.1)', () => {
   it('shows a PO date as dd MMM yyyy in id-ID', () => {
     expect(formatDate('2026-10-16')).toBe('16 Okt 2026');
@@ -72,6 +82,23 @@ describe('fileDate (AC-12.3)', () => {
     expect(fileDate(new Date('2026-10-19T07:05:00Z'))).toBe('20261019');
     expect(fileDate(new Date('2026-10-19T16:59:59Z'))).toBe('20261019');
     expect(fileDate(new Date('2026-10-19T17:00:00Z'))).toBe('20261020');
+  });
+});
+
+describe('inspectionDate (doc 02 §6.4)', () => {
+  it('gives the WIB calendar date of sealedAt', () => {
+    expect(inspectionDate('2026-10-16T14:32:05+07:00')).toBe('2026-10-16');
+    expect(inspectionDate('2026-10-16T00:00:00+07:00')).toBe('2026-10-16');
+    expect(inspectionDate(new Date('2026-10-16T16:59:59.999Z'))).toBe('2026-10-16');
+  });
+
+  it('moves to the next day from 17:00 UTC', () => {
+    expect(inspectionDate('2026-10-31T17:30:00Z')).toBe('2026-11-01');
+    expect(inspectionDate('2026-12-31T17:00:00.000Z')).toBe('2027-01-01');
+  });
+
+  it('refuses something that is not a moment', () => {
+    expect(() => inspectionDate('kemarin')).toThrow(RangeError);
   });
 });
 
