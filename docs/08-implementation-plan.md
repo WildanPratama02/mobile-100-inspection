@@ -107,7 +107,7 @@ Postgres repositories for master data, POs, devices, admins, audit log and submi
 
 ### T2.4 Master data import (`import-master`) and readiness
 The CLI `import-master` (doc 02 §5.1) for users, factories/cells, POs, defects and area map, with `--dry-run`; the cached `/master-data` with ETag (`settings.master_version`); readiness checks `DB`, `MASTER_DATA`, `PHOTO_STORE`, `SUBMIT_ENABLED` and `/system/status` (doc 02 §10, doc 03 §5.3).
-- [ ] From the real files: 14 login names, `ROIS FATHUR ROHIM` once, `EVA JULIYANI` as PSI lv.1 only, factories `F 1`…`F 5` (no `PWA`, no `BOTTOM`), 98 defects, 437 map rows, about 71,500 POs; a second run changes nothing.
+- [ ] From the real files: 14 login names, `ROIS FATHUR ROHIM` once, `EVA JULIYANI` as PSI lv.1 only, factories `F 1`…`F 5` (no `PWA`, no `BOTTOM`), 98 defects, 437 map rows; `ALL_PO_MASTER` 34,230 non-empty rows giving 33,996 POs (3 identical duplicates merged, 91 conflicting PO numbers with 231 rows skipped, doc 02 §5.1; export of 21 Oct 2026); a second run changes nothing.
 - [ ] A dry run writes nothing and reports counts; any invalid row stops the real run before any write.
 - [ ] Stopping the database sets `SUBMIT_ENABLED` false with the failing check id; starting it re-enables within 30 seconds.
 

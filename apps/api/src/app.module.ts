@@ -8,6 +8,7 @@ import { DatabaseModule } from './db/database.module';
 import { ProblemFilter } from './errors/problem.filter';
 import { HealthModule } from './health/health.module';
 import { LoggingModule } from './logging/logging.module';
+import { MasterDataModule } from './master-data/master-data.module';
 import { PhotoStoreModule } from './photos/photo-store.module';
 import { DeviceThrottlerGuard, RATE_LIMIT } from './throttle/device-throttler.guard';
 
@@ -29,6 +30,7 @@ export class AppModule {
         DatabaseModule,
         PhotoStoreModule,
         HealthModule,
+        MasterDataModule,
       ],
       providers: [
         { provide: APP_GUARD, useClass: DeviceThrottlerGuard },

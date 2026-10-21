@@ -9,6 +9,7 @@
     "start:dev": "pnpm --filter @m100/shared build && nest start --watch",
     "db:bootstrap": "pnpm run build && node dist/cli/db-bootstrap.js",
     "db:migrate": "pnpm run build && node dist/cli/db-migrate.js",
+    "import-master": "pnpm run build && node dist/cli/import-master.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "typecheck": "tsc --noEmit"
@@ -19,10 +20,12 @@
     "@nestjs/core": "11.2.7",
     "@nestjs/platform-express": "11.2.7",
     "@nestjs/throttler": "6.7.1",
+    "csv-parse": "7.0.3",
     "nestjs-pino": "5.3.1",
     "pg": "8.23.1",
     "pino": "10.4.0",
     "pino-http": "11.0.0",
+    "read-excel-file": "9.3.10",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
     "zod": "4.6.7"

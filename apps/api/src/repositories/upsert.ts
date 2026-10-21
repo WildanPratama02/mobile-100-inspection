@@ -1,6 +1,6 @@
 /**
  * Batched upsert by natural key for the master tables (doc 02 §5.1: the import "upserts by natural key and never
- * deletes"). Rows travel as one array per column through `unnest`, so 71,500 POs need a few statements, not 71,500.
+ * deletes"). Rows travel as one array per column through `unnest`, so 34,000 POs need a few statements, not 34,000.
  * `updated_at` is touched only when a value really changes, so a second identical run reports nothing updated.
  */
 import type { Queryable } from '../db/database';

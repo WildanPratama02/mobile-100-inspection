@@ -88,7 +88,7 @@ Only factories of the form `F <number>` are offered at login (decided 16 Oct 202
 | `active` | `boolean` | |
 | `source` | `text` | `import:<file>` or `admin` |
 
-About 71,500 rows. **Search (FR-03.2):** case-insensitive substring match on `po`, `article`, `model`, after 3 characters, at most 20 rows. Implemented with the `pg_trgm` extension and one GIN index on `lower(po || ' ' || article || ' ' || model)`; non-breaking spaces are replaced by spaces **in the index expression only**, never in the stored data.
+33,996 rows from the export of 21 Oct 2026: 34,230 non-empty `ALL_PO_MASTER` rows, 3 identical duplicates merged, 231 rows of 91 conflicting PO numbers skipped (§5.1). The sheet's used range is about 71,500 rows, but the rest are blank. **Search (FR-03.2):** case-insensitive substring match on `po`, `article`, `model`, after 3 characters, at most 20 rows. Implemented with the `pg_trgm` extension and one GIN index on `lower(po || ' ' || article || ' ' || model)`; non-breaking spaces are replaced by spaces **in the index expression only**, never in the stored data.
 
 ### 3.4 `defects`
 
@@ -192,11 +192,17 @@ Run by QIP Digital from CSV/XLSX exports of the old sheets and the mapping workb
 |---|---|---|
 | `USER_LIST` (csv) | `psi_users` | §3.1 rules |
 | `DB_CELL` (csv) | `factories`, `cells` | §3.2 rules |
-| `ALL_PO_MASTER` (csv) | `pos` | All text kept as is; dates parsed from ISO text; rows with empty `PO` or non-numeric `ORDER QTY` are reported and skipped |
+| `ALL_PO_MASTER` (csv) | `pos` | All text kept as is; dates parsed from ISO text (or a workbook date); rows with empty `PO` or an `ORDER QTY` that is not a whole number ≥ 1 are reported and skipped; repeated PO numbers as below |
 | `DEFECT_LIST` (csv) | `defects` | Row order gives `D001…`; the file must have exactly 98 rows or the import stops |
 | `Footwear_Defect_Mapping_Database_v2.xlsx` | `areas`, `sub_areas`, `families`, `area_map` | 12 areas, 437 rows; every `DEFECT_ID` must exist in `defects` and its name must equal the workbook's name |
 
-The import runs in one transaction, prints a report (rows read, inserted, skipped, with reasons), supports `--dry-run`, and can be repeated: it upserts by natural key and never deletes. It writes one `audit_log` row.
+The four old sheets come either as one exported workbook (`.xlsx`) or as four CSV files (`USER_LIST.csv`, or `… - USER_LIST.csv` as Google Sheets names a downloaded tab), never mixed. `FINISH PRODUCTION` / `Balance Prod` are not imported until PRD OQ-06 is decided (`pos.finished` stays null).
+
+**Repeated PO numbers** (decided 21 Oct 2026). The old sheet lists some PO numbers more than once. Rows of one PO that agree in every imported column (`ARTICLE`, `MODEL`, `DESTINATION`, `ORDER QTY`, `PODD`, `CRD`, compared after parsing) are one PO. If any of them differ, **every** row of that PO number is skipped and reported as a conflict: no row is chosen, and quantities are never added up without an approved business rule. Conflicts are found over the whole sheet before anything is written, so no copy of a conflicting PO is ever imported. The admin adds such a PO by hand once the right values are known (§5.2).
+
+**Skipped versus invalid.** Skipped PO rows (empty `PO`, unusable `ORDER QTY`, conflicting PO numbers) are counted and listed in the report, and the rest is imported. Invalid data stops the whole import before anything is written: a missing sheet or column, `DEFECT_LIST` without exactly 98 rows, an unknown `CLASSIFICATION`, a PSI row without a name, a cell listed under two factories, areas other than A01–A12, a mapping row that points to an unknown area, sub-area, family or defect, or a workbook defect name that differs from `DEFECT_LIST`.
+
+The import runs in one transaction, prints a report (non-empty rows, identical duplicates merged, conflicting PO numbers and their rows, other skipped rows with reasons, unique POs, then inserted / updated / unchanged per table), supports `--dry-run` (the same writes, rolled back), and can be repeated: it upserts by natural key and never deletes. It writes one `audit_log` row per real run (counts and PO numbers, no names) and increments `master_version` only when a row was inserted or changed, so a second identical run changes no data. A defect's family is not stored on `defects`; every map row of a defect carries the family given by `Defect_Master`, and `/master-data` takes it from there.
 
 ### 5.2 Administration (FR-14, doc 05 §20)
 
@@ -318,7 +324,7 @@ Checks run at start, every 5 minutes, and every 30 seconds while any is failing,
 | Item | Estimate |
 |---|---|
 | Rows | ≈ 290 submissions a month today (design: 3,000), each ≈ 12 findings → < 40k findings a month; the database stays far below 1 GB for years |
-| `pos` | ≈ 71,500 rows ≈ 15 MB with its index |
+| `pos` | ≈ 34,000 rows (33,996 at import) ≈ 7 MB with its index |
 | Photos | §7 |
 | Backup | Nightly `pg_dump` (custom format) and a copy of the photo store to another disk or machine, 14 daily and 12 monthly copies; a restore test at pilot start and every quarter (doc 03 §7.6). Recovery point: up to 24 hours; tablets keep unsent sessions and photos for 7 days after confirmation |
 

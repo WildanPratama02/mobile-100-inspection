@@ -436,7 +436,7 @@ CLI scripts run on the server with the same `.env`: `admin:create` (first admin,
 | API integration | Every endpoint against the real database and a temp-folder `PhotoStore`, validated against `04-openapi.yaml`; all checks of doc 04 §4.2; auth, device revocation, admin lockout | Jest + supertest |
 | Idempotency and faults | Same UUID twice (same and different hash) including in parallel; crash injected after photos and before commit (fake store that throws); store down; database down | Jest |
 | Load | 30 simulated tablets submitting within 5 minutes with 5 photos each: no loss, no duplicate, p95 per submission measured | Script (k6 or Node) |
-| Import | `import-master` and the admin imports on the real CSV/XLSX files (dry run and apply); idempotent second run | Jest + the files in `reference/` |
+| Import | `import-master` and the admin imports on made-up files in the repository and on the real CSV/XLSX exports (dry run and apply); idempotent second run. The real exports hold personal names and stay out of the repository: their test runs only when `MASTER_DATA_DIR` names their folder (decided 21 Oct 2026) | Jest + the mapping workbook in `reference/` |
 | Web | Playwright for each flow of the plan, offline mode on, reload mid-inspection, shared tablet, outbox states against a stub API; the admin app flows | Playwright |
 | Device | Camera `capture`, install, setup link storage, offline start, certificate trust, on a real Redmi Pad 2 | Manual checklist (T4.2, T4.4) |
 | Server | `install.ps1` on a clean Windows VM, reboot, upgrade and rollback, certificate issue through Cloudflare, **backup and restore** | Manual (T4.1) |
