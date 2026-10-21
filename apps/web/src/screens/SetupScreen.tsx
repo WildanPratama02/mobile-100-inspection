@@ -27,6 +27,13 @@ export function SetupScreen() {
   const missing = saved && hydrated && !deviceKey;
 
   useEffect(() => {
+    // Another setup link opened while this page is still open only changes the fragment: start over with it.
+    const restart = () => window.location.reload();
+    window.addEventListener('hashchange', restart);
+    return () => window.removeEventListener('hashchange', restart);
+  }, []);
+
+  useEffect(() => {
     if (!linkKey) return;
     store
       .getState()

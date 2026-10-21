@@ -11,7 +11,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseEnv } from 'node:util';
-import { defaultMapping } from '@m100/shared';
 import pg from 'pg';
 import { DB_CELL, USER_LIST } from '../../src/data/fixtures/masterSheets';
 import { ALL_PO_MASTER } from '../../src/data/fixtures/pos';
@@ -84,6 +83,20 @@ function csv(rows: ReadonlyArray<ReadonlyArray<string | number | null>>): string
   return rows.map((r) => r.map(cell).join(',')).join('\n') + '\n';
 }
 
+/**
+ * The defects of the mapping bundled with the app, D001 first, with the severities it gives them. Read from
+ * `mapping.json` itself: Playwright's loader cannot import JSON the way `@m100/shared` does.
+ */
+function bundledDefects(): Array<{ name: string; classification: string }> {
+  const raw = JSON.parse(
+    readFileSync(join(REPO_ROOT, 'reference', 'mapping', 'mapping.json'), 'utf8'),
+  ) as { defects: Record<string, { n: string; c: number }> };
+  const severity: Record<number, string> = { 1: 'MINOR', 2: 'MAJOR', 3: 'CRITICAL' };
+  return Object.entries(raw.defects)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, d]) => ({ name: d.n, classification: severity[d.c] ?? String(d.c) }));
+}
+
 /** The web fixtures as the four sheets `import-master` reads (doc 02 §5.1). */
 function writeFixtureSheets(dir: string): void {
   writeFileSync(
@@ -117,9 +130,12 @@ function writeFixtureSheets(dir: string): void {
     join(dir, 'DEFECT_LIST.csv'),
     csv([
       ['CTQ DEFECT CODE', 'DEFECT CLASSIFICATION', 'DEFECT NAME', 'CLASSIFICATION'],
-      ...[...defaultMapping().defects]
-        .sort((a, b) => a.id.localeCompare(b.id))
-        .map((d, i) => [`52.${String(i + 1)}`, 'Category', d.name, d.classification]),
+      ...bundledDefects().map((d, i) => [
+        `52.${String(i + 1)}`,
+        'Category',
+        d.name,
+        d.classification,
+      ]),
     ]),
   );
 }

@@ -231,13 +231,22 @@ test.describe('master data cache (FR-13)', () => {
   }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Login PSI' })).toBeVisible();
-    const cached = await idbGet<{ etag: string }>(page, 'masterData', 'current');
-    expect(cached?.etag).toMatch(/^"\d+"$/);
-    const asked = page.waitForResponse((r) => r.url().endsWith('/v1/master-data'));
-    await page.reload();
-    const response = await asked;
-    expect(await response.request().headerValue('if-none-match')).toBe(cached!.etag);
-    expect(response.status()).toBe(304);
+    // Other tests add PSI meanwhile, which raises the version; the copy is then replaced (200) and the next
+    // start must get 304 for the new ETag.
+    await expect
+      .poll(
+        async () => {
+          const cached = await idbGet<{ etag: string }>(page, 'masterData', 'current');
+          expect(cached?.etag).toMatch(/^"\d+"$/);
+          const asked = page.waitForResponse((r) => r.url().endsWith('/v1/master-data'));
+          await page.reload();
+          const response = await asked;
+          expect(await response.request().headerValue('if-none-match')).toBe(cached!.etag);
+          return response.status();
+        },
+        { timeout: 20_000 },
+      )
+      .toBe(304);
   });
 
   test('picks up a master change within 30 minutes while open (AC-13.2, AC-14.1)', async ({
