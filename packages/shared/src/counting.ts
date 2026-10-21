@@ -284,10 +284,16 @@ export function rankDefects(
   );
 }
 
-/** TOP 5 DEFECT on Home (FR-05). */
-export function top5(state: SessionState, mapping: Pick<MappingIndex, 'defect'>): RankedDefect[] {
-  return rankDefects(findings(state), (id) => {
-    const defect = mapping.defect(id);
+/**
+ * TOP 5 DEFECT (FR-05, doc 03 §5.5): Home on the tablet, the photo check and Top 5 on the API, from the same
+ * findings. `defects` is the mapping on the tablet and the master `defects` table on the API.
+ */
+export function top5(
+  list: readonly Finding[],
+  defects: Pick<MappingIndex, 'defect'>,
+): RankedDefect[] {
+  return rankDefects(list, (id) => {
+    const defect = defects.defect(id);
     if (!defect) throw new Error(`Unknown defect ${id}`);
     return defect.classification;
   }).slice(0, 5);

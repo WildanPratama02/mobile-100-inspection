@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { replay, top5, type SessionEventPayload, type SessionState } from './counting';
-import type { AreaMapEntry, DefectId, PsiLevel, SessionEvent } from './domain';
+import { findings, replay, top5, type SessionEventPayload, type SessionState } from './counting';
+import type { AreaMapEntry, Defect, DefectId, PsiLevel, SessionEvent } from './domain';
 import { defaultMapping } from './mapping';
 import { buildSubmission, checkSubmit, submissionPhotos, type SubmissionInput } from './submission';
 
@@ -34,7 +34,7 @@ function check(state: SessionState, level: PsiLevel, photographed: DefectId[] = 
   return checkSubmit({
     state,
     level,
-    top: top5(state, mapping),
+    top: top5(findings(state), mapping),
     photographed: new Set(photographed),
   });
 }
@@ -155,13 +155,67 @@ describe('buildSubmission (doc 04 §4.1)', () => {
   });
 });
 
+describe('top5 on the API equals top5 on the tablet (doc 03 §5.5)', () => {
+  const [majorA, majorB] = mapping.defects
+    .filter((d) => d.classification === 'MAJOR' && d.id !== 'D035')
+    .map((d) => d.id);
+
+  it('ranks the received findings exactly as Home ranked the session', () => {
+    // Three defects tie on quantity 2 (severity decides), the rest tie on 1 (first recorded decides);
+    // D035 is split over REWORK and B-GRADE.
+    const state = session(
+      REWORK,
+      defect(majorB!),
+      defect('D049'),
+      defect('D035'),
+      defect('D049'),
+      END,
+      BGRADE,
+      defect(majorA!),
+      defect('D035'),
+      defect('D005'),
+      defect('D005'),
+      defect('D020'),
+      END,
+    );
+    const onTablet = top5(findings(state), mapping);
+
+    // What the API parses from the `submission` part, ranked with its own defect rows.
+    const received = JSON.parse(JSON.stringify(buildSubmission(input(state)))) as ReturnType<
+      typeof buildSubmission
+    >;
+    const rows = new Map<string, Defect>(mapping.defects.map((d) => [d.id, d]));
+    const onApi = top5(received.findings, { defect: (id) => rows.get(id) });
+
+    expect(onTablet.map((d) => d.defectId).slice(0, 4)).toEqual(['D005', 'D035', 'D049', majorB]);
+    expect(
+      onApi.map(({ defectId, qty, classification, areaIds }) => ({
+        defectId,
+        qty,
+        classification,
+        areaIds,
+      })),
+    ).toEqual(
+      onTablet.map(({ defectId, qty, classification, areaIds }) => ({
+        defectId,
+        qty,
+        classification,
+        areaIds,
+      })),
+    );
+    expect(onApi.map((d) => Date.parse(d.firstRecordedAt))).toEqual(
+      onTablet.map((d) => Date.parse(d.firstRecordedAt)),
+    );
+  });
+});
+
 describe('submissionPhotos (AC-10.4, doc 02 §7)', () => {
   it('keeps the photo of a defect that left the Top 5', () => {
     // Six defects ranked by quantity: D001 drops to rank 6 but keeps its photo.
     const ids = ['D035', 'D082', 'D010', 'D020', 'D030'];
     const taps = ids.flatMap((id) => [defect(id), defect(id)]);
     const state = session(REWORK, defect('D001'), ...taps, END);
-    expect(top5(state, mapping).map((d) => d.defectId)).not.toContain('D001');
+    expect(top5(findings(state), mapping).map((d) => d.defectId)).not.toContain('D001');
     const kept = submissionPhotos(state, 'PSI lv.2', [{ defectId: 'D001', sha256: 'x' }]);
     expect(kept.map((p) => p.defectId)).toEqual(['D001']);
   });

@@ -1,4 +1,4 @@
-import { rankDefects } from '@m100/shared';
+import { inspectionDate, partialText, rankDefects } from '@m100/shared';
 import { createTestDatabase, type TestDatabase } from '../testing/database';
 import {
   defectOf,
@@ -80,6 +80,22 @@ describe('v_submissions (doc 02 §8, §9)', () => {
       counting_rule: 'ADR-008',
       model: 'RUNNER X',
     });
+  });
+
+  it('computes partial text and inspection date like packages/shared (doc 03 §5.5)', async () => {
+    const row = submissionRow();
+    const { rows } = await db.as('m100_report', (c) =>
+      c.query<{ partial_text: string }>('SELECT partial_text FROM v_submissions WHERE id = $1', [
+        example,
+      ]),
+    );
+    expect(rows[0]?.partial_text).toBe(
+      partialText(
+        { number: Number(row.partial_no), qty: Number(row.partial_qty) },
+        Number(row.order_qty),
+      ),
+    );
+    expect(inspectionDate(String(row.sealed_at))).toBe(row.inspection_date);
   });
 
   it('shows WIB regardless of the session time zone', async () => {

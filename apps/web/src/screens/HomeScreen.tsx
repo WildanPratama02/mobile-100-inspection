@@ -11,6 +11,7 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 import {
   EMPTY_SESSION,
+  findings,
   formatCount,
   formatPartial,
   formatRate,
@@ -469,7 +470,7 @@ interface Top5Props extends PanelProps {
  * its photo control, and a Notice counts the missing photos (AC-10.3, BR-04).
  */
 function Top5({ po, session, mapping, photos, onTakePhoto, onViewPhoto }: Top5Props) {
-  const rows = session ? top5(session.state, mapping) : [];
+  const rows = session ? top5(findings(session.state), mapping) : [];
   const attached = session?.photos ?? {};
   const missing = photos
     ? missingPhotos(rows, new Set(Object.keys(attached) as DefectId[])).length

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EMPTY_SESSION,
   applyEvent,
+  computeTotals,
   endInspection,
   findings,
   noDefect,
@@ -123,6 +124,38 @@ describe('ADR-008 counting table', () => {
     for (let i = 0; i < 18; i++) t.noDefect();
     expect(t.state.counts).toEqual({ rework: 10, bGrade: 2, noDefect: 18 });
     expect(quantities(t.totals)).toEqual([30, 18, 12, 2]);
+  });
+});
+
+describe('computeTotals: the doc 02 §9 example (doc 03 §5.5)', () => {
+  // 10 REWORK pairs with 8 defects, 2 B-GRADE pairs with 3 defects, 18 NO DEFECT pairs.
+  const expected = { qtyInspection: 30, qtyAGrade: 18, qtyBGrade: 3, qtyDefect: 11 };
+  const check = (t: Totals) => {
+    expect(t).toMatchObject(expected);
+    expect(t.passRate).toBeCloseTo(0.6, 3);
+    expect(t.defectRate).toBeCloseTo(0.367, 3);
+  };
+
+  it('from counts and findings, as the API computes it', () => {
+    const f = (inspectionType: InspectionType, defectId: DefectId, qty: number): Finding => ({
+      ...entry(defectId),
+      inspectionType,
+      qty,
+      firstRecordedAt: '2026-10-16T13:05:11+07:00',
+    });
+    const list = [f('REWORK', 'D035', 5), f('REWORK', 'D049', 3), f('B-GRADE', 'D082', 3)];
+    check(computeTotals({ rework: 10, bGrade: 2, noDefect: 18 }, list));
+  });
+
+  it('from the taps, as the tablet shows it', () => {
+    const t = new Tablet();
+    for (let i = 0; i < 6; i++) t.rework().defect('D035').end();
+    t.rework().defect('D035').defect('D049').end();
+    for (let i = 0; i < 3; i++) t.rework().end();
+    t.bGrade().defect('D082').defect('D005').end();
+    t.bGrade().defect('D082').end();
+    for (let i = 0; i < 18; i++) t.noDefect();
+    check(t.totals);
   });
 });
 
@@ -299,7 +332,7 @@ describe('findings', () => {
 
 describe('Top 5 (FR-05, AC-05.1, doc 02 §6.2)', () => {
   const classification = (id: string) => mapping.defect(id)!.classification;
-  const ids = (state: SessionState) => top5(state, mapping).map((d) => d.defectId);
+  const ids = (state: SessionState) => top5(findings(state), mapping).map((d) => d.defectId);
   const majors = mapping.defects.filter((d) => d.classification === 'MAJOR').map((d) => d.id);
 
   it('uses defects of each severity (fixture check)', () => {
@@ -307,7 +340,7 @@ describe('Top 5 (FR-05, AC-05.1, doc 02 §6.2)', () => {
   });
 
   it('is empty without defects', () => {
-    expect(top5(new Tablet().noDefect().rework().end().state, mapping)).toEqual([]);
+    expect(top5(findings(new Tablet().noDefect().rework().end().state), mapping)).toEqual([]);
   });
 
   it('orders by total quantity first', () => {
@@ -335,7 +368,7 @@ describe('Top 5 (FR-05, AC-05.1, doc 02 §6.2)', () => {
       .bGrade()
       .defect('D035', 'A01')
       .end();
-    const [first] = top5(t.state, mapping);
+    const [first] = top5(findings(t.state), mapping);
     expect(first).toMatchObject({ defectId: 'D035', qty: 2, areaIds: ['A02', 'A01'] });
     expect(first?.firstRecordedAt).toBe(t.events[2]?.at);
   });

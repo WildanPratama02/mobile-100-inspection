@@ -4,6 +4,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
+import { photoKey as submissionPhotoKey, type DefectId } from '@m100/shared';
 import {
   InvalidPhotoKey,
   PhotoChecksumMismatch,
@@ -29,8 +30,9 @@ export function sha256(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-export function photoKey(defectId = 'D035'): string {
-  return `submissions/2026/10/${randomUUID()}/${defectId}.jpg`;
+/** A key as Submit PO makes it (doc 02 §7), for a new submission. */
+export function photoKey(defectId: DefectId = 'D035'): string {
+  return submissionPhotoKey(randomUUID(), defectId, '2026-10-16T14:32:05+07:00');
 }
 
 /** Keys that are not plain relative paths of safe segments, or that would leave the store. */

@@ -15,6 +15,7 @@ import {
   checkSubmit,
   EMPTY_SESSION,
   endInspection,
+  findings,
   noDefect,
   recordDefect,
   replay,
@@ -163,7 +164,7 @@ export function submitBlock(
   return checkSubmit({
     state,
     level,
-    top: top5(state, mapping),
+    top: top5(findings(state), mapping),
     photographed: new Set(Object.keys(session?.photos ?? {}) as DefectId[]),
   });
 }

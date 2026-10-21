@@ -1,5 +1,6 @@
 import {
   defaultMapping,
+  findings,
   replay,
   top5,
   type DefectId,
@@ -178,7 +179,7 @@ describe('exportReport (FR-12)', () => {
       .defect('D003');
     const report = exportReport(input(taps, { auth: LV1 }));
     expect(report.top5.map((t) => t.defectId)).toEqual(
-      top5(taps.session().state, mapping).map((r) => r.defectId),
+      top5(findings(taps.session().state), mapping).map((r) => r.defectId),
     );
     expect(report.top5).toHaveLength(5);
     expect(report.top5[0]).toMatchObject({
@@ -240,7 +241,7 @@ describe('exportReport (FR-12)', () => {
         taps.defect(id, 2).photo(id);
       }
       const report = exportReport(input(taps));
-      const shown = top5(taps.session().state, mapping).map((r) => r.defectId);
+      const shown = top5(findings(taps.session().state), mapping).map((r) => r.defectId);
       expect(shown).not.toContain('D001');
       expect(report.photos.map((p) => [p.defectId, p.top5No])).toEqual([
         ...shown.map((id, i) => [id, i + 1]),
