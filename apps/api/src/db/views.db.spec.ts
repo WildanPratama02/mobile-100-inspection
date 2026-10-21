@@ -95,7 +95,22 @@ describe('v_submissions (doc 02 §8, §9)', () => {
         Number(row.order_qty),
       ),
     );
-    expect(inspectionDate(String(row.sealed_at))).toBe(row.inspection_date);
+  });
+
+  it('agrees with PostgreSQL on the WIB date of sealed_at, also around midnight WIB (doc 02 §6.4)', async () => {
+    const moments = [
+      '2026-10-16T16:59:59.999Z',
+      '2026-10-16T17:00:00.000Z',
+      '2026-10-31T17:30:00.000Z',
+      '2026-12-31T17:00:00.000Z',
+      '2026-10-16T14:32:05+07:00',
+    ];
+    const { rows } = await db.client.query<{ d: string }>(
+      `SELECT ((m::timestamptz) AT TIME ZONE 'Asia/Jakarta')::date::text AS d
+         FROM unnest($1::text[]) WITH ORDINALITY AS t(m, i) ORDER BY i`,
+      [moments],
+    );
+    expect(rows.map((r) => r.d)).toEqual(moments.map((m) => inspectionDate(m)));
   });
 
   it('shows WIB regardless of the session time zone', async () => {
