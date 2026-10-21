@@ -146,6 +146,12 @@ As built (T1.7):
 
 On launch and at most every 30 minutes while open (AC-13.2) the app calls `GET /master-data` with `If-None-Match`; `304` keeps the stored copy. If the call fails the stored copy is used; with no stored copy the login screen shows RETRY (AC-01.4). PO search needs a connection (AC-13.3); POs already added keep their details in `pos`.
 
+As built (T2.7):
+- `src/api/client.ts` sends `X-Device-Key` and the token on every call under `/v1` (same origin; `pnpm dev` and `vite preview` proxy `/v1` to the API). A problem+json answer becomes an error with its `code` and `detail`; no answer, a timeout (60 s) or a non-problem answer from the proxy counts as offline.
+- The cached copy is `masterData.current` with the ETag from the answer; its `fetchedAt` is when the API last confirmed it (`200` or `304`) and is the time in the gear menu (AC-13.4). The check also runs when the connection comes back after a failed one.
+- The same timer renews the PSI's token when fewer than 7 days remain (doc 04 §2); the request runs outside the store's action queue, so taps never wait for it. `TOKEN_INVALID` logs the PSI out (sessions stay, AC-02.2). A PO search answered `401 TOKEN_EXPIRED` renews once and asks again.
+- The Defect screen offers the area map of the cached document. Looking up an area, sub-area, family or defect id the document no longer lists falls back to the mapping bundled with the app, so a session holding a defect deactivated after it was tapped still shows and submits (doc 04 §4.2 rule 4).
+
 ### 4.8 Updating the app
 
 A new build produces a new service worker that **waits** instead of taking over. The app activates it only when no inspection is active (on the login screen, on Home with no active inspection, or at the next cold start), then reloads. It never reloads in the middle of an inspection. The version is sent as `appVersion` with every submission and stored in `submissions.app_version`. API changes are additive within `/v1` (doc 04 §1), so an old tablet keeps working until it updates.
@@ -157,6 +163,8 @@ As built (T1.8): `main.tsx` registers the service worker (`virtual:pwa-register`
 The device key is a secret that the PSI never types and the app has no screen to type it. QIP Digital creates the tablet with the server command `device:add`; the key and the **setup link** `https://<host>/setup#k=<device key>` are printed once, with a QR code. The link is opened in Chrome on the tablet (typed once, or scanned). The setup page reads the fragment, saves the key in `meta`, immediately removes the fragment from the address (`history.replaceState`), and checks it with `GET /system/status`: `200` shows "Tablet terdaftar", `401 DEVICE_KEY_INVALID` says the key is wrong. A fragment is never sent to the server. Chrome may still keep the link in its history, so the administrator clears the history after setup; the key is revocable per tablet, which limits the damage.
 
 To check on a real Redmi Pad 2 (risk R9): that the data saved while the page runs in Chrome is visible when the installed app runs. If it is not, setup moves into the installed app as a one-time screen with a paste field.
+
+As built (T2.7): `/setup` is a route of the app itself (the service worker's navigation fallback serves it offline too; Caddy must serve `index.html` for it, Phase 4). The key is kept in `meta.deviceKey` and survives logout; a new setup link replaces it. Without a stored key the app shows only "Tablet ini belum terdaftar. Buka tautan setup dari admin." and calls no API.
 
 ## 5. The API
 

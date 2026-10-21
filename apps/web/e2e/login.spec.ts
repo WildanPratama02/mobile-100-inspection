@@ -1,5 +1,6 @@
-// Login and logout (T1.2: FR-01, FR-02) with the Phase 1 fixtures.
-import { expect, test, type Page } from '@playwright/test';
+// Login and logout (T1.2: FR-01, FR-02), against the API and the web fixtures imported into its test database.
+import { type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { undersized } from './tap';
 
 const VIEWPORTS = [

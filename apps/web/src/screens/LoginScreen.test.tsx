@@ -1,21 +1,27 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataSourcesContext } from '../app/dataSources';
-import { createFixtureSources } from '../data/fixtures/fixtureSources';
-import { LoginRejectedError, type DataSources, type LoginData } from '../data/sources';
+import { createFixtureSources, fixtureMasterData } from '../data/fixtures/fixtureSources';
+import {
+  ApiError,
+  LoginRejectedError,
+  OfflineError,
+  type DataSources,
+  type MasterData,
+} from '../data/sources';
 import { createDb, type M100Db } from '../db/schema';
 import { AppStoreContext, createAppStore, type AppStore } from '../state/store';
 import { LoginScreen } from './LoginScreen';
 
 let db: M100Db;
 let store: AppStore;
-let data: LoginData;
+let data: MasterData;
 
 beforeEach(async () => {
   db = createDb(`login-${crypto.randomUUID()}`);
   store = createAppStore(db);
   await store.getState().hydrate();
-  data = await createFixtureSources().masterData.getLoginData();
+  data = fixtureMasterData();
 });
 
 afterEach(async () => {
@@ -126,6 +132,7 @@ describe('LoginScreen (doc 05 §7)', () => {
     renderLogin({
       ...fixtures,
       auth: {
+        ...fixtures.auth,
         login: () =>
           Promise.reject(new LoginRejectedError('USER_NOT_FOUND', 'Nama tidak ada di daftar PSI.')),
       },
@@ -135,6 +142,41 @@ describe('LoginScreen (doc 05 §7)', () => {
     fireEvent.click(loginButton());
     expect(await screen.findByRole('alert')).toHaveTextContent('Nama tidak ada di daftar PSI.');
     expect(store.getState().auth).toBeNull();
+  });
+
+  it("shows any other refusal's detail, e.g. a revoked tablet", async () => {
+    const fixtures = createFixtureSources();
+    renderLogin({
+      ...fixtures,
+      auth: {
+        ...fixtures.auth,
+        login: () =>
+          Promise.reject(
+            new ApiError(401, 'DEVICE_KEY_INVALID', 'Tablet belum terdaftar. Hubungi admin.'),
+          ),
+      },
+    });
+    pick('Nama', 'DEWI CONTOH');
+    pick('Factory', 'F 1');
+    fireEvent.click(loginButton());
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Tablet belum terdaftar. Hubungi admin.',
+    );
+  });
+
+  it('says login needs a connection when the API does not answer, and LOGIN can be tried again', async () => {
+    const fixtures = createFixtureSources();
+    renderLogin({
+      ...fixtures,
+      auth: { ...fixtures.auth, login: () => Promise.reject(new OfflineError()) },
+    });
+    pick('Nama', 'DEWI CONTOH');
+    pick('Factory', 'F 1');
+    fireEvent.click(loginButton());
+    expect(
+      await screen.findByText('Login butuh koneksi. Hubungkan Wi-Fi, lalu coba lagi.'),
+    ).toBeInTheDocument();
+    expect(loginButton()).toBeEnabled();
   });
 
   it('logs in with what was chosen', async () => {

@@ -6,6 +6,7 @@ import {
   formatDateTime,
   formatPartial,
   formatRate,
+  formatDayTime,
   formatTime,
   toWibIso,
 } from './format';
@@ -96,5 +97,13 @@ describe('formatTime (doc 05 G5)', () => {
     expect(formatTime('2026-10-16T07:32:05Z')).toBe('14:32');
     expect(formatTime(new Date('2026-10-19T17:05:00Z'))).toBe('00:05');
     expect(formatTime('2026-10-19T00:00:00Z')).toBe('07:00');
+  });
+});
+
+describe('formatDayTime (doc 05 §14, AC-13.4)', () => {
+  it('shows the WIB day, month and time', () => {
+    expect(formatDayTime('2026-10-21T07:05:00Z')).toBe('21 Okt 14:05');
+    // 17:30 UTC is already the next day in WIB.
+    expect(formatDayTime(new Date('2026-10-21T17:30:00Z'))).toBe('22 Okt 00:30');
   });
 });

@@ -5,7 +5,7 @@
  * with none yet, `503 DB_UNAVAILABLE`.
  */
 import { Inject, Injectable } from '@nestjs/common';
-import type { Area, AreaMapRow, Defect, Factory, Family, User } from '@m100/shared';
+import type { MasterData } from '@m100/shared';
 import { Database } from '../db/database';
 import { ApiProblem } from '../errors/problem';
 import {
@@ -15,17 +15,11 @@ import {
 import { SETTINGS_REPOSITORY, type SettingsRepository } from '../repositories/settings.repository';
 import { ReadinessService, RETRY_MS } from './readiness.service';
 
-/** The `MasterData` schema of `04-openapi.yaml`, without `fetchedAt` (set per response). */
-export interface MasterDataDocument {
-  /** `master_version` as text; the ETag is this value in quotes. */
-  version: string;
-  users: User[];
-  factories: Factory[];
-  areas: Area[];
-  families: Family[];
-  defects: Defect[];
-  map: AreaMapRow[];
-}
+/**
+ * The `MasterData` schema of `04-openapi.yaml`, without `fetchedAt` (set per response). `version` is
+ * `master_version` as text; the ETag is this value in quotes.
+ */
+export type MasterDataDocument = Omit<MasterData, 'fetchedAt'>;
 
 @Injectable()
 export class MasterDataService {

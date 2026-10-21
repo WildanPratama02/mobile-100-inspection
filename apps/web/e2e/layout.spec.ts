@@ -1,6 +1,7 @@
 // The three layouts of design-system/README.md and doc 05 §3, told apart by where the panes are (T1.8).
 // Regular: landscape taller than 480 px. Compact: landscape 480 px or less. Stacked: portrait or 640 px or narrower.
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { addPo, bar, login, openFamily, choice } from './helpers';
 import { crowdedPills, undersized } from './tap';
 

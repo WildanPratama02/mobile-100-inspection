@@ -6,6 +6,9 @@ const baseURL = `http://localhost:${port}`;
 // The service worker exists only in a build, so the PWA tests run against `vite preview` (E2E_PREVIEW_PORT likewise).
 const previewPort = Number(process.env.E2E_PREVIEW_PORT ?? 4173);
 const previewURL = `http://localhost:${previewPort}`;
+// The real API, started by global setup on its own test database (e2e/api/testApi.ts); both servers proxy `/v1`
+// there. E2E_API_PORT likewise lets two checkouts test at once.
+const apiURL = `http://127.0.0.1:${process.env.E2E_API_PORT ?? 3100}`;
 
 // Target: Redmi Pad 2 in landscape, about 1280 × 800 CSS px (NFR-01).
 const tablet = {
@@ -20,6 +23,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
+  globalSetup: './e2e/global-setup.ts',
   use: {
     trace: 'retain-on-failure',
   },
@@ -38,6 +42,7 @@ export default defineConfig({
   webServer: [
     {
       command: `pnpm dev --port ${port}`,
+      env: { M100_API_URL: apiURL },
       url: baseURL,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
@@ -45,6 +50,7 @@ export default defineConfig({
     {
       // Always a fresh build: a reused preview server could serve an old one.
       command: `pnpm build && pnpm preview --port ${previewPort} --strictPort`,
+      env: { M100_API_URL: apiURL },
       url: previewURL,
       reuseExistingServer: false,
       timeout: 180_000,

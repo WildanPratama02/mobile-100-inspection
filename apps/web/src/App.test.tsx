@@ -3,8 +3,9 @@ import type { Po } from '@m100/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { resetAppUpdatesForTest, startAppUpdates } from './app/appUpdate';
+import { MASTER_DATA_REFRESH_MS } from './app/useMasterDataRefresh';
 import { createFixtureSources } from './data/fixtures/fixtureSources';
-import type { DataSources } from './data/sources';
+import { ApiError, OfflineError, type DataSources } from './data/sources';
 import { createDb, type M100Db } from './db/schema';
 import { createAppStore, type AppStore } from './state/store';
 
@@ -21,10 +22,14 @@ const PO: Po = {
 let name: string;
 let connections: M100Db[];
 
-beforeEach(() => {
+beforeEach(async () => {
   name = `app-${crypto.randomUUID()}`;
   connections = [];
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  // A tablet set up with its device key (doc 03 §4.9).
+  const setup = createDb(name);
+  await setup.meta.put({ key: 'deviceKey', value: 'kunci-uji' });
+  setup.close();
 });
 
 afterEach(async () => {
@@ -76,8 +81,7 @@ describe('start (AC-01.4)', () => {
     const sources: DataSources = {
       ...fixtures,
       masterData: {
-        getLoginData: () =>
-          fail ? Promise.reject(new Error('offline')) : fixtures.masterData.getLoginData(),
+        get: (etag) => (fail ? Promise.reject(new OfflineError()) : fixtures.masterData.get(etag)),
       },
     };
     openApp(sources);
@@ -99,10 +103,55 @@ describe('start (AC-01.4)', () => {
 
     const down: DataSources = {
       ...createFixtureSources(),
-      masterData: { getLoginData: () => Promise.reject(new Error('offline')) },
+      masterData: { get: () => Promise.reject(new OfflineError()) },
     };
     openApp(down);
     expect(await screen.findByRole('heading', { name: 'Login PSI' })).toBeInTheDocument();
+  });
+
+  it('says the tablet is not registered when the API refuses its key', async () => {
+    openApp({
+      ...createFixtureSources(),
+      masterData: {
+        get: () =>
+          Promise.reject(
+            new ApiError(401, 'DEVICE_KEY_INVALID', 'Tablet belum terdaftar. Hubungi admin.'),
+          ),
+      },
+    });
+    expect(await screen.findByText('Tablet belum terdaftar, hubungi admin')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'RETRY' })).toBeInTheDocument();
+  });
+
+  it('shows only "not registered" on a tablet without a device key (doc 05 §5)', async () => {
+    const empty = createDb(name);
+    await empty.meta.delete('deviceKey');
+    empty.close();
+    const sources = createFixtureSources();
+    const get = vi.spyOn(sources.masterData, 'get');
+    openApp(sources);
+    expect(
+      await screen.findByText('Tablet ini belum terdaftar. Buka tautan setup dari admin.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Login PSI' })).not.toBeInTheDocument();
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('checks master data again every 30 minutes while open (AC-13.2)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const sources = createFixtureSources();
+      const get = vi.spyOn(sources.masterData, 'get');
+      openApp(sources);
+      await screen.findByRole('heading', { name: 'Login PSI' });
+      expect(get).toHaveBeenCalledTimes(1);
+      await act(() => vi.advanceTimersByTimeAsync(MASTER_DATA_REFRESH_MS));
+      expect(get).toHaveBeenCalledTimes(2);
+      // The second check sends the stored ETag and gets `304`.
+      expect(get).toHaveBeenLastCalledWith('"fixture-1"');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

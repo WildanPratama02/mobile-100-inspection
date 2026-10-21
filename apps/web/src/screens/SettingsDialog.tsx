@@ -1,9 +1,9 @@
 /**
- * S9 gear menu (doc 05 §14, FR-02): the account, the PSI's own submissions (AC-11.3, U14) and LOGOUT. The
- * master-data time comes with T2.6.
+ * S9 gear menu (doc 05 §14, FR-02): the account, the PSI's own submissions (AC-11.3, U14), when master data was
+ * last updated (AC-13.4) and LOGOUT.
  */
 import { useState } from 'react';
-import { formatTime } from '@m100/shared';
+import { formatDayTime, formatTime } from '@m100/shared';
 import { Logo } from '../app/Logo';
 import { Overlay } from '../app/Overlay';
 import type { Auth, OutboxRow } from '../db/schema';
@@ -53,6 +53,7 @@ export function SettingsDialog({ auth, onClose }: SettingsDialogProps) {
           </div>
         </section>
         <Outbox />
+        <MasterDataTime />
         <Button
           variant="danger"
           block
@@ -102,5 +103,18 @@ function OutboxEntry({ item }: { item: OutboxRow }) {
         <small className="settings__hint">Hubungi admin dengan nomor PO ini.</small>
       ) : null}
     </>
+  );
+}
+
+/** Data (doc 05 §14): when the API last confirmed the tablet's master data current (AC-13.4). */
+function MasterDataTime() {
+  const checkedAt = useAppStore((s) => s.masterDataCheckedAt);
+  // Logging in needs master data, so a logged-in PSI always has a time; nothing is shown without one.
+  if (!checkedAt) return null;
+  return (
+    <section className="settings__data" aria-label="Data">
+      <h4 className="settings__heading">Data</h4>
+      <p className="settings__text">Data master diperbarui {formatDayTime(checkedAt)}</p>
+    </section>
   );
 }

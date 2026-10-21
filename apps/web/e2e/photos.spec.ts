@@ -1,5 +1,6 @@
 // Photos on Top 5 defects: camera, resize, viewer, GANTI FOTO, HAPUS (T1.5: FR-10, AC-10.1 … AC-10.6).
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { undersized } from './tap';
 
 const VIEWPORTS = [

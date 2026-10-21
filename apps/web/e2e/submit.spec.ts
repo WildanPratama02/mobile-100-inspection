@@ -1,6 +1,7 @@
 // SUBMIT PO, local half: checks, confirmation, sealing into the outbox, waiting count and gear list
 // (T1.7: FR-11 steps 1–3, BR-04, AC-11.3; doc 05 §13, §14).
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { undersized } from './tap';
 
 const VIEWPORTS = [

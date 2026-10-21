@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { type PsiLevel, toWibIso } from '@m100/shared';
+import { type LoginResponse, toWibIso } from '@m100/shared';
 import { z } from 'zod';
 import { ApiProblem } from '../errors/problem';
 import { validationFailed } from '../errors/validation';
@@ -11,14 +11,8 @@ import {
 } from '../repositories/master-data.repository';
 import { REFRESH_GRACE_SECONDS, type TabletClaims, TabletTokens } from './tablet-token';
 
-/** The `LoginResponse` schema of `04-openapi.yaml`. */
-export interface LoginResponse {
-  token: string;
-  expiresAt: string;
-  user: { username: string; level: PsiLevel };
-  factory: string;
-  cell: string;
-}
+/** The `LoginResponse` schema of `04-openapi.yaml`, shared with the tablet. */
+export type { LoginResponse };
 
 // Unknown fields are refused (doc 03 §6).
 const loginSchema = z.strictObject({

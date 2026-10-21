@@ -1,7 +1,8 @@
 // EXPORT PDF / EXPORT EXCEL on Home (T1.6: FR-12, AC-12.1 … AC-12.4, doc 05 §8.5).
 import { readFile } from 'node:fs/promises';
 import { strFromU8, unzipSync } from 'fflate';
-import { expect, test, type Download, type Page } from '@playwright/test';
+import { type Download, type Page } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 // Quarter › Medial Quarter › Stitching (reference/mapping/mapping.json).
 const FAMILY = 'Stitching';

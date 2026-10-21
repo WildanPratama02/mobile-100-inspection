@@ -33,6 +33,16 @@ export interface LoginRequest {
   cell: string;
 }
 
+/** `POST /auth/login` and `POST /auth/refresh` answer (doc 04 §2, §3.1). */
+export interface LoginResponse {
+  /** 30-day JWT, `aud` = `tablet`. */
+  token: string;
+  expiresAt: string;
+  user: User;
+  factory: string;
+  cell: string;
+}
+
 /** One PO from ALL_PO_MASTER. Dates are `YYYY-MM-DD`, or `null` when the cell is empty. */
 export interface Po {
   po: string;
@@ -99,6 +109,21 @@ export interface AreaMapEntry {
 /** An active row of M100_AREA_MAP as served by `GET /master-data`. */
 export interface AreaMapRow extends AreaMapEntry {
   mapId: string;
+}
+
+/** The `GET /master-data` document (doc 04 §3.2): every active row the tablet needs offline. */
+export interface MasterData {
+  /** `master_version`; same value as the ETag. */
+  version: string;
+  fetchedAt: string;
+  /** PSI lv.1 and PSI lv.2 only, A–Z (AC-01.1). */
+  users: User[];
+  /** `F <number>` factories only (doc 02 §3.2). */
+  factories: Factory[];
+  areas: Area[];
+  families: Family[];
+  defects: Defect[];
+  map: AreaMapRow[];
 }
 
 export type InspectionType = 'REWORK' | 'B-GRADE';

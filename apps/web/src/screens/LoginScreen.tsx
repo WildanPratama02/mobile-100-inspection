@@ -8,7 +8,7 @@ import { useDataSources } from '../app/dataSources';
 import { Logo } from '../app/Logo';
 import { Overlay } from '../app/Overlay';
 import { useOnline } from '../app/useOnline';
-import { LoginRejectedError, type LoginData } from '../data/sources';
+import { ApiError, OfflineError, SERVER_ERROR, type MasterData } from '../data/sources';
 import { useAppStore } from '../state/store';
 import { Button, Chip, Dialog, Icon, List, Notice, SelectField } from '../ui';
 import './screens.css';
@@ -16,7 +16,7 @@ import './screens.css';
 type Picker = 'name' | 'factory' | 'cell';
 
 export interface LoginScreenProps {
-  data: LoginData;
+  data: Pick<MasterData, 'users' | 'factories'>;
 }
 
 export function LoginScreen({ data }: LoginScreenProps) {
@@ -28,6 +28,8 @@ export function LoginScreen({ data }: LoginScreenProps) {
   const [cell, setCell] = useState<string | null>(null);
   const [picker, setPicker] = useState<Picker | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  /** The last LOGIN got no answer although the tablet seemed online. */
+  const [unreached, setUnreached] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const complete = user !== null && factory !== null && cell !== null;
@@ -46,6 +48,7 @@ export function LoginScreen({ data }: LoginScreenProps) {
     if (!user || !factory || !cell) return;
     setBusy(true);
     setProblem(null);
+    setUnreached(false);
     try {
       const auth = await authApi.login({
         username: user.username,
@@ -55,11 +58,9 @@ export function LoginScreen({ data }: LoginScreenProps) {
       });
       await login(auth);
     } catch (error) {
-      setProblem(
-        error instanceof LoginRejectedError
-          ? error.detail
-          : 'Terjadi kesalahan server. Data tetap tersimpan di tablet.',
-      );
+      // `USER_NOT_FOUND` / `CELL_NOT_FOUND` and any other refusal: the API's `detail` (doc 05 §7).
+      if (error instanceof OfflineError) setUnreached(true);
+      else setProblem(error instanceof ApiError ? error.detail : SERVER_ERROR);
       setBusy(false);
     }
   }
@@ -119,7 +120,7 @@ export function LoginScreen({ data }: LoginScreenProps) {
         </div>
 
         {problem ? <Notice tone="danger">{problem}</Notice> : null}
-        {!online ? (
+        {!online || unreached ? (
           <Notice tone="warning">Login butuh koneksi. Hubungkan Wi-Fi, lalu coba lagi.</Notice>
         ) : null}
         <Button

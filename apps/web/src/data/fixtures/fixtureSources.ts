@@ -1,16 +1,19 @@
 /**
- * Master data and login from the Phase 1 fixtures. Same rules as the API (doc 02 §3, doc 04 §3.1): the
- * lists go through `loginUsers` / `loginFactories`, a login is checked against them, and PO search matches
- * like `GET /pos` (doc 04 §3.3).
+ * Master data, login and PO search from local fixtures, for the Vitest screen tests (the app itself uses the API,
+ * T2.7). Same rules as the API (doc 02 §3, doc 04 §3.1): the lists go through `loginUsers` / `loginFactories`, a
+ * login is checked against them, and PO search matches like `GET /pos` (doc 04 §3.3). The mapping is the bundled
+ * one.
  */
-import { loginFactories, loginUsers, type Cell, type Po, type UserListRow } from '@m100/shared';
 import {
-  LoginRejectedError,
-  PO_QUERY_MIN,
-  PoSearchError,
-  type DataSources,
-  type LoginData,
-} from '../sources';
+  defaultMapping,
+  loginFactories,
+  loginUsers,
+  type Cell,
+  type MasterData,
+  type Po,
+  type UserListRow,
+} from '@m100/shared';
+import { LoginRejectedError, PO_QUERY_MIN, PoSearchError, type DataSources } from '../sources';
 import { DB_CELL, USER_LIST } from './masterSheets';
 import { ALL_PO_MASTER } from './pos';
 
@@ -20,17 +23,30 @@ export interface FixtureSheets {
   pos: readonly Po[];
 }
 
+/** A `/master-data` document from the fixture sheets and the bundled mapping. */
+export function fixtureMasterData({
+  users = USER_LIST,
+  cells = DB_CELL,
+}: Partial<Omit<FixtureSheets, 'pos'>> = {}): MasterData {
+  const mapping = defaultMapping();
+  return {
+    version: 'fixture-1',
+    fetchedAt: new Date().toISOString(),
+    users: loginUsers(users),
+    factories: loginFactories(cells),
+    areas: structuredClone([...mapping.areas]),
+    families: structuredClone([...mapping.families]),
+    defects: structuredClone([...mapping.defects]),
+    map: mapping.map.map((entry, i) => ({ ...entry, mapId: `M${String(i + 1)}` })),
+  };
+}
+
 export function createFixtureSources({
   users = USER_LIST,
   cells = DB_CELL,
   pos = ALL_PO_MASTER,
 }: Partial<FixtureSheets> = {}): DataSources {
-  const data: LoginData = {
-    version: 'fixture-1',
-    fetchedAt: new Date().toISOString(),
-    users: loginUsers(users),
-    factories: loginFactories(cells),
-  };
+  const data = fixtureMasterData({ users, cells });
   return {
     pos: {
       search: (q, limit) => {
@@ -45,7 +61,12 @@ export function createFixtureSources({
       },
     },
     masterData: {
-      getLoginData: () => Promise.resolve(structuredClone(data)),
+      get: (etag) =>
+        Promise.resolve(
+          etag === `"${data.version}"`
+            ? 'unchanged'
+            : { document: structuredClone(data), etag: `"${data.version}"` },
+        ),
     },
     auth: {
       login: ({ username, level, factory, cell }) => {
@@ -59,7 +80,7 @@ export function createFixtureSources({
             new LoginRejectedError('CELL_NOT_FOUND', 'Factory/Cell tidak ditemukan.'),
           );
         }
-        // The fixtures issue no token; `POST /auth/login` does from Phase 2 (doc 04 §2).
+        // The fixtures issue no token; `POST /auth/login` does (doc 04 §2).
         return Promise.resolve({
           username,
           level,
@@ -69,6 +90,10 @@ export function createFixtureSources({
           tokenExpiresAt: null,
         });
       },
+      refresh: () => Promise.resolve({ token: null, tokenExpiresAt: null }),
+    },
+    system: {
+      check: () => Promise.resolve(),
     },
   };
 }
