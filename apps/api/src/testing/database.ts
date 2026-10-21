@@ -28,6 +28,13 @@ export interface TestDatabase {
    * `m100_app`. Closed by `drop`.
    */
   pool(role: Role): Pool;
+  /** A connection string into the test database whose sessions run as `role`, for an app under test. */
+  url(role: Role): string;
+  /**
+   * `false` acts like a stopped database for everyone but `client`: new connections are refused and the open ones
+   * (the pools') are cut. `true` lets connections in again.
+   */
+  allowConnections(allowed: boolean): Promise<void>;
   drop(): Promise<void>;
 }
 
@@ -101,8 +108,30 @@ export async function createTestDatabase(
         options: `-c role=${role}`,
         application_name: `m100 test ${name} ${role}`,
       });
+      // A connection cut by allowConnections(false) is reported here; the pool replaces it on the next query.
+      pool.on('error', () => undefined);
       pools.push(pool);
       return pool;
+    },
+    url(role) {
+      const withRole = new URL(url.href);
+      withRole.searchParams.set('options', `-c role=${role}`);
+      return withRole.href;
+    },
+    async allowConnections(allowed) {
+      const admin = await connect(base, 'admin');
+      try {
+        await admin.query(`ALTER DATABASE ${name} ALLOW_CONNECTIONS ${allowed}`);
+        if (!allowed) {
+          const { rows } = await client.query<{ pid: number }>('SELECT pg_backend_pid() AS pid');
+          await admin.query(
+            `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> $2`,
+            [name, rows[0]!.pid],
+          );
+        }
+      } finally {
+        await admin.end();
+      }
     },
     async drop() {
       await Promise.all(pools.map((p) => p.end()));

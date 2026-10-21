@@ -84,6 +84,11 @@ export interface MasterDataRepository {
   activeDefects(q?: Queryable): Promise<MasterDefect[]>;
   /** Active map rows whose area, sub-area, family and defect are active too. */
   activeAreaMap(q?: Queryable): Promise<AreaMapRow[]>;
+  /**
+   * The family of each defect that has a map row, preferring an active row. `defects` has no family column
+   * (doc 02 §3.4); the import gives every map row of a defect the defect's family from `Defect_Master`.
+   */
+  defectFamilies(q?: Queryable): Promise<{ defectId: DefectId; familyId: string }[]>;
 
   findActiveUser(username: string, level: PsiLevel, q?: Queryable): Promise<User | null>;
   /** The cell when it and its factory are both active and it belongs to that factory. */
@@ -187,6 +192,17 @@ export class PgMasterDataRepository implements MasterDataRepository {
          JOIN defects d ON d.id = m.defect_id AND d.active
         WHERE m.active
         ORDER BY m.id`,
+    );
+    return rows;
+  }
+
+  async defectFamilies(
+    q: Queryable = this.db,
+  ): Promise<{ defectId: DefectId; familyId: string }[]> {
+    const { rows } = await q.query<{ defectId: DefectId; familyId: string }>(
+      `SELECT DISTINCT ON (defect_id) defect_id AS "defectId", family_id AS "familyId"
+         FROM area_map
+        ORDER BY defect_id, active DESC, id`,
     );
     return rows;
   }

@@ -2,7 +2,20 @@
  * The API's access to PostgreSQL (doc 03 §5.1 DatabaseModule): one `pg` pool, connected as `m100_app`, and a
  * transaction helper. Repositories take a `Queryable`, so a caller can run several of them in one transaction.
  */
-import type { Pool, QueryResult, QueryResultRow } from 'pg';
+import { Logger } from '@nestjs/common';
+import { Pool, type QueryResult, type QueryResultRow } from 'pg';
+
+/**
+ * A pool for `connectionString`. An idle client whose connection dies (the database was restarted or stopped)
+ * emits `error` on the pool; it is logged instead of taking the process down, and the next query reconnects.
+ */
+export function createPool(connectionString: string, applicationName: string): Pool {
+  const pool = new Pool({ connectionString, application_name: applicationName });
+  pool.on('error', (error) =>
+    new Logger('Database').warn(`Idle connection lost: ${error.message}`),
+  );
+  return pool;
+}
 
 /** Anything that runs a parameterised query: the `Database`, or the client of an open transaction. */
 export interface Queryable {

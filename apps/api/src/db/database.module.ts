@@ -1,5 +1,4 @@
 import { Global, Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
-import { Pool } from 'pg';
 import { APP_CONFIG } from '../config/config.module';
 import type { Config } from '../config/env';
 import { ADMIN_REPOSITORY, PgAdminRepository } from '../repositories/admin.repository';
@@ -10,12 +9,13 @@ import {
   PgMasterDataRepository,
 } from '../repositories/master-data.repository';
 import { PgPoRepository, PO_REPOSITORY } from '../repositories/po.repository';
+import { PgReadinessRepository, READINESS_REPOSITORY } from '../repositories/readiness.repository';
 import { PgSettingsRepository, SETTINGS_REPOSITORY } from '../repositories/settings.repository';
 import {
   PgSubmissionRepository,
   SUBMISSION_REPOSITORY,
 } from '../repositories/submission.repository';
-import { Database } from './database';
+import { createPool, Database } from './database';
 
 const REPOSITORIES = [
   [SETTINGS_REPOSITORY, PgSettingsRepository],
@@ -25,6 +25,7 @@ const REPOSITORIES = [
   [ADMIN_REPOSITORY, PgAdminRepository],
   [AUDIT_LOG_REPOSITORY, PgAuditLogRepository],
   [SUBMISSION_REPOSITORY, PgSubmissionRepository],
+  [READINESS_REPOSITORY, PgReadinessRepository],
 ] as const;
 
 /**
@@ -36,10 +37,7 @@ const REPOSITORIES = [
   providers: [
     {
       provide: Database,
-      useFactory: (config: Config) =>
-        new Database(
-          new Pool({ connectionString: config.databaseUrl, application_name: 'm100 api' }),
-        ),
+      useFactory: (config: Config) => new Database(createPool(config.databaseUrl, 'm100 api')),
       inject: [APP_CONFIG],
     },
     ...REPOSITORIES.map(([token, Repository]) => ({
