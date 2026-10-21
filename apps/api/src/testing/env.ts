@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Config, loadConfig } from '../config/env';
@@ -11,12 +13,25 @@ export const TEST_ENV: Readonly<Record<string, string>> = {
   TZ: 'Asia/Jakarta',
 };
 
-/** `PHOTO_DIR` in the system's temp folder: the readiness probe of an app under test writes there, not in `src`. */
+/** A fresh signing key per test process, in the system's temp folder. */
+const JWT_KEY_FILE = join(tmpdir(), `m100-test-jwt-${process.pid}.key`);
+writeFileSync(JWT_KEY_FILE, randomBytes(32));
+
+/** The key an app under test signs its tokens with, to make tokens a test needs (expired, other audience, …). */
+export function testJwtKey(): Buffer {
+  return readFileSync(JWT_KEY_FILE);
+}
+
+/**
+ * `PHOTO_DIR` in the system's temp folder: the readiness probe of an app under test writes there, not in `src`.
+ * `JWT_KEY_FILE` is this process's test key.
+ */
 export function testConfig(overrides: Partial<Config> = {}): Config {
   return {
     ...loadConfig(TEST_ENV),
     logLevel: 'fatal',
     photoStore: { kind: 'disk', dir: join(tmpdir(), 'm100-test-photos') },
+    jwtKeyFile: JWT_KEY_FILE,
     ...overrides,
   };
 }

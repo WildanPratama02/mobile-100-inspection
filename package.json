@@ -18,7 +18,10 @@
     "e2e:install": "pnpm --filter web exec playwright install chromium",
     "db:bootstrap": "pnpm --filter api db:bootstrap",
     "db:migrate": "pnpm --filter api db:migrate",
-    "import-master": "pnpm --filter api import-master"
+    "import-master": "pnpm --filter api import-master",
+    "device:add": "pnpm --filter api device:add",
+    "device:revoke": "pnpm --filter api device:revoke",
+    "device:list": "pnpm --filter api device:list"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

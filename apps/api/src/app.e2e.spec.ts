@@ -4,6 +4,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { configureApp } from './app';
+import { Auth } from './auth/auth.decorator';
 import { AppModule } from './app.module';
 import { RATE_LIMIT } from './throttle/device-throttler.guard';
 import { testConfig } from './testing/env';
@@ -11,6 +12,7 @@ import { expectMatchesSpec, expectProblem } from './testing/openapi';
 
 /** Routes that exist only in this test, to reach the error paths. */
 @Controller('test')
+@Auth('none')
 class ProbeController {
   @Get('boom')
   boom(): never {

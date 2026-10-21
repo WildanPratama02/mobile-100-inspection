@@ -27,13 +27,23 @@ async function bootstrap(): Promise<void> {
   // `.env` in the install folder (doc 03 §7.4); the service wrapper starts the API there.
   const envFile = resolve(process.cwd(), '.env');
   if (existsSync(envFile)) process.loadEnvFile(envFile);
-  const config = readConfigOrExit(process.env, {
+  const exit: Exit = {
     exit: (code) => process.exit(code),
     writeError: (text) => process.stderr.write(text),
-  });
-  const app = await NestFactory.create<NestExpressApplication>(AppModule.forConfig(config), {
-    bufferLogs: true,
-  });
+  };
+  const config = readConfigOrExit(process.env, exit);
+  let app: NestExpressApplication;
+  try {
+    app = await NestFactory.create<NestExpressApplication>(AppModule.forConfig(config), {
+      bufferLogs: true,
+      abortOnError: false,
+    });
+  } catch (error) {
+    // A file named by the configuration is unusable, e.g. JWT_KEY_FILE (T2.5).
+    if (!(error instanceof ConfigError)) throw error;
+    exit.writeError(`${error.message}\n`);
+    return exit.exit(1);
+  }
   configureApp(app);
   // Only Caddy listens on the network; the API stays on loopback (doc 03 §7.1).
   await app.listen(config.port, '127.0.0.1');
