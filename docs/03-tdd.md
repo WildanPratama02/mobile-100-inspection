@@ -80,7 +80,7 @@ reference/       prototype and mapping inputs (read only)
 docs/
 ```
 
-`packages/shared` is used by the PWA and the API for the things that must never disagree: the counting rules (ADR-008), the Top 5 order (AC-05.1) and the formatters. The API recomputes the totals from the findings and rejects a payload whose totals differ (doc 04 §4.2).
+`packages/shared` is used by the PWA and the API for the things that must never disagree: the counting rules (ADR-008), the Top 5 order (AC-05.1) and the formatters. The request carries no totals (doc 04 §4.1): the API computes them from the counts and findings and rejects counts that disagree with the findings (doc 04 §4.2 rules 3–4).
 
 ## 4. The PWA
 
@@ -276,7 +276,7 @@ The steps and their invariants are in doc 02 §6; this document adds only:
 | Cannot connect, pool timeout | `DB` check fails, `submitEnabled=false` | `503 DB_UNAVAILABLE` (retryable) → Menunggu koneksi, resend |
 | Photo store unreachable or full | `PHOTO_STORE` check fails | `503 PHOTO_STORE_UNAVAILABLE` (retryable) |
 | Serialization failure / deadlock in the transaction | retry once inside the request | normal answer |
-| The request's totals disagree with the findings | rejected in validation (doc 04 §4.2); nothing written | `422 VALIDATION_FAILED` |
+| The request's counts disagree with its findings (a finding of a type never started, no inspection at all) | rejected in validation (doc 04 §4.2); nothing written | `422 VALIDATION_FAILED` |
 | The in-transaction re-check or a table constraint fails (a server bug) | roll back, log request id and body | `500 INTERNAL` |
 | Anything else | log request id; `INTERNAL` | `500`, retried with back-off; needs a developer |
 

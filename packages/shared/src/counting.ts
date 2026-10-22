@@ -15,7 +15,6 @@ import type {
   InspectionType,
   SessionEvent,
 } from './domain';
-import type { MappingIndex } from './mapping';
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
@@ -284,14 +283,16 @@ export function rankDefects(
   );
 }
 
+/** The severity of a defect by id: the mapping (`MappingIndex`) on the tablet, the `defects` table on the API. */
+export interface DefectLookup {
+  defect(id: string): { classification: Classification } | undefined;
+}
+
 /**
  * TOP 5 DEFECT (FR-05, doc 03 §5.5): Home on the tablet, the photo check and Top 5 on the API, from the same
- * findings. `defects` is the mapping on the tablet and the master `defects` table on the API.
+ * findings.
  */
-export function top5(
-  list: readonly Finding[],
-  defects: Pick<MappingIndex, 'defect'>,
-): RankedDefect[] {
+export function top5(list: readonly Finding[], defects: DefectLookup): RankedDefect[] {
   return rankDefects(list, (id) => {
     const defect = defects.defect(id);
     if (!defect) throw new Error(`Unknown defect ${id}`);

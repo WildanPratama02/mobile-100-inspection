@@ -114,7 +114,7 @@ The result returns these totals; the tablet compares them with what it showed th
 
 ### 4.2 Checks before anything is written
 
-All failures are collected and returned together as one `422 VALIDATION_FAILED` with an `errors` list (path, code, message), unless a more specific code is named.
+All failures are collected and returned together as one `422 VALIDATION_FAILED` with an `errors` list (path, code, message), unless a more specific code is named. Each entry of `errors` carries its own code; when every failure has the same specific code (for example only Top 5 photos are missing), the answer carries that code (`PHOTO_MISSING`), otherwise `VALIDATION_FAILED`. `PO_NOT_FOUND` is `422` here.
 
 1. `user`, `factory`, `cell` match the token and exist, active, in the master data (`USER_NOT_FOUND`, `CELL_NOT_FOUND`).
 2. `po` exists in `pos` (`PO_NOT_FOUND`).

@@ -100,6 +100,11 @@ export function expectMatchesSpec(res: Response, method: string, path: string): 
   }
 }
 
+/** A value matches a schema of the spec, e.g. `#/components/schemas/Problem`, without a response around it. */
+export function expectMatchesSchema(value: unknown, ref: string): void {
+  check(validatorFor({ $ref: ref }), value, ref);
+}
+
 /**
  * An error response with no operation behind it (an unknown route, a body the parser refused): problem+json
  * matching the `Problem` schema, with the given status and code. Returns the checked body.
