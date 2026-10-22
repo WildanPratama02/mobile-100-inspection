@@ -239,7 +239,8 @@ describe('PgSubmissionRepository.write (doc 02 §6.1 step 4)', () => {
 
 describe('PgSubmissionRepository.photoKeysInUse (orphan sweep, doc 02 §6.2)', () => {
   it('returns the keys that a submission_photos row points to, and only those', async () => {
-    const s = newSubmission();
+    // No partial: the test above lowered the PO's order quantity below 1.200.
+    const s = newSubmission({ partial: null });
     await repo.write(s);
     const used = s.photos.map((p) => p.objectKey);
     const unused = `submissions/2026/10/${randomUUID()}/D001.jpg`;
