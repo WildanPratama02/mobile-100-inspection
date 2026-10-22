@@ -82,3 +82,37 @@ export class Database implements Queryable {
     return this.pool.end();
   }
 }
+
+/** The SQLSTATE of an error from PostgreSQL, `undefined` for anything else (a network error has `ECONN…`). */
+function sqlStateOf(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : undefined;
+}
+
+/** Errors `pg` raises itself when the connection is lost or cannot be made; they carry no code. */
+const CONNECTION_MESSAGES =
+  /Connection terminated|timeout exceeded when trying to connect|connection error|Client was closed/i;
+
+/**
+ * Whether `error` means the database cannot be reached right now (doc 03 §5.7: `503 DB_UNAVAILABLE`, retryable),
+ * as opposed to a statement that failed (a constraint, a bug: `500 INTERNAL`). Unreachable: a socket error
+ * (`ECONNREFUSED`, `ETIMEDOUT`, …), a connection `pg` lost or could not open in time, and the SQLSTATE classes
+ * connection exception (08), insufficient resources (53) and operator intervention (57: shut down, restarting),
+ * plus 55000 for a database that does not accept connections.
+ */
+export function isDbUnavailable(error: unknown): boolean {
+  const state = sqlStateOf(error);
+  if (state) return ['08', '53', '57'].includes(state.slice(0, 2)) || state === '55000';
+  // Structural, not `instanceof Error`: socket errors may come from another realm (Jest's sandbox).
+  const { code, message } = (error ?? {}) as { code?: unknown; message?: unknown };
+  return (
+    (typeof code === 'string' && /^E[A-Z]+$/.test(code)) ||
+    (typeof message === 'string' && CONNECTION_MESSAGES.test(message))
+  );
+}
+
+/** A serialization failure or deadlock: the transaction may simply be run again (doc 03 §5.7). */
+export function isRetryableTransactionError(error: unknown): boolean {
+  const state = sqlStateOf(error);
+  return state === '40001' || state === '40P01';
+}

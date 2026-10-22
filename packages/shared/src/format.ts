@@ -40,6 +40,11 @@ export function partialText(partial: PoPartial, orderQty: number): string {
   return `P${partial.number} ${formatCount(partial.qty)} OF ${formatCount(orderQty)}`;
 }
 
+/** A submission's human number `display_no` as `M100-000123` (doc 02 §4.1): the API answer and the admin app. */
+export function formatDisplayNo(displayNo: number): string {
+  return `M100-${String(displayNo).padStart(6, '0')}`;
+}
+
 /** A PO date `YYYY-MM-DD` as `dd MMM yyyy` (`16 Okt 2026`, doc 05 §9.1); empty or unreadable → `-`. */
 export function formatDate(date: string | null): string {
   const match = date === null ? null : /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
