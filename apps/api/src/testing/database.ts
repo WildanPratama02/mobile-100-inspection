@@ -38,18 +38,22 @@ export interface TestDatabase {
   drop(): Promise<void>;
 }
 
-/** The superuser URL of `TEST_ADMIN_DATABASE_URL`; throws, naming the variable, when it is not set. */
-export function adminUrl(): URL {
+/** A test-only variable from the environment, else from `apps/api/.env`; `undefined` when set in neither. */
+export function testEnvValue(name: string): string | undefined {
   const envFile = resolve(__dirname, '..', '..', '.env');
-  let value = process.env.TEST_ADMIN_DATABASE_URL?.trim();
+  let value = process.env[name]?.trim();
   if (!value && existsSync(envFile)) {
     // Not process.loadEnvFile: under Jest it fills the real process.env, not the test sandbox's copy. A BOM (as
     // Notepad may write) would hide the first key from parseEnv.
     const text = readFileSync(envFile, 'utf8');
-    value = parseEnv(
-      text.charCodeAt(0) === 0xfeff ? text.slice(1) : text,
-    ).TEST_ADMIN_DATABASE_URL?.trim();
+    value = parseEnv(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text)[name]?.trim();
   }
+  return value || undefined;
+}
+
+/** The superuser URL of `TEST_ADMIN_DATABASE_URL`; throws, naming the variable, when it is not set. */
+export function adminUrl(): URL {
+  const value = testEnvValue('TEST_ADMIN_DATABASE_URL');
   if (!value) {
     throw new Error(
       'TEST_ADMIN_DATABASE_URL is missing: database tests need a PostgreSQL superuser URL in apps/api/.env',

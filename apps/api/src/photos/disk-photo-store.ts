@@ -5,24 +5,19 @@
  * rename that Windows refuses for a moment (a reader or a virus scanner holding the file) is retried.
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, rename, rm, stat } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { mkdir, open, readdir, readFile, rename, rm, stat, utimes } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { Readable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   InvalidPhotoKey,
+  isPhotoKey,
   PhotoChecksumMismatch,
   PhotoNotFound,
+  photoKeySegments,
   type PhotoStore,
+  type ListedPhoto,
 } from './photo-store';
-
-/**
- * One key segment: letters, digits, `.`, `_`, `-`, neither starting nor ending with a dot. That rules out `.` and
- * `..`, drive letters, `\`, `:` (NTFS streams), names Windows would silently trim, and the dot-prefixed temp files.
- */
-const SEGMENT = /^[A-Za-z0-9_-](?:[A-Za-z0-9._-]*[A-Za-z0-9_-])?$/;
-/** Windows device names, which address a device instead of a file whatever the extension. */
-const DEVICE_NAME = /^(?:con|prn|aux|nul|com\d|lpt\d)(?:\.|$)/i;
 
 const RENAME_ATTEMPTS = 5;
 const RETRYABLE_RENAME = new Set(['EPERM', 'EBUSY', 'EACCES']);
@@ -42,7 +37,12 @@ export class DiskPhotoStore implements PhotoStore {
     if (createHash('sha256').update(jpeg).digest('hex') !== sha256.toLowerCase()) {
       throw new PhotoChecksumMismatch(key);
     }
-    if (await holds(file, jpeg)) return;
+    if (await holds(file, jpeg)) {
+      // A retry: renew the time so the orphan sweep counts the photo as new (doc 02 §6.2).
+      const now = new Date();
+      await utimes(file, now, now);
+      return;
+    }
 
     // The folder itself must exist: creating it would hide a share that is not mounted.
     if (!(await stat(this.root).catch(() => null))?.isDirectory()) {
@@ -95,13 +95,22 @@ export class DiskPhotoStore implements PhotoStore {
     }
   }
 
+  /** Every file under the folder whose relative path is a valid key; temp files and anything else are skipped. */
+  async *list(): AsyncIterable<ListedPhoto> {
+    const entries = await readdir(this.root, { recursive: true, withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const key = relative(this.root, join(entry.parentPath, entry.name)).split(sep).join('/');
+      if (!isPhotoKey(key)) continue;
+      // Gone since the folder was read (a concurrent delete).
+      const info = await stat(this.pathOf(key)).catch(() => null);
+      if (info) yield { key, lastModified: info.mtime };
+    }
+  }
+
   /** The file for `key`, refusing anything that is not a plain relative path inside the folder. */
   private pathOf(key: string): string {
-    const segments = key.split('/');
-    if (!segments.every((s) => SEGMENT.test(s) && !DEVICE_NAME.test(s))) {
-      throw new InvalidPhotoKey(key);
-    }
-    const file = resolve(this.root, ...segments);
+    const file = resolve(this.root, ...photoKeySegments(key));
     const inside = relative(this.root, file);
     if (inside === '' || inside.startsWith('..') || isAbsolute(inside))
       throw new InvalidPhotoKey(key);
