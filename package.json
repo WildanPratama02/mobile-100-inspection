@@ -10,6 +10,7 @@
     "dev": "pnpm --filter web dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
+    "test:load": "pnpm --filter api test:load",
     "lint": "eslint .",
     "typecheck": "pnpm -r typecheck",
     "e2e": "pnpm --filter web e2e",

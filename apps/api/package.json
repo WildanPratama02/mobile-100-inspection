@@ -15,6 +15,7 @@
     "device:list": "pnpm run build && node dist/cli/device-list.js",
     "sweep-photos": "pnpm run build && node dist/cli/sweep-photos.js",
     "test": "jest",
+    "test:load": "pnpm run build && jest --runInBand --testPathIgnorePatterns /node_modules/ --testPathPatterns \\.load\\.spec\\.ts$",
     "test:watch": "jest --watch",
     "typecheck": "tsc --noEmit"
   },
@@ -59,6 +60,10 @@
     "rootDir": "src",
     "testEnvironment": "node",
     "testRegex": ".*\\.spec\\.ts$",
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "\\.load\\.spec\\.ts$"
+    ],
     "moduleFileExtensions": [
       "js",
       "json",
