@@ -60,6 +60,9 @@ class FailingStore implements PhotoStore {
   probe() {
     return this.inner.probe();
   }
+  list() {
+    return this.inner.list();
+  }
   arm(failAfter: number | null): void {
     this.failAfter = failAfter;
     this.puts = 0;

@@ -193,8 +193,11 @@ interface PhotoStore {
   exists(key: string): Promise<boolean>
   delete(key: string): Promise<void>                              // orphan sweep only
   probe(): Promise<void>                                          // readiness check PHOTO_STORE
+  list(): AsyncIterable<{ key: string; lastModified: Date }>      // orphan sweep only
 }
 ```
+
+A put of the same bytes renews `lastModified`, so the photos of a retry that arrives more than 24 hours after its first attempt are not taken by the sweep. `sweep-photos` looks only at keys under `submissions/` and `_probe/`; a real run writes one `audit_log` row (`script:sweep-photos`) with the deleted keys.
 
 | Implementation | When |
 |---|---|

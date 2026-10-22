@@ -236,3 +236,15 @@ describe('PgSubmissionRepository.write (doc 02 §6.1 step 4)', () => {
     ]);
   });
 });
+
+describe('PgSubmissionRepository.photoKeysInUse (orphan sweep, doc 02 §6.2)', () => {
+  it('returns the keys that a submission_photos row points to, and only those', async () => {
+    const s = newSubmission();
+    await repo.write(s);
+    const used = s.photos.map((p) => p.objectKey);
+    const unused = `submissions/2026/10/${randomUUID()}/D001.jpg`;
+    expect(await repo.photoKeysInUse([...used, unused])).toEqual(new Set(used));
+    expect(await repo.photoKeysInUse([unused])).toEqual(new Set());
+    expect(await repo.photoKeysInUse([])).toEqual(new Set());
+  });
+});

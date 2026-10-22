@@ -279,7 +279,7 @@ Computed by the API from the tablet's `counts` and `findings` with the ADR-008 r
 
 ## 7. Photo storage
 
-- **Interface.** `PhotoStore` (doc 03 §5.2): `put`, `get` (stream), `exists`, `delete`, `probe`. Implementations: `S3PhotoStore` (any S3-compatible server, using `@aws-sdk/client-s3` with path-style addressing) and `DiskPhotoStore` (a folder, `PHOTO_DIR`).
+- **Interface.** `PhotoStore` (doc 03 §5.2): `put`, `get` (stream), `exists`, `delete`, `probe`, `list` (for the orphan sweep). Implementations: `S3PhotoStore` (any S3-compatible server, using `@aws-sdk/client-s3` with path-style addressing) and `DiskPhotoStore` (a folder, `PHOTO_DIR`).
 - **Bucket and key.** Bucket `m100-photos`, private, no public access. Key: `submissions/<yyyy>/<MM>/<submission uuid>/<defect id>.jpg`, for example `submissions/2026/10/0f6b6c1e-6a52-4c9f-9a3e-5d7a2b0c41f2/D035.jpg`. The year and month come from `inspection_date`.
 - **Content.** JPEG, ≤ 960 px on the long edge, ≤ 1 MB, about 100–200 KB (AC-10.1). The API checks the JPEG signature and SHA-256; it does not re-encode.
 - **Access.** Tablets never read photos back. Admins view a photo through `GET /v1/admin/photos/{id}`, which checks the admin session and streams the object; no pre-signed URLs and no public address are used.

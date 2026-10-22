@@ -21,7 +21,8 @@
     "import-master": "pnpm --filter api import-master",
     "device:add": "pnpm --filter api device:add",
     "device:revoke": "pnpm --filter api device:revoke",
-    "device:list": "pnpm --filter api device:list"
+    "device:list": "pnpm --filter api device:list",
+    "sweep-photos": "pnpm --filter api sweep-photos"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
