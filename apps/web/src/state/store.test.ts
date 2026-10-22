@@ -648,10 +648,14 @@ describe('submitPo (FR-11, doc 03 §4.6)', () => {
       po: PO.po,
       authorUsername: A.username,
       authorToken: null,
+      authorTokenExpiresAt: null,
       state: 'waiting',
       attempts: 0,
       lastAttemptAt: null,
       problem: null,
+      problemErrors: [],
+      displayNo: null,
+      sentAt: null,
     });
     expect(item.nextAttemptAt).toBe(item.sealedAt);
     const after = store.getState();
@@ -710,6 +714,16 @@ describe('submitPo (FR-11, doc 03 §4.6)', () => {
     const reloaded = (await reopen()).getState();
     expect(reloaded.outbox).toEqual([item]);
     expect(reloaded.sessions).toEqual(store.getState().sessions);
+  });
+
+  it('reloadOutbox shows what the sender wrote, for the logged-in PSI only (AC-11.3, U14)', async () => {
+    const store = await readyToSubmit();
+    const item = await store.getState().submitPo(PO.po, mapping);
+    await db.outbox.update(item.submissionUuid, { state: 'sent', displayNo: 'M100-000001' });
+    await db.outbox.add({ ...item, submissionUuid: 'other', authorUsername: 'psi.lain' });
+    await store.getState().reloadOutbox();
+    expect(store.getState().outbox).toEqual([{ ...item, state: 'sent', displayNo: 'M100-000001' }]);
+    expect(waitingCount(store.getState())).toBe(0);
   });
 
   it('refuses by the checks of doc 05 §13.1 and writes nothing', async () => {

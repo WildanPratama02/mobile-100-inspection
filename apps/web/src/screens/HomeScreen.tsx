@@ -5,8 +5,8 @@
  *
  * For PSI lv.2 the Top 5 rows carry the photo control (FR-10, doc 05 §8.3, §12); PSI lv.1 gets none.
  * EXPORT PDF / EXPORT EXCEL make a file of the open session on the tablet (FR-12, doc 05 §8.5). SUBMIT PO runs
- * the checks and the confirmation of S8 and seals the session into the outbox (FR-11, doc 05 §13); the header
- * counts the PSI's waiting submissions (AC-11.3).
+ * the checks and the confirmation of S8, seals the session into the outbox and hands it to the outbox sender
+ * (FR-11, doc 05 §13); the header counts the PSI's waiting submissions (AC-11.3).
  */
 import { useRef, useState, type ChangeEvent } from 'react';
 import {
@@ -15,6 +15,7 @@ import {
   formatCount,
   formatPartial,
   formatRate,
+  formatTime,
   missingPhotos,
   takesPhotos,
   top5,
@@ -33,6 +34,7 @@ import type { Auth, PhotoRow, PoRow } from '../db/schema';
 import { exportFile, type ExportFormat } from '../export/exportFile';
 import { exportReport } from '../export/report';
 import { saveFile } from '../export/saveFile';
+import { useOutboxSender } from '../outbox/useOutboxSender';
 import { toJpeg } from '../photos/resize';
 import { usePhotoUrl } from '../photos/usePhotoUrl';
 import {
@@ -99,6 +101,7 @@ export function HomeScreen({ auth }: HomeScreenProps) {
   const removePhoto = useAppStore((s) => s.removePhoto);
   const submitPo = useAppStore((s) => s.submitPo);
   const waiting = useAppStore(waitingCount);
+  const sender = useOutboxSender();
   const toast = useToast();
   const [open, setOpen] = useState<Open | null>(null);
   const close = () => setOpen(null);
@@ -172,14 +175,25 @@ export function HomeScreen({ auth }: HomeScreenProps) {
   };
 
   /**
-   * KIRIM (doc 05 §13.3): the session is sealed on the tablet and Home shows the PO's new empty session. Sending
-   * comes with the outbox sender (T3.6); until then every submission waits.
+   * KIRIM (doc 05 §13.3): the session is sealed on the tablet and Home shows the PO's new empty session at once;
+   * Home never waits for the answer. Online, "Sedang dikirim." until the first attempt ends: "PO terkirim HH:mm"
+   * or "Tersimpan. Menunggu koneksi."; a refusal is announced by `useFailedOutboxToast`.
    */
   const onSend = () => {
     if (!po) return;
     close();
     submitPo(po.po, mapping)
-      .then(() => toast('Tersimpan. Menunggu koneksi.'))
+      .then(async (item) => {
+        if (!sender || !navigator.onLine) {
+          toast('Tersimpan. Menunggu koneksi.');
+          return;
+        }
+        toast('Sedang dikirim.');
+        const after = await sender.send(item.submissionUuid);
+        if (after?.state === 'sent' && after.sentAt)
+          toast(`PO terkirim ${formatTime(after.sentAt)}`);
+        else if (after?.state !== 'failed') toast('Tersimpan. Menunggu koneksi.');
+      })
       .catch((error: unknown) => {
         console.error(error);
         toast('PO gagal disimpan. Coba lagi.', 'error');

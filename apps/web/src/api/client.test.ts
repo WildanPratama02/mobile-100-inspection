@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, OfflineError, SERVER_ERROR } from '../data/sources';
-import { apiFetch, type Fetch } from './client';
+import { apiFetch, retryAfterOf, type Fetch } from './client';
 
 function answering(response: Response) {
   const fetchImpl = vi.fn<Fetch>(() => Promise.resolve(response));
@@ -81,6 +81,48 @@ describe('apiFetch (doc 04 §1–2, §6)', () => {
       code: 'TOKEN_EXPIRED',
       detail: SERVER_ERROR,
     });
+  });
+
+  it('sends a multipart body as is, leaving its Content-Type to the browser', async () => {
+    const { fetchImpl, sent } = answering(Response.json({}, { status: 201 }));
+    const form = new FormData();
+    form.append('submission', new Blob(['{}'], { type: 'application/json' }));
+    await apiFetch(
+      { method: 'POST', path: '/submissions', deviceKey: 'k', token: 'jwt', form },
+      fetchImpl,
+    );
+    const { init, headers } = sent();
+    expect(init.body).toBe(form);
+    expect(headers.has('Content-Type')).toBe(false);
+  });
+
+  it('keeps the failed checks of a 422 and the Retry-After of a 429/503 (doc 04 §4.2, §5)', async () => {
+    const errors = [{ path: 'po', code: 'PO_NOT_FOUND', message: 'PO tidak ditemukan.' }];
+    const refused = await apiFetch(
+      { path: '/submissions', deviceKey: 'k' },
+      answering(problem(422, { code: 'PO_NOT_FOUND', detail: 'x', errors })).fetchImpl,
+    ).catch((e: unknown) => e);
+    expect(refused).toMatchObject({ errors, retryAfter: null });
+
+    const limited = await apiFetch(
+      { path: '/submissions', deviceKey: 'k' },
+      answering(
+        new Response(JSON.stringify({ code: 'RATE_LIMITED' }), {
+          status: 429,
+          headers: { 'Retry-After': '12' },
+        }),
+      ).fetchImpl,
+    ).catch((e: unknown) => e);
+    expect(limited).toMatchObject({ code: 'RATE_LIMITED', errors: [], retryAfter: 12 });
+  });
+
+  it('reads Retry-After as seconds or as an HTTP date', () => {
+    const now = Date.parse('2026-10-16T07:00:00Z');
+    expect(retryAfterOf('30', now)).toBe(30);
+    expect(retryAfterOf('Fri, 16 Oct 2026 07:01:30 GMT', now)).toBe(90);
+    expect(retryAfterOf('Fri, 16 Oct 2026 06:00:00 GMT', now)).toBe(0);
+    expect(retryAfterOf('soon', now)).toBeNull();
+    expect(retryAfterOf(null, now)).toBeNull();
   });
 
   it('counts no connection, a timeout and a proxy page without the API as offline', async () => {

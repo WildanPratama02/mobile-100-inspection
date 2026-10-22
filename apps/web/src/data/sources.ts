@@ -60,12 +60,23 @@ export interface DataSources {
   system: SystemSource;
 }
 
+/** One failed check of a `422` (doc 04 §4.2). */
+export interface ProblemError {
+  path: string;
+  code: string;
+  message: string;
+}
+
 /** An answer of the API with its problem+json `code`; `detail` is Indonesian and shown as is (doc 04 §6). */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     readonly detail: string,
+    /** The failed checks of a `422`; empty otherwise. */
+    readonly errors: readonly ProblemError[] = [],
+    /** Seconds from `Retry-After` (`429`, `503`); `null` without one. */
+    readonly retryAfter: number | null = null,
   ) {
     super(detail);
     this.name = 'ApiError';

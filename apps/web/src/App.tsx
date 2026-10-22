@@ -8,6 +8,13 @@ import { ToastProvider } from './app/toast';
 import { useMasterDataRefresh } from './app/useMasterDataRefresh';
 import { useWakeLock } from './app/useWakeLock';
 import type { DataSources } from './data/sources';
+import { createOutboxSender } from './outbox/sender';
+import {
+  OutboxSenderContext,
+  useFailedOutboxToast,
+  useOutboxSender,
+  useOutboxSenderLoop,
+} from './outbox/useOutboxSender';
 import { DefectScreen } from './screens/DefectScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { LoginScreen } from './screens/LoginScreen';
@@ -32,12 +39,25 @@ export interface AppProps {
 export function App({ store, sources }: AppProps) {
   const appStore = store ?? getAppStore();
   const dataSources = useMemo(() => sources ?? createApiSources(appStore), [sources, appStore]);
+  // One sender per tablet: every author's items, each with its author's token (doc 03 §4.4).
+  const sender = useMemo(
+    () =>
+      createOutboxSender({
+        db: appStore.db,
+        deviceKey: () => appStore.getState().deviceKey,
+        refresh: (token) => dataSources.auth.refresh(token),
+        onChange: () => void appStore.getState().reloadOutbox().catch(console.error),
+      }),
+    [appStore, dataSources],
+  );
   return (
     <DataSourcesContext.Provider value={dataSources}>
       <AppStoreContext.Provider value={appStore}>
-        <ToastProvider>
-          <Screens />
-        </ToastProvider>
+        <OutboxSenderContext.Provider value={sender}>
+          <ToastProvider>
+            <Screens />
+          </ToastProvider>
+        </OutboxSenderContext.Provider>
       </AppStoreContext.Provider>
     </DataSourcesContext.Provider>
   );
@@ -69,6 +89,9 @@ function Screens() {
   useApplyUpdateWhenIdle(status !== 'loading' && (!auth || (screen !== 'defect' && !inspecting)));
   // Cached copy at once, refreshed in the background (doc 05 §6 warm start).
   useMasterDataRefresh(!onSetup && status === 'ready' && deviceKey !== null);
+  // Sealed submissions go while the app is open, logged in or not (doc 03 §4.6).
+  useOutboxSenderLoop(useOutboxSender(), !onSetup && status === 'ready' && deviceKey !== null);
+  useFailedOutboxToast();
 
   useEffect(() => {
     // Restore the device key and the logged-in PSI's POs, sessions and screen from IndexedDB (doc 03 §4.3).

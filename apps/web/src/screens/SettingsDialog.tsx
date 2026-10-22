@@ -67,8 +67,8 @@ export function SettingsDialog({ auth, onClose }: SettingsDialogProps) {
 }
 
 /**
- * Pengiriman (doc 05 §14): one item per submission of this PSI, newest first, with its status in words. The
- * last attempt of a Menunggu item is shown once the sender of T3.6 records one.
+ * Pengiriman (doc 05 §14): one item per submission of this PSI, newest first, with its status in words, the last
+ * attempt of a Menunggu item once there was one, and the reason of a Gagal item (AC-11.3).
  */
 function Outbox() {
   const outbox = useAppStore((s) => s.outbox);
@@ -90,6 +90,14 @@ function Outbox() {
   );
 }
 
+/** The API's `detail` and the messages of its `errors` list (doc 04 §5). */
+function reasonOf(item: OutboxRow): string | undefined {
+  const parts = [item.problem, ...(item.problemErrors ?? [])].filter(
+    (p): p is string => typeof p === 'string' && p !== '',
+  );
+  return parts.length > 0 ? parts.join(' · ') : undefined;
+}
+
 function OutboxEntry({ item }: { item: OutboxRow }) {
   return (
     <>
@@ -97,7 +105,12 @@ function OutboxEntry({ item }: { item: OutboxRow }) {
         po={item.po}
         time={formatTime(item.sealedAt)}
         status={item.state}
-        reason={item.state === 'failed' ? (item.problem ?? undefined) : undefined}
+        reason={item.state === 'failed' ? reasonOf(item) : undefined}
+        detail={
+          item.state === 'waiting' && item.lastAttemptAt
+            ? `Dicoba terakhir ${formatTime(item.lastAttemptAt)}`
+            : undefined
+        }
       />
       {item.state === 'failed' ? (
         <small className="settings__hint">Hubungi admin dengan nomor PO ini.</small>

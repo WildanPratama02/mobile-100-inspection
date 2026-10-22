@@ -9,6 +9,7 @@ import type {
   EventRow,
   M100Db,
   MasterDataRow,
+  OutboxPhotoRow,
   OutboxRow,
   PhotoRow,
   PoRow,
@@ -309,6 +310,74 @@ export function sealSession(db: M100Db, request: SealRequest): Promise<Session> 
 
 export async function putOutboxItem(db: M100Db, item: OutboxRow): Promise<void> {
   await db.outbox.put(item);
+}
+
+export async function getOutboxItem(
+  db: M100Db,
+  submissionUuid: string,
+): Promise<OutboxRow | undefined> {
+  return db.outbox.get(submissionUuid);
+}
+
+/**
+ * The items the sender may try now, oldest seal first (doc 03 §4.6): Menunggu whose `nextAttemptAt` has come,
+ * or every Menunggu with `force` (app start, connection back).
+ */
+export async function nextOutboxItems(
+  db: M100Db,
+  now: string,
+  force: boolean,
+): Promise<OutboxRow[]> {
+  const rows = await db.outbox.where('state').equals('waiting').toArray();
+  return rows
+    .filter((o) => force || Date.parse(o.nextAttemptAt) <= Date.parse(now))
+    .sort((a, b) => a.sealedAt.localeCompare(b.sealedAt));
+}
+
+/** Changes an item and returns it as stored; `undefined` when there is no such item. */
+export async function updateOutboxItem(
+  db: M100Db,
+  submissionUuid: string,
+  patch: Partial<Omit<OutboxRow, 'submissionUuid'>>,
+): Promise<OutboxRow | undefined> {
+  return db.transaction('rw', db.outbox, async () => {
+    const updated = await db.outbox.update(submissionUuid, patch);
+    return updated === 0 ? undefined : db.outbox.get(submissionUuid);
+  });
+}
+
+export function listOutboxPhotos(db: M100Db, submissionUuid: string): Promise<OutboxPhotoRow[]> {
+  return db.outboxPhotos.where('submissionUuid').equals(submissionUuid).toArray();
+}
+
+/**
+ * An item left Mengirim by a closed or killed app is Menunggu again and is tried at once; the resend carries the
+ * same UUID and bytes (doc 04 §5, last row). Returns the items changed.
+ */
+export function resetSendingOutbox(db: M100Db, now: string): Promise<OutboxRow[]> {
+  return db.transaction('rw', db.outbox, async () => {
+    const rows = await db.outbox.where('state').equals('sending').toArray();
+    const reset = rows.map((o) => ({ ...o, state: 'waiting' as const, nextAttemptAt: now }));
+    await db.outbox.bulkPut(reset);
+    return reset;
+  });
+}
+
+/** How long a Terkirim item and its photos stay on the tablet (doc 04 §5, doc 05 §14). */
+export const SENT_KEPT_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Removes Terkirim items sent more than 7 days ago, with their photos. Gagal items are never removed (AC-11.4). */
+export function purgeSentOutbox(db: M100Db, now: string): Promise<string[]> {
+  return db.transaction('rw', db.outbox, db.outboxPhotos, async () => {
+    const cutoff = Date.parse(now) - SENT_KEPT_MS;
+    const old = (await db.outbox.where('state').equals('sent').toArray()).filter(
+      (o) => o.sentAt !== null && Date.parse(o.sentAt) <= cutoff,
+    );
+    const ids = old.map((o) => o.submissionUuid);
+    await db.outboxPhotos.where('submissionUuid').anyOf(ids).delete();
+    await db.outbox.bulkDelete(ids);
+    return ids;
+  });
 }
 
 // ---- Screen state (doc 05 §4, §8.4, §11.5) ----

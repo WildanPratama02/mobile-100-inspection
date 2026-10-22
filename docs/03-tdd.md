@@ -142,6 +142,14 @@ As built (T1.7):
 
 **Outbox sender** (a loop inside the app): runs when an item is sealed, when the browser fires `online`, when the app regains focus, and on a 30 s timer. It processes the oldest eligible item, follows the table in doc 04 §5 exactly, and sets `nextAttemptAt` with the back-off 5 s, 15 s, 1 min, 5 min, then every 5 min. It runs **only while the app is open**: items wait on the tablet until someone opens the app, and the header's waiting counter (AC-11.3) is what tells the PSI. Photos of a `Terkirim` item are deleted 7 days later.
 
+As built (T3.5):
+- `src/outbox/sender.ts` is the sender, `src/outbox/useOutboxSender.ts` runs it. One sender per tablet for every author, logged in or not (also on the login screen), each item with its own `authorToken`; it does nothing without a device key or on `/setup`. One pass at a time; a trigger during a pass queues one more pass.
+- App start and `online` try every Menunggu item at once, ignoring `nextAttemptAt` (decided 22 Oct 2026); KIRIM, focus (`focus`, `visibilitychange`) and the 30 s timer respect it, including a `Retry-After`. A pass goes oldest seal first and stops at the first item that ends Menunggu (no answer for it means none for the next).
+- Before the request the item is written Mengirim with `attempts` + 1 and `lastAttemptAt`; at start, items left Mengirim are Menunggu again (doc 04 §5 last row). The request is `multipart/form-data`: the stored `payloadJson` as a Blob `application/json`, then one `photo_<DEFECT_ID>` (`image/jpeg`, `<DEFECT_ID>.jpg`) per `photos[]` entry, from `outboxPhotos`.
+- `200`/`201` store `displayNo` and `sentAt`; the answer's totals are compared with `computeTotals` of the payload and a difference is logged (doc 04 §4.1). A `Terkirim` item and its photos are removed 7 days after `sentAt`; Gagal items never.
+- The author's token is renewed before sending when fewer than 7 days remain (`authorTokenExpiresAt`); a renewal without an answer sends with the old token. `401 TOKEN_EXPIRED` renews and resends once; a second `TOKEN_EXPIRED` waits with the back-off. A renewal answered `TOKEN_INVALID` or `DEVICE_KEY_INVALID` is Gagal like the send itself.
+- Gagal keeps `problem` (`detail`) and `problemErrors` (the `errors` messages). Any refused answer outside the table (a `4xx` the API does not send) is Gagal too, so it is never resent automatically.
+
 ### 4.7 Master data
 
 On launch and at most every 30 minutes while open (AC-13.2) the app calls `GET /master-data` with `If-None-Match`; `304` keeps the stored copy. If the call fails the stored copy is used; with no stored copy the login screen shows RETRY (AC-01.4). PO search needs a connection (AC-13.3); POs already added keep their details in `pos`.

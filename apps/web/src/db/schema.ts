@@ -80,12 +80,20 @@ export interface OutboxRow {
   /** The author's token travels with the item, so it is sent as its author after another login (doc 03 §4.4). */
   authorUsername: string;
   authorToken: string | null;
+  /** When `authorToken` expires; the sender renews it when fewer than 7 days remain (doc 03 §4.4). */
+  authorTokenExpiresAt: string | null;
   state: OutboxState;
   attempts: number;
   nextAttemptAt: string;
   lastAttemptAt: string | null;
-  /** Reason shown for `failed` (AC-11.3). */
+  /** Reason shown for `failed` (AC-11.3): the API's `detail`. */
   problem: string | null;
+  /** The messages of the API's `errors` list for `failed` (doc 04 §5). */
+  problemErrors: string[];
+  /** The API's submission number, once `sent` (doc 04 §5). */
+  displayNo: string | null;
+  /** When the API answered `201`/`200`; the item and its photos leave the tablet 7 days later. */
+  sentAt: string | null;
 }
 
 export interface OutboxPhotoRow {
