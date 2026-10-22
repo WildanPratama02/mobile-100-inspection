@@ -25,6 +25,9 @@ export const apiPort = (): number => Number(process.env.E2E_API_PORT ?? 3100);
 /** Set by global setup for the tests: a superuser URL into the test database. */
 export const DATABASE_ENV = 'E2E_DATABASE_URL';
 
+/** Set by global setup for the tests: the API's `PHOTO_DIR` (disk photo store). */
+export const PHOTO_DIR_ENV = 'E2E_PHOTO_DIR';
+
 function adminUrl(): URL {
   let value = process.env.TEST_ADMIN_DATABASE_URL?.trim();
   const envFile = join(API_DIR, '.env');
@@ -232,6 +235,7 @@ export async function startTestApi(): Promise<() => Promise<void>> {
     api.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()));
     api.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString()));
     await waitForHealth(`http://127.0.0.1:${String(apiPort())}/v1/health`, api, () => output);
+    process.env[PHOTO_DIR_ENV] = photos;
   } catch (error) {
     await stop();
     throw error;
