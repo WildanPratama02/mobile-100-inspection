@@ -179,7 +179,7 @@ describe('SubmissionValidator (doc 04 §4.2)', () => {
   describe('rule 1: user, factory and cell', () => {
     it('refuses a PSI other than the token’s with USER_NOT_FOUND', async () => {
       const problem = await refusal(
-        validator.validate(parts(body()), { ...BUDI, sub: 'TEST DEWI' }, NOW),
+        validator.validate(parts(body(), TOP), { ...BUDI, sub: 'TEST DEWI' }, NOW),
       );
       expect(problem).toMatchObject({
         status: 422,
