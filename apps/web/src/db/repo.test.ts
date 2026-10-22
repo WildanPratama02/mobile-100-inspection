@@ -232,11 +232,15 @@ const outboxItem = (submissionUuid: string, sealedAt = AT): OutboxRow => ({
   payloadSha256: 'x',
   authorUsername: A.username,
   authorToken: null,
+  authorTokenExpiresAt: null,
   state: 'waiting',
   attempts: 0,
   nextAttemptAt: sealedAt,
   lastAttemptAt: null,
   problem: null,
+  problemErrors: [],
+  displayNo: null,
+  sentAt: null,
 });
 
 describe('outbox', () => {
@@ -249,6 +253,69 @@ describe('outbox', () => {
       'u1',
     ]);
     expect((await repo.listOutbox(db, 'psi.uji.dua')).map((o) => o.submissionUuid)).toEqual(['u3']);
+  });
+
+  it('gives the sender Menunggu items oldest first, after their wait unless forced', async () => {
+    await repo.putOutboxItem(db, { ...outboxItem('later', LATER), nextAttemptAt: LATER });
+    await repo.putOutboxItem(db, { ...outboxItem('due', AT), nextAttemptAt: AT });
+    await repo.putOutboxItem(db, {
+      ...outboxItem('other-author', AT),
+      authorUsername: 'psi.uji.dua',
+    });
+    await repo.putOutboxItem(db, { ...outboxItem('failed', AT), state: 'failed' });
+    await repo.putOutboxItem(db, { ...outboxItem('sending', AT), state: 'sending' });
+    const ids = (rows: OutboxRow[]) => rows.map((o) => o.submissionUuid);
+    // Every author's items: the sender sends for all of them (doc 03 §4.4).
+    expect(ids(await repo.nextOutboxItems(db, AT, false))).toEqual(['due', 'other-author']);
+    expect(ids(await repo.nextOutboxItems(db, AT, true))).toEqual(['due', 'other-author', 'later']);
+  });
+
+  it('turns items left Mengirim back into Menunggu, due now (doc 04 §5)', async () => {
+    await repo.putOutboxItem(db, { ...outboxItem('u1', AT), state: 'sending', attempts: 2 });
+    await repo.putOutboxItem(db, { ...outboxItem('u2', AT), state: 'sent' });
+    expect((await repo.resetSendingOutbox(db, LATER)).map((o) => o.submissionUuid)).toEqual(['u1']);
+    expect(await repo.getOutboxItem(db, 'u1')).toMatchObject({
+      state: 'waiting',
+      attempts: 2,
+      nextAttemptAt: LATER,
+    });
+    expect((await repo.getOutboxItem(db, 'u2'))?.state).toBe('sent');
+  });
+
+  it('updates an item and returns it as stored', async () => {
+    await repo.putOutboxItem(db, outboxItem('u1'));
+    expect(await repo.updateOutboxItem(db, 'u1', { state: 'sending', attempts: 1 })).toMatchObject({
+      submissionUuid: 'u1',
+      state: 'sending',
+      attempts: 1,
+    });
+    expect(await repo.updateOutboxItem(db, 'none', { state: 'sending' })).toBeUndefined();
+  });
+
+  it('removes Terkirim items and their photos 7 days after sending, never Gagal ones', async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const now = '2026-10-23T01:00:00.000Z';
+    const ago = (days: number) => new Date(Date.parse(now) - days * day).toISOString();
+    await repo.putOutboxItem(db, { ...outboxItem('old'), state: 'sent', sentAt: ago(7) });
+    await repo.putOutboxItem(db, { ...outboxItem('new'), state: 'sent', sentAt: ago(6) });
+    await repo.putOutboxItem(db, { ...outboxItem('failed', ago(30)), state: 'failed' });
+    for (const id of ['old', 'new', 'failed']) {
+      await db.outboxPhotos.add({
+        submissionUuid: id,
+        defectId: 'D001',
+        blob: new Blob(['x'], { type: 'image/jpeg' }),
+        sha256: 'x',
+        takenAt: AT,
+      });
+    }
+    expect(await repo.purgeSentOutbox(db, now)).toEqual(['old']);
+    expect((await db.outbox.toArray()).map((o) => o.submissionUuid).sort()).toEqual([
+      'failed',
+      'new',
+    ]);
+    expect((await repo.listOutboxPhotos(db, 'old')).length).toBe(0);
+    expect((await repo.listOutboxPhotos(db, 'new')).length).toBe(1);
+    expect((await repo.listOutboxPhotos(db, 'failed')).length).toBe(1);
   });
 });
 

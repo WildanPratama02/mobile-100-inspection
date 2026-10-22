@@ -27,6 +27,8 @@ async function tapDefect(page: Page, name: string, qty: number) {
 test('login → add PO → REWORK 2 defects → B-GRADE 1 defect → NO DEFECT → UNDO → SUBMIT PO', async ({
   page,
 }) => {
+  // Up to the seal: the API is never reached, so the submission stays Menunggu (sending: outbox.spec.ts).
+  await page.context().route('**/v1/submissions', (route) => route.abort('internetdisconnected'));
   await page.goto('/');
   // PSI lv.1: no photo step before SUBMIT PO (AC-10.6); the PSI lv.2 path is in submit.spec.ts.
   await login(page, 'ANDI CONTOH');

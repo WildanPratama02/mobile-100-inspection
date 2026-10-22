@@ -9,7 +9,9 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../app/toast';
 import { ALL_PO_MASTER } from '../data/fixtures/pos';
-import { createDb, type Auth, type M100Db } from '../db/schema';
+import { createDb, type Auth, type M100Db, type OutboxRow } from '../db/schema';
+import type { OutboxSender } from '../outbox/sender';
+import { OutboxSenderContext } from '../outbox/useOutboxSender';
 import { exportFile } from '../export/exportFile';
 import { saveFile } from '../export/saveFile';
 import { toJpeg } from '../photos/resize';
@@ -746,6 +748,77 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
     expect(infoValue('PARTIAL')).toBe(formatPartial({ number: 2, qty: 300 }, PO.orderQty));
     expect(await db.outbox.count()).toBe(1);
     expect(await db.outboxPhotos.count()).toBe(1);
+  });
+
+  describe('after KIRIM (doc 05 §13.3)', () => {
+    function fakeSender(answer: Partial<OutboxRow> | undefined) {
+      return {
+        run: vi.fn(() => Promise.resolve()),
+        start: vi.fn(() => Promise.resolve()),
+        send: vi.fn(async (uuid: string) => {
+          const item = await db.outbox.get(uuid);
+          return item && answer ? { ...item, ...answer } : item;
+        }),
+      } satisfies OutboxSender;
+    }
+
+    async function kirim(sender: OutboxSender) {
+      await store.getState().addPo(PO, null);
+      await tap(PO.po, NO_DEFECT);
+      render(
+        <AppStoreContext.Provider value={store}>
+          <OutboxSenderContext.Provider value={sender}>
+            <ToastProvider>
+              <HomeScreen auth={AUTH} />
+            </ToastProvider>
+          </OutboxSenderContext.Provider>
+        </AppStoreContext.Provider>,
+      );
+      submit();
+      fireEvent.click(screen.getByRole('button', { name: 'KIRIM' }));
+    }
+
+    it('online: "Sedang dikirim.", then "PO terkirim HH:mm" in WIB when the API stored it', async () => {
+      let answer: (value: OutboxRow | undefined) => void = () => undefined;
+      const sender = fakeSender(undefined);
+      sender.send.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answer = resolve;
+          }),
+      );
+      await kirim(sender);
+      expect(await screen.findByText('Sedang dikirim.')).toBeInTheDocument();
+      // Home does not wait for the answer: the next round can start (doc 05 §13.3).
+      expect(stat('Qty Inspection')).toBe('0');
+      const [item] = await db.outbox.toArray();
+      expect(sender.send).toHaveBeenCalledWith(item!.submissionUuid);
+      await act(async () => {
+        answer({ ...item!, state: 'sent', sentAt: '2026-10-16T07:32:40.000Z' });
+        await Promise.resolve();
+      });
+      expect(await screen.findByText('PO terkirim 14:32')).toBeInTheDocument();
+    });
+
+    it('online without an answer: "Tersimpan. Menunggu koneksi."', async () => {
+      await kirim(fakeSender({ state: 'waiting', attempts: 1 }));
+      expect(await screen.findByText('Tersimpan. Menunggu koneksi.')).toBeInTheDocument();
+    });
+
+    it('refused: no waiting toast here; the Gagal toast comes from the outbox watcher', async () => {
+      await kirim(fakeSender({ state: 'failed', problem: 'x' }));
+      expect(await screen.findByText('Sedang dikirim.')).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByText('Tersimpan. Menunggu koneksi.')).toBeNull());
+    });
+
+    it('offline: "Tersimpan. Menunggu koneksi." at once, nothing is sent', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+      const sender = fakeSender(undefined);
+      await kirim(sender);
+      expect(await screen.findByText('Tersimpan. Menunggu koneksi.')).toBeInTheDocument();
+      expect(sender.send).not.toHaveBeenCalled();
+      vi.restoreAllMocks();
+    });
   });
 
   it('PSI lv.1 confirms without a Foto row and submits no photo (AC-10.6)', async () => {

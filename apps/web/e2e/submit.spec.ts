@@ -151,6 +151,12 @@ function stored(page: Page): Promise<Stored> {
   });
 }
 
+// These tests are about sealing: the API is never reached, so every submission stays Menunggu. Sending is in
+// outbox.spec.ts.
+test.beforeEach(async ({ page }) => {
+  await page.context().route('**/v1/submissions', (route) => route.abort('internetdisconnected'));
+});
+
 const top5 = (page: Page) => page.getByRole('region', { name: 'TOP 5 DEFECT' });
 const submitPo = (page: Page) => page.getByRole('button', { name: 'SUBMIT PO' }).click();
 const confirm = (page: Page) => page.getByRole('dialog', { name: 'Submit PO' });
@@ -243,7 +249,8 @@ test('PSI lv.2: checks in order, confirmation, KIRIM into the outbox, kept after
   await expect(badge(page)).toHaveText('1');
   await expect(results(page)).toContainText(/Qty Inspection\s*0/);
   await expect((await openOutbox(page)).getByRole('listitem')).toContainText('Menunggu');
-  expect(await stored(page)).toEqual(sealed);
+  // The reopened app tries the item at once and finds no connection: Menunggu again.
+  await expect.poll(() => stored(page)).toEqual(sealed);
 });
 
 test('PSI lv.1 submits without a photo step (AC-10.6)', async ({ page }) => {

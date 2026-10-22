@@ -391,7 +391,7 @@ The session is sealed in one transaction on the tablet (doc 03 §4.6) and the PO
 | Offline, `429`, `503`, `5xx`, timeout (no answer within 60 s) | Toast "Tersimpan. Menunggu koneksi." The header shows the waiting count (G11). The tablet resends by itself (doc 04 §5). |
 | Rejected (`409`, `413`, `422`) | The item stays in the outbox as "Gagal" with the reason in S9, and a toast error "Pengiriman PO {no} gagal. Lihat Pengaturan." (AC-11.4). No automatic resend. |
 
-Home never blocks on the result. The PSI can start the next round on the same PO immediately.
+Home never blocks on the result. The PSI can start the next round on the same PO immediately. Online, the toast "Sedang dikirim." shows at once after KIRIM and is replaced by the result's toast when the first attempt ends; offline (`navigator.onLine` false) the toast is "Tersimpan. Menunggu koneksi." at once (decided 22 Oct 2026). The "gagal" toast also shows when a background attempt of the PSI's own submission is refused.
 
 **Satisfies.** FR-11, AC-11.1…11.4, BR-04, BR-06.
 
@@ -400,7 +400,7 @@ Home never blocks on the result. The PSI can start the next round on the same PO
 `Dialog title="Pengaturan"` (anchored to the gear on Regular; centred otherwise). From top to bottom:
 
 1. **Akun** — name, level `Chip`, "Factory/Cell F3-10".
-2. **Pengiriman** — the outbox list: one `OutboxItem` per submission of the logged-in PSI (U14) (PO, time `HH:mm`, status Menunggu / Mengirim / Terkirim / Gagal, and the reason for Gagal; for Menunggu the last attempt, shown once the sender has recorded one). Newest first. "Terkirim" items stay for 7 days (doc 04 §5), then leave the list. Empty: "Tidak ada pengiriman." (AC-11.3). `Gagal` items also show the hint "Hubungi admin dengan nomor PO ini."
+2. **Pengiriman** — the outbox list: one `OutboxItem` per submission of the logged-in PSI (U14) (PO, time `HH:mm`, status Menunggu / Mengirim / Terkirim / Gagal, and the reason for Gagal; for Menunggu the last attempt, "Dicoba terakhir {HH:mm}", shown once the sender has recorded one). Newest first. "Terkirim" items stay for 7 days (doc 04 §5), then leave the list. Empty: "Tidak ada pengiriman." (AC-11.3). `Gagal` items also show the hint "Hubungi admin dengan nomor PO ini."
 3. **Data** — "Data master diperbarui {dd MMM HH:mm}" (AC-13.4).
 4. **LOGOUT** — `Button danger block` at the bottom (FR-02).
 
@@ -431,6 +431,8 @@ Exact texts beyond those quoted above, so that the coding agent does not invent 
 | NO DEFECT toast | No Defect tercatat. A-Grade +1 |
 | UNDO toasts | Defect terakhir dibatalkan / Inspeksi dibatalkan / No Defect dibatalkan |
 | Submit toasts | PO terkirim {HH:mm} / Tersimpan. Menunggu koneksi. / Sedang dikirim. |
+| Outbox, last attempt of a Menunggu item (decided 22 Oct 2026) | Dicoba terakhir {HH:mm} |
+| Outbox, Gagal reason | the API's `detail`, then the messages of its `errors`, separated by " · " |
 | Sealing failed on the tablet (KIRIM, toast error; nothing is sealed, the session stays as it was) | PO gagal disimpan. Coba lagi. (confirmed 20 Oct 2026) |
 | Waiting count badge, accessible label | {n} pengiriman menunggu |
 | Device not registered (401 DEVICE_KEY_INVALID) | Tablet belum terdaftar, hubungi admin |

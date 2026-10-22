@@ -28,11 +28,15 @@ const item = (
   payloadSha256: 'x',
   authorUsername: AUTH.username,
   authorToken: null,
+  authorTokenExpiresAt: null,
   state: 'waiting',
   attempts: 0,
   nextAttemptAt: sealedAt,
   lastAttemptAt: null,
   problem: null,
+  problemErrors: [],
+  displayNo: null,
+  sentAt: null,
   ...overrides,
 });
 
@@ -78,21 +82,37 @@ describe('Pengiriman in the gear menu (AC-11.3, doc 05 §14)', () => {
       expect.stringMatching(/0903359388.*10:00.*Terkirim/),
       expect.stringMatching(/0903359388.*08:05.*Menunggu/),
     ]);
-    // No last attempt is shown while the sender has recorded none (T3.6).
+    // No last attempt is shown while the sender has recorded none.
     expect(outbox.getAllByRole('listitem')[2]?.querySelector('small')).toBeNull();
   });
 
-  it('shows the reason and the admin hint for Gagal (AC-11.4)', async () => {
+  it('shows the last attempt of a Menunggu item in WIB (doc 05 §14)', async () => {
+    const outbox = await renderMenu(
+      item('u1', '2026-10-16T01:05:00.000Z', {
+        attempts: 2,
+        lastAttemptAt: '2026-10-16T07:35:10.000Z',
+      }),
+    );
+    expect(outbox.getByRole('listitem')).toHaveTextContent('Menunggu');
+    expect(outbox.getByRole('listitem')).toHaveTextContent('Dicoba terakhir 14:35');
+  });
+
+  it('shows the reason, the failed checks and the admin hint for Gagal (AC-11.4)', async () => {
     const outbox = await renderMenu(
       item('u1', '2026-10-16T01:05:00.000Z', {
         state: 'failed',
-        problem: 'PO tidak ditemukan di master PO.',
+        lastAttemptAt: '2026-10-16T01:05:02.000Z',
+        problem: 'Data tidak lengkap: po, counts',
+        problemErrors: ['PO tidak ditemukan di master PO.', 'Minimal satu inspeksi.'],
       }),
     );
     const row = outbox.getByRole('listitem');
     expect(row).toHaveTextContent('Gagal');
-    expect(row).toHaveTextContent('PO tidak ditemukan di master PO.');
+    expect(row).toHaveTextContent(
+      'Data tidak lengkap: po, counts · PO tidak ditemukan di master PO. · Minimal satu inspeksi.',
+    );
     expect(row).toHaveTextContent('Hubungi admin dengan nomor PO ini.');
+    expect(row).not.toHaveTextContent('Dicoba terakhir');
   });
 
   it('never shows another PSI’s submissions on a shared tablet (U14)', async () => {

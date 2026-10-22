@@ -141,10 +141,13 @@ export interface AppState {
    * written then.
    */
   submitPo: (po: string, mapping: Pick<MappingIndex, 'defect'>) => Promise<OutboxRow>;
+  /** Reads the logged-in PSI's outbox again after the sender changed it (AC-11.3). */
+  reloadOutbox: () => Promise<void>;
   setView: (patch: Partial<View>) => Promise<void>;
 }
 
-export type AppStore = StoreApi<AppState>;
+/** The store with its database, which the outbox sender reads too (`src/outbox/sender.ts`). */
+export type AppStore = StoreApi<AppState> & { readonly db: M100Db };
 
 /** SUBMIT PO was refused by a check before anything was written (doc 05 §13.1). */
 export class SubmitBlockedError extends Error {
@@ -242,7 +245,10 @@ async function loadUserData(db: M100Db, auth: Auth | null): Promise<UserData> {
   return { auth, pos, sessions, outbox, view: { ...restored, selectedPo: selected } };
 }
 
-export function createAppStore(db: M100Db, now: () => string = () => new Date().toISOString()) {
+export function createAppStore(
+  db: M100Db,
+  now: () => string = () => new Date().toISOString(),
+): AppStore {
   let queue: Promise<unknown> = Promise.resolve();
   /** Runs actions one after another; a failed action does not block the next. */
   function serial<T>(action: () => Promise<T>): Promise<T> {
@@ -251,7 +257,7 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
     return result;
   }
 
-  return createStore<AppState>()((set, get) => {
+  const store = createStore<AppState>()((set, get) => {
     function requireAuth(): Auth {
       const auth = get().auth;
       if (!auth) throw new Error('Not logged in');
@@ -518,11 +524,15 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
             payloadSha256: await sha256Hex(payloadJson),
             authorUsername: auth.username,
             authorToken: auth.token,
+            authorTokenExpiresAt: auth.tokenExpiresAt,
             state: 'waiting',
             attempts: 0,
             nextAttemptAt: sealedAt,
             lastAttemptAt: null,
             problem: null,
+            problemErrors: [],
+            displayNo: null,
+            sentAt: null,
           };
           const session = await repo.sealSession(db, {
             username: auth.username,
@@ -532,8 +542,7 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
             photos,
             at: sealedAt,
           });
-          // Home shows the new empty session at once (AC-04.2). Sending is not part of Phase 1: the item
-          // waits in the outbox until the sender of T3.6 exists.
+          // Home shows the new empty session at once (AC-04.2); the outbox sender takes the item from here.
           set((s) => ({
             sessions: {
               ...s.sessions,
@@ -544,6 +553,15 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
           return item;
         }),
 
+      // Outside `serial`: the sender's changes never hold back a tap (NFR-03); it only reads.
+      reloadOutbox: async () => {
+        const username = get().auth?.username;
+        if (!username) return;
+        const outbox = await repo.listOutbox(db, username);
+        // A logout or another login came first; its list stands.
+        if (get().auth?.username === username) set({ outbox });
+      },
+
       setView: (patch) =>
         serial(async () => {
           const username = requireUser();
@@ -553,6 +571,7 @@ export function createAppStore(db: M100Db, now: () => string = () => new Date().
         }),
     };
   });
+  return Object.assign(store, { db });
 }
 
 /**
