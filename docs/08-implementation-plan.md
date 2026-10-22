@@ -140,7 +140,7 @@ Spec: doc 02 §4, §6–8, doc 03 §5.4–5.8, doc 04 §4–5. All against the r
 
 ### T3.2 Request parsing and validation
 Multipart parsing with limits, and every check of doc 04 §4.2 with the error shapes of doc 04 §6.
-- [ ] One test per check; all failures returned together in one `VALIDATION_FAILED`; `PHOTO_MISSING` lists the defects; `PHOTO_NOT_ALLOWED` for PSI lv.1; `413` over 8 MB; a non-JPEG part is refused; totals that disagree with the findings are refused.
+- [ ] One test per check; all failures returned together in one `VALIDATION_FAILED`; `PHOTO_MISSING` lists the defects; `PHOTO_NOT_ALLOWED` for PSI lv.1; `413` over 8 MB; a non-JPEG part is refused; counts that disagree with the findings are refused (the request carries no totals, doc 04 §4.1; a `totals` field is an unknown field).
 
 ### T3.3 Submission write
 `POST /submissions` as in doc 02 §6.1 / doc 03 §5.4: UUID lookup, validation at `REPEATABLE READ`, photos first, one transaction, `201`/`200`/`409`.
