@@ -4,6 +4,7 @@ import {
   formatCount,
   formatDate,
   formatDateTime,
+  formatDisplayNo,
   formatPartial,
   formatRate,
   formatDayTime,
@@ -50,6 +51,14 @@ describe('partialText (doc 02 §4.1)', () => {
     expect(partialText({ number: 1, qty: 1200 }, 10002)).toBe('P1 1.200 OF 10.002');
     expect(partialText({ number: 12, qty: 5 }, 999)).toBe('P12 5 OF 999');
     expect(partialText({ number: 99, qty: 1234567 }, 1234567)).toBe('P99 1.234.567 OF 1.234.567');
+  });
+});
+
+describe('formatDisplayNo (doc 02 §4.1)', () => {
+  it('pads to six digits behind M100-', () => {
+    expect(formatDisplayNo(123)).toBe('M100-000123');
+    expect(formatDisplayNo(1)).toBe('M100-000001');
+    expect(formatDisplayNo(1234567)).toBe('M100-1234567');
   });
 });
 
