@@ -12,18 +12,22 @@ export function parse<S extends z.ZodType>(schema: S, input: unknown): z.output<
 }
 
 /**
- * `YYYY-MM-DD` naming a real day. Checked in one function, because zod runs a refinement also after the pattern
- * failed, and `toISOString` of an invalid date throws.
+ * `YYYY-MM-DD` naming a real day (`2026-02-30` is not one). Safe for any string: `toISOString` of an invalid date
+ * throws, so the date is checked first.
  */
 export function isCalendarDate(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
   const at = new Date(`${s}T00:00:00Z`);
   return !Number.isNaN(at.getTime()) && at.toISOString().slice(0, 10) === s;
 }
 
+/**
+ * A date field or query value. One check, not a pattern plus a refinement: zod runs a refinement also after the
+ * pattern failed, which would list the same field twice.
+ */
 export const isoDate = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine(isCalendarDate, { message: 'Bukan tanggal.' });
+  .refine(isCalendarDate, { message: 'Bukan tanggal (YYYY-MM-DD).' });
 
 /** An optional query value; an empty one is absent. */
 export const optionalQuery = <T extends z.ZodType>(schema: T) =>

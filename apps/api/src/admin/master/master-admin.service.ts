@@ -38,6 +38,7 @@ import {
   type SettingsRepository,
 } from '../../repositories/settings.repository';
 import { AdminDb } from '../admin-db';
+import { isoDate } from '../admin-input';
 
 /** Doc 05 §20.5: up to 50 hits. */
 export const ADMIN_PO_SEARCH = { minLength: 3, maxLength: 40, maxResults: 50 } as const;
@@ -59,12 +60,6 @@ const poText = z
   .refine((s) => !/[\u0000-\u001f\u007f]/.test(s), { message: 'Berisi karakter kontrol.' });
 const level = z.enum(['PSI lv.1', 'PSI lv.2']);
 const id = z.number().int().min(1).max(2_147_483_647);
-const isoDate = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((s) => new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s, {
-    message: 'Bukan tanggal.',
-  });
 const poFields = {
   article: poText,
   model: poText,
