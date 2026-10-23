@@ -499,6 +499,7 @@ describe('POs (A4)', () => {
       ['impossible', '2027-02-29'],
       ['impossible', '2026-13-01'],
       ['impossible', '2026-00-10'],
+      ['impossible', '0000-01-01'],
     ])(
       'refuses a %s date %j with 422 on add and edit, and stores nothing',
       async (_kind, value) => {

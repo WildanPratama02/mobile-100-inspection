@@ -12,11 +12,11 @@ export function parse<S extends z.ZodType>(schema: S, input: unknown): z.output<
 }
 
 /**
- * `YYYY-MM-DD` naming a real day (`2026-02-30` is not one). Safe for any string: `toISOString` of an invalid date
- * throws, so the date is checked first.
+ * `YYYY-MM-DD` naming a real day (`2026-02-30` is not one) that PostgreSQL can store: it has no year 0. Safe for any
+ * string: `toISOString` of an invalid date throws, so the date is checked first.
  */
 export function isCalendarDate(s: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || s.startsWith('0000')) return false;
   const at = new Date(`${s}T00:00:00Z`);
   return !Number.isNaN(at.getTime()) && at.toISOString().slice(0, 10) === s;
 }
