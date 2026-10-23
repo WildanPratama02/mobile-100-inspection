@@ -455,6 +455,85 @@ describe('POs (A4)', () => {
       'NOT_FOUND',
     );
   });
+
+  describe('PODD and CRD dates', () => {
+    const PO = '0907770009';
+    const stored = async () =>
+      (
+        await testDb.client.query<{ podd: string | null; crd: string | null }>(
+          `SELECT to_char(podd, 'YYYY-MM-DD') AS podd, to_char(crd, 'YYYY-MM-DD') AS crd FROM pos WHERE po = $1`,
+          [PO],
+        )
+      ).rows[0];
+
+    beforeAll(async () => {
+      const res = await admin().post('/v1/admin/pos').send({
+        po: PO,
+        article: 'ZZ0009',
+        model: 'DATE MODEL',
+        destination: 'JAPAN',
+        orderQty: 100,
+        podd: '2026-11-01',
+        crd: '2026-12-01',
+      });
+      expect(res.status).toBe(201);
+    });
+
+    it('accepts real days, a leap day and null, and stores them as sent', async () => {
+      const leap = await admin()
+        .patch(`/v1/admin/pos/${PO}`)
+        .send({ podd: '2028-02-29', crd: null });
+      expect(leap.status).toBe(200);
+      expectMatchesSpec(leap, 'patch', '/admin/pos/{po}');
+      expect(leap.body).toMatchObject({ podd: '2028-02-29', crd: null });
+      expect(await stored()).toEqual({ podd: '2028-02-29', crd: null });
+    });
+
+    it.each([
+      ['malformed', 'x'],
+      ['malformed', '17-10-2026'],
+      ['malformed', '2026-1-01'],
+      ['malformed', '2026-10-17T00:00:00Z'],
+      ['malformed', ''],
+      ['impossible', '2026-02-30'],
+      ['impossible', '2027-02-29'],
+      ['impossible', '2026-13-01'],
+      ['impossible', '2026-00-10'],
+      ['impossible', '0000-01-01'],
+    ])(
+      'refuses a %s date %j with 422 on add and edit, and stores nothing',
+      async (_kind, value) => {
+        const before = await stored();
+        for (const field of ['podd', 'crd'] as const) {
+          const edit = await admin()
+            .patch(`/v1/admin/pos/${PO}`)
+            .send({ [field]: value });
+          expectMatchesSpec(edit, 'patch', '/admin/pos/{po}');
+          const editProblem = expectProblem(edit, 422, 'VALIDATION_FAILED');
+          expect(editProblem.errors!.map((e) => e.path)).toEqual([field]);
+
+          const add = await admin()
+            .post('/v1/admin/pos')
+            .send({
+              po: '0907770010',
+              article: '',
+              model: '',
+              destination: '',
+              orderQty: 1,
+              podd: null,
+              crd: null,
+              [field]: value,
+            });
+          expectMatchesSpec(add, 'post', '/admin/pos');
+          const addProblem = expectProblem(add, 422, 'VALIDATION_FAILED');
+          expect(addProblem.errors!.map((e) => e.path)).toEqual([field]);
+        }
+        expect(await stored()).toEqual(before);
+        const { rows } = await testDb.client.query(`SELECT 1 FROM pos WHERE po = '0907770010'`);
+        expect(rows).toHaveLength(0);
+      },
+    );
+  });
 });
 
 describe('defects and the area map (A5)', () => {
