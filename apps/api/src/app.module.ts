@@ -17,7 +17,11 @@ import { MasterDataModule } from './master-data/master-data.module';
 import { PhotoStoreModule } from './photos/photo-store.module';
 import { PoModule } from './pos/po.module';
 import { SubmissionsModule } from './submissions/submissions.module';
-import { DeviceThrottlerGuard, RATE_LIMIT } from './throttle/device-throttler.guard';
+import {
+  ADMIN_PHOTO_RATE_LIMIT,
+  DeviceThrottlerGuard,
+  RATE_LIMIT,
+} from './throttle/device-throttler.guard';
 
 export interface AppModuleOptions {
   /** Replaces stdout as the log destination (tests). */
@@ -33,7 +37,10 @@ export class AppModule {
       imports: [
         ConfigModule.forConfig(config),
         LoggingModule.forConfig(config, options.logDestination),
-        ThrottlerModule.forRoot({ throttlers: [RATE_LIMIT], setHeaders: false }),
+        ThrottlerModule.forRoot({
+          throttlers: [RATE_LIMIT, ADMIN_PHOTO_RATE_LIMIT],
+          setHeaders: false,
+        }),
         DatabaseModule,
         PhotoStoreModule,
         HealthModule,

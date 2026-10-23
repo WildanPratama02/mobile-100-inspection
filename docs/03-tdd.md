@@ -277,6 +277,7 @@ The steps and their invariants are in doc 02 §6; this document adds only:
 ### 5.6 Limits and rate control
 
 - Per device: 60 requests per minute (`@nestjs/throttler`, keyed by device ID; unknown keys by IP, 20 failed key attempts per minute per IP are refused). Beyond it: `429 RATE_LIMITED` with `Retry-After`.
+- Admin calls carry no device key, so they count per client IP (Caddy's `X-Forwarded-For`; the API trusts it from loopback only): 60 per minute for every admin endpoint, login included. Decided by the product owner (23 Oct 2026, T3b.4): photo downloads of a signed-in admin (`GET /admin/photos/{id}`, one request per photo in the A1b strip) have their own budget of 300 per minute per IP and do not count against the 60. A request counts in exactly one bucket: the photo bucket when it goes to the photo route with a validly signed `m100_admin` cookie, the general one otherwise (an unauthenticated or forged-cookie photo request counts in the 60). `AdminGuard` runs after the rate limit and still refuses (`401 ADMIN_AUTH_REQUIRED`) a missing, forged or expired session or a deactivated admin before any photo is read. Beyond either budget: `429 RATE_LIMITED` with `Retry-After`.
 - Request body ≤ 8 MB, each photo part ≤ 1 MB; checked by the multipart parser (memory storage) before validation. Photo parts must start with the JPEG signature `FF D8 FF`; the server does not re-encode photos.
 - Admin login: 5 failures lock the account 10 minutes. CSV/XLSX import files ≤ 20 MB.
 
