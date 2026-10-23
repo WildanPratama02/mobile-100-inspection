@@ -181,7 +181,7 @@ As built (T2.7): `/setup` is a route of the app itself (the service worker's nav
 | Module | Contents |
 |---|---|
 | `ConfigModule` | Reads environment variables and validates them at start-up (fails fast, names the missing variable). |
-| `DatabaseModule` | PostgreSQL pool (`pg`), TypeORM for the admin CRUD entities, explicit SQL for the submission write. Runs with role `m100_app`; migrations run with `m100_migrate` (§6). |
+| `DatabaseModule` | PostgreSQL pool (`pg`), TypeORM for the admin CRUD entities, explicit SQL for the submission write. Runs with role `m100_app`; migrations run with `m100_migrate` (§6). As built (T3b.2): the TypeORM `DataSource` (own pool of 4, no `synchronize`, no migrations, no extensions) opens on the first admin request, not at start, so the API serves tablets while the database is down; a failed opening is retried by the next request. A master change, its `audit_log` row and the `master_version` bump share one TypeORM transaction. The admin imports keep the batched `pg` upserts of `import-master`. |
 | `PhotoStoreModule` | Provides `PhotoStore` (§5.2): `S3PhotoStore` or `DiskPhotoStore`, chosen by `PHOTO_STORE`. |
 | `AuthModule` | `DeviceKeyGuard` (SHA-256 of `X-Device-Key` looked up in `devices`, constant-time compare), `JwtGuard` (HS256, `aud`=`tablet`, claims `sub`, `lvl`, `fac`, `cel`, `dev`, 30 days), `/auth/login`, `/auth/refresh`; a token whose device is revoked is rejected. `AdminGuard`: cookie JWT (`aud`=`admin`, 8 h) plus the `X-Requested-With` header on state changes; argon2id passwords; 5 failures lock 10 min (doc 04 §2). |
 | `MasterDataModule` | The cached `/master-data` document with ETag = `settings.master_version`; `/system/status` and the readiness checks (doc 02 §10). |

@@ -198,17 +198,17 @@ Admin-only codes (§8): `ADMIN_AUTH_REQUIRED` 401, `ADMIN_LOGIN_FAILED` 401, `AD
 
 ## 8. Admin API
 
-Used only by the admin web app (doc 05 §20), in a desktop browser. Cookie auth as in §2; JSON in and out except the imports (multipart) and the CSV export. Every change writes an `audit_log` row (doc 02 §5.3).
+Used only by the admin web app (doc 05 §20), in a desktop browser. Cookie auth as in §2; JSON in and out except the imports (multipart) and the CSV export. Every change writes an `audit_log` row (doc 02 §5.3) with the old and new values of the changed fields, and every master-data change (POs included) bumps `master_version` in the same transaction; a change that changes nothing writes nothing. A duplicate natural key is `409 CONFLICT`. Rows are deactivated, never deleted.
 
 | Method and path | Purpose |
 |---|---|
 | `POST /admin/auth/login`, `POST /admin/auth/logout`, `GET /admin/me`, `POST /admin/me/password` | Session and own password. 5 failed logins lock the account for 10 minutes; password ≥ 10 characters |
 | `GET/POST/PATCH /admin/psi-users` | List, add, rename, change level, deactivate/reactivate (no delete) |
-| `GET/POST/PATCH /admin/factories`, `/admin/cells` | Same |
-| `GET /admin/pos?q=`, `POST /admin/pos`, `PATCH /admin/pos/{po}` | Search, add, edit one PO |
-| `POST /admin/pos/import?dryRun=true\|false` | Upload CSV/XLSX; dry run returns counts and row errors; the real run upserts by `po` and never deletes |
-| `GET /admin/defects`, `GET /admin/area-map`, `PATCH /admin/defects/{id}`, `PATCH /admin/area-map/{id}` | View; toggle `active` |
-| `POST /admin/area-map/import?dryRun=` | Upload the mapping workbook; same validation as doc 02 §5.1 |
+| `GET/POST/PATCH /admin/factories`, `/admin/cells` | Same; `GET /admin/cells?factoryId=` filters by factory |
+| `GET /admin/pos?q=`, `POST /admin/pos`, `PATCH /admin/pos/{po}` | Search (inactive included, ≤ 50), add, edit one PO; `finished` is neither set nor imported until OQ-06 |
+| `POST /admin/pos/import?dryRun=true\|false` | Upload CSV/XLSX (≤ 20 MB); dry run returns counts and row errors; the real run upserts by `po` and never deletes (§10 A9) |
+| `GET /admin/defects`, `GET /admin/area-map`, `PATCH /admin/defects/{id}`, `PATCH /admin/area-map/{id}` | View (`/admin/area-map` returns areas, sub-areas, families and map rows); toggle `active` |
+| `POST /admin/area-map/import?dryRun=` | Upload the mapping workbook; same validation as doc 02 §5.1, against the stored defects (§10 A10) |
 | `GET /admin/submissions?from=&to=&factory=&cell=&username=&po=` | Paged list |
 | `GET /admin/submissions/{id}` | Detail with findings and photo ids |
 | `GET /admin/photos/{id}` | Streams the JPEG after checking the admin session |
@@ -234,3 +234,6 @@ Used only by the admin web app (doc 05 §20), in a desktop browser. Cookie auth 
 | A6 | (v2.0) Admins use a separate cookie session with `aud` = `admin` and a password; PSI keep name-only login (§2). |
 | A7 | (21 Oct 2026, product owner, T2.5) `POST /auth/refresh` also accepts a token up to 30 days past its expiry, so the outbox's "`TOKEN_EXPIRED` → refresh, resend" (§5) works for a tablet left unused for weeks; refresh does not re-check the PSI or cell (§2). |
 | A8 | (21 Oct 2026, product owner, T2.6) `GET /pos` puts POs ending with `q` first, because PSI search by the last 3–4 digits; then other PO matches, then article/model matches, each newest PODD first. `q` is trimmed. `GET /pos/{po}` of a deactivated PO is `404` (§3.3). |
+| A9 | (23 Oct 2026, product owner, T3b.2) The admin PO import is strict (AC-14.3): every row the one-time import would skip (empty PO, `ORDER QTY` not a whole number ≥ 1, rows of one PO number that differ) is an error, and so is a non-empty PODD/CRD that is not a date. The dry run answers `200` with the errors and the counts of the valid rows; applying with any error answers `422 IMPORT_INVALID` and writes nothing. `skipped` counts unchanged rows and identical repeats; blank lines are ignored. A workbook is read from its sheet `ALL_PO_MASTER`, else its first sheet. |
+| A10 | (23 Oct 2026, product owner, T3b.2) The mapping re-import only upserts: areas, sub-areas, families and map rows stored but missing from the workbook stay as they are and are listed in `warnings`; a single map row is switched off with `PATCH /admin/area-map/{id}`. |
+| A11 | (23 Oct 2026, product owner, T3b.2) The admin CRUD uses TypeORM entities over the existing tables (doc 03 §5.1); the two imports keep the batched SQL upserts of the one-time import. |

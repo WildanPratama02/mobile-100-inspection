@@ -6,7 +6,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { parse as parseCsv } from 'csv-parse/sync';
-import { readSheet } from 'read-excel-file/node';
+import readXlsxFile, { readSheet } from 'read-excel-file/node';
 
 /** A cell as read: CSV gives text only; a workbook gives numbers, booleans and dates (UTC midnight) too. */
 export type CellValue = string | number | boolean | Date | null;
@@ -167,9 +167,16 @@ export async function readOldSheets(old: SourceFiles['old']): Promise<Record<Old
   return tables;
 }
 
-export async function readMapping(file: string): Promise<Record<MappingSheet, Table>> {
+export function readMapping(file: string): Promise<Record<MappingSheet, Table>> {
+  return mappingFromBuffer(readFile(file), file);
+}
+
+/** The mapping workbook from its bytes (an admin upload); `file` names it in messages. */
+export async function mappingFromBuffer(
+  buffer: Buffer,
+  file: string,
+): Promise<Record<MappingSheet, Table>> {
   const tables = {} as Record<MappingSheet, Table>;
-  const buffer = readFile(file);
   for (const [sheet, columns] of Object.entries(MAPPING_SHEETS)) {
     tables[sheet as MappingSheet] = toTable(
       sheet,
@@ -200,9 +207,40 @@ async function xlsxRows(buffer: Buffer, file: string, sheet: string): Promise<Ce
   }
 }
 
-function csvRows(file: string): CellValue[][] {
+/** The ZIP signature every `.xlsx` starts with. */
+const XLSX_MAGIC = Buffer.from('PK\u0003\u0004', 'latin1');
+
+/**
+ * One table from an uploaded CSV or workbook (admin import, doc 04 §8). A file whose bytes start like a ZIP is read
+ * as a workbook: the sheet named `sheet` (ignoring case), else its first sheet. Anything else is read as CSV.
+ */
+export async function tableFromUpload(
+  buffer: Buffer,
+  file: string,
+  sheet: string,
+  columns: readonly string[],
+): Promise<Table> {
+  if (!buffer.subarray(0, XLSX_MAGIC.length).equals(XLSX_MAGIC)) {
+    return toTable(sheet, file, csvRowsOf(buffer, file), columns);
+  }
+  let sheets: { sheet: string; data: unknown[][] }[];
   try {
-    const rows: string[][] = parseCsv(readFile(file), {
+    sheets = await readXlsxFile(buffer, { trim: false });
+  } catch (error) {
+    throw new SourceError(`Cannot read ${basename(file)}: ${(error as Error).message}`);
+  }
+  const found = sheets.find((s) => s.sheet.toLowerCase() === sheet.toLowerCase()) ?? sheets[0];
+  if (!found) throw new SourceError(`${basename(file)} has no sheet`);
+  return toTable(sheet, file, found.data as CellValue[][], columns);
+}
+
+function csvRows(file: string): CellValue[][] {
+  return csvRowsOf(readFile(file), file);
+}
+
+function csvRowsOf(buffer: Buffer, file: string): CellValue[][] {
+  try {
+    const rows: string[][] = parseCsv(buffer, {
       bom: true,
       relax_column_count: true,
       skip_empty_lines: false,
