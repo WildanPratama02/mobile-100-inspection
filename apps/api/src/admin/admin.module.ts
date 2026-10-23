@@ -37,6 +37,7 @@ import { SubmissionsAdminService } from './submissions/submissions-admin.service
     SubmissionsAdminService,
     AccountsAdminService,
   ],
-  exports: [AdminGuard],
+  // `AdminTokens` also for `DeviceThrottlerGuard`, which picks the photo bucket by the session cookie.
+  exports: [AdminGuard, AdminTokens],
 })
 export class AdminModule {}

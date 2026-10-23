@@ -1,0 +1,630 @@
+/* Admin layout, tables and form fields (doc 05 §20). Colours, radius, spacing and type only through tokens. */
+
+.adm-shell {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    'header header'
+    'nav main';
+  min-height: 100vh;
+}
+
+.adm-header {
+  grid-area: header;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.adm-skip {
+  position: absolute;
+  left: -10000px;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+}
+.adm-skip:focus {
+  position: static;
+}
+
+.adm-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+  justify-content: center;
+  color: var(--ink);
+  text-decoration: none;
+  font-family: var(--font-display);
+  font-size: var(--fs-title);
+  font-weight: var(--fw-title);
+}
+
+.adm-logo {
+  display: block;
+  height: 32px;
+  width: auto;
+}
+
+.adm-logo--login {
+  height: 64px;
+}
+
+.adm-header__user {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.adm-user {
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.adm-menu-toggle {
+  display: none;
+}
+
+.adm-nav {
+  grid-area: nav;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  padding: var(--space-3) var(--space-2);
+}
+
+.adm-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.adm-nav__link {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.adm-nav__link:hover {
+  background: var(--surface-sunken);
+}
+
+/* Selected = accent fill with on-accent text; pressed = accent-soft (design-system rules). */
+.adm-nav__link[aria-current='page'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.adm-nav__link:active {
+  background: var(--accent-soft);
+}
+
+.adm-main {
+  grid-area: main;
+  min-width: 0;
+  padding: var(--space-4);
+  background: var(--bg);
+}
+
+.adm-main:focus {
+  outline: none;
+}
+
+.adm-main > .m100-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  min-width: 0;
+}
+
+/* Below 900 px the rail becomes a top menu (doc 05 §20.1). */
+@media (max-width: 899px) {
+  .adm-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'header'
+      'nav'
+      'main';
+    grid-template-rows: auto auto 1fr;
+  }
+  .adm-menu-toggle {
+    display: inline-flex;
+  }
+  .adm-brand span {
+    display: none;
+  }
+  .adm-nav {
+    display: none;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .adm-nav--open {
+    display: block;
+  }
+  .adm-main {
+    padding: var(--space-2);
+  }
+}
+
+.adm-center {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+}
+
+/* Headings and toolbars. */
+.adm-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-title);
+  font-weight: var(--fw-title);
+  line-height: var(--lh-title);
+}
+
+.adm-subtitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-label);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.adm-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.adm-toolbar__end {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.adm-meta {
+  color: var(--ink-2);
+  font-size: var(--fs-meta);
+}
+
+/* Fields. */
+.adm-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.adm-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.adm-field label {
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.adm-input {
+  min-height: var(--tap-min);
+  min-width: 0;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+select.adm-input {
+  padding-right: var(--space-2);
+}
+
+input[type='file'].adm-input {
+  padding: var(--space-2);
+}
+
+.adm-input:focus-visible,
+.adm-user:focus-visible,
+.adm-nav__link:focus-visible,
+.adm-check:focus-within,
+.adm-table-wrap:focus-visible,
+.adm-link:focus-visible,
+.adm-tab:focus-visible,
+.adm-thumb:focus-visible,
+.adm-skip:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.adm-input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.adm-field__hint {
+  font-size: var(--fs-caption);
+  color: var(--ink-3);
+}
+
+.adm-field__problem {
+  font-size: var(--fs-caption);
+  color: var(--danger);
+}
+
+.adm-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+}
+
+.adm-check input {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.adm-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.adm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.adm-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.adm-confirm p {
+  margin: 0;
+}
+
+/* States. */
+.adm-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-4) 0;
+  color: var(--ink-2);
+}
+
+.adm-state p {
+  margin: 0;
+}
+
+.adm-problems {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+}
+
+/* Tables. */
+.adm-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.adm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-meta);
+}
+
+.adm-table th,
+.adm-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.adm-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-sunken);
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.adm-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.adm-table .adm-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.adm-mono {
+  font-family: var(--font-mono);
+}
+
+.adm-row--link {
+  cursor: pointer;
+}
+
+.adm-row--link:hover td {
+  background: var(--surface-sunken);
+}
+
+.adm-row--selected td,
+.adm-row--selected td .adm-link {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.adm-row--muted td {
+  color: var(--ink-3);
+}
+
+.adm-wrap {
+  white-space: normal;
+  min-width: 240px;
+}
+
+.adm-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.adm-link--button {
+  min-width: var(--tap-min);
+  padding: 0 var(--space-2);
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.adm-link--button[aria-pressed='true'] {
+  text-decoration: none;
+}
+
+a.m100-btn {
+  text-decoration: none;
+}
+
+.adm-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  color: var(--ink-2);
+}
+
+/* Tabs (A5). */
+.adm-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--line);
+}
+
+.adm-tab {
+  min-height: var(--tap-min);
+  padding: 0 var(--space-4);
+  border: none;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.adm-tab[aria-selected='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+/* Two linked tables (A3) and the detail grid (A1b). */
+.adm-split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.adm-split > section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.adm-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.adm-facts div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.adm-facts dt {
+  font-size: var(--fs-caption);
+  color: var(--ink-3);
+}
+
+.adm-facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.adm-top5 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.adm-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.adm-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: zoom-in;
+}
+
+.adm-thumb img {
+  display: block;
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+
+.adm-photo-large {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0 auto;
+}
+
+/* Import report (A4, A5). */
+.adm-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.adm-counts div {
+  display: flex;
+  flex-direction: column;
+}
+
+.adm-counts dt {
+  font-size: var(--fs-caption);
+  color: var(--ink-3);
+}
+
+.adm-counts dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-stat);
+  font-weight: var(--fw-stat);
+}
+
+.adm-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-3);
+  font-size: var(--fs-meta);
+}
+
+.adm-steps [aria-current='step'] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Dialogs over the scrim. */
+.adm-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: var(--scrim);
+  overflow-y: auto;
+}
+
+.adm-scrim > .m100-dialog {
+  max-height: calc(100dvh - 2 * var(--space-4));
+}
+
+.adm-scrim > .m100-dialog > .m100-dialog__body {
+  overflow-y: auto;
+}
+
+/* Login (A0). */
+.adm-login {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-4);
+}
+
+.adm-login .adm-logo--login {
+  align-self: center;
+}
+
+.adm-login h1 {
+  margin: 0;
+  text-align: center;
+}

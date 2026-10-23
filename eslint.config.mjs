@@ -38,7 +38,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['apps/web/src/**/*.{ts,tsx}'],
+    files: ['apps/web/src/**/*.{ts,tsx}', 'apps/admin/src/**/*.{ts,tsx}'],
     languageOptions: { globals: globals.browser },
     plugins: { 'react-hooks': reactHooks, 'react-refresh': reactRefresh },
     rules: {
@@ -52,6 +52,8 @@ export default tseslint.config(
       'packages/shared/**/*.ts',
       'apps/web/*.config.ts',
       'apps/web/e2e/**',
+      'apps/admin/*.config.ts',
+      'apps/admin/e2e/**',
     ],
     languageOptions: { globals: globals.node },
   },

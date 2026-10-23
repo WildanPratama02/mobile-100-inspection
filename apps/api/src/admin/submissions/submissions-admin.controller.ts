@@ -1,6 +1,7 @@
 import { Readable, type Writable } from 'node:stream';
 import { Controller, Get, Header, Inject, Param, Query, StreamableFile } from '@nestjs/common';
 import { Auth } from '../../auth/auth.decorator';
+import { AdminPhotoRateLimit } from '../../throttle/device-throttler.guard';
 import { CSV_CONTENT_TYPE } from './csv';
 import {
   type AdminSubmissionDetail,
@@ -44,6 +45,7 @@ export class SubmissionsAdminController {
   }
 
   @Get('photos/:id')
+  @AdminPhotoRateLimit()
   @Header('Cache-Control', 'private, no-store')
   @Header('X-Content-Type-Options', 'nosniff')
   async photo(@Param('id') id: string): Promise<StreamableFile> {

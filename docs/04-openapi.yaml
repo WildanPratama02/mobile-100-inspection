@@ -605,6 +605,7 @@ paths:
         '200': { description: The JPEG., content: { image/jpeg: { schema: { type: string, format: binary } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/Unavailable' }
   /admin/admins:
     get:

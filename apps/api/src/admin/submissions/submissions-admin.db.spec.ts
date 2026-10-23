@@ -12,6 +12,7 @@ import { DiskPhotoStore } from '../../photos/disk-photo-store';
 import { createTestDatabase, type TestDatabase } from '../../testing/database';
 import { registerDevice } from '../../testing/devices';
 import { testConfig } from '../../testing/env';
+import { ADMIN_PHOTO_RATE_LIMIT, RATE_LIMIT } from '../../throttle/device-throttler.guard';
 import { expectMatchesSpec, expectProblem } from '../../testing/openapi';
 import {
   FINDINGS,
@@ -330,6 +331,86 @@ describe('GET /v1/admin/photos/{id} (doc 02 §7)', () => {
     const id = ((await admin().get(`/v1/admin/submissions/${plain}`)).body as AdminSubmissionDetail)
       .photos[0]!.id;
     expectProblem(await admin().get(`/v1/admin/photos/${id}`), 404, 'NOT_FOUND');
+  });
+});
+
+describe('rate limits of the admin photo download (doc 03 §5.6)', () => {
+  const photoId = async () =>
+    (
+      (await admin().get(`/v1/admin/submissions/${full}`)).body as AdminSubmissionDetail
+    ).photos.find((p) => p.defectId === 'D001')!.id;
+  const anonymous = (url: string) =>
+    request(app.getHttpServer()).get(url).set('X-Forwarded-For', ip);
+
+  it('gives a signed-in admin 300 photos a minute that leave the 60 of the other calls untouched', async () => {
+    const url = `/v1/admin/photos/${await photoId()}`; // 1 general request
+    for (let i = 0; i < ADMIN_PHOTO_RATE_LIMIT.limit; i++) {
+      const res = await admin().get(url);
+      if (res.status !== 200) throw new Error(`photo ${i + 1}: ${res.status}`);
+    }
+    const blocked = await admin().get(url);
+    expect(expectProblem(blocked, 429, 'RATE_LIMITED').retryable).toBe(true);
+    expectMatchesSpec(blocked, 'get', '/admin/photos/{id}');
+    const retryAfter = Number(blocked.headers['retry-after']);
+    expect(retryAfter).toBeGreaterThan(0);
+    expect(retryAfter).toBeLessThanOrEqual(60);
+
+    // The general bucket still holds 59: a login and 58 other calls pass, the next one is refused.
+    const login = await request(app.getHttpServer())
+      .post('/v1/admin/auth/login')
+      .set(XRW)
+      .set('X-Forwarded-For', ip)
+      .send({ username: 'qip.digital', password: PASSWORD });
+    expect(login.status).toBe(204);
+    for (let i = 0; i < RATE_LIMIT.limit - 2; i++) {
+      const res = await admin().get('/v1/admin/me');
+      if (res.status !== 200) throw new Error(`call ${i + 1}: ${res.status}`);
+    }
+    expectProblem(await admin().get('/v1/admin/me'), 429, 'RATE_LIMITED');
+  }, 120_000);
+
+  it('keeps photos available when the other admin calls have used their 60', async () => {
+    const url = `/v1/admin/photos/${await photoId()}`;
+    for (let i = 1; i < RATE_LIMIT.limit; i++) await admin().get('/v1/admin/me');
+    expectProblem(await admin().get('/v1/admin/me'), 429, 'RATE_LIMITED');
+    expect((await admin().get(url)).status).toBe(200);
+  });
+
+  it('refuses unauthenticated photo requests and counts them in the general 60', async () => {
+    const url = `/v1/admin/photos/${await photoId()}`; // 1 general request
+    const forged = `${cookie.split('=')[0]}=forged`;
+    for (let i = 1; i < RATE_LIMIT.limit; i++) {
+      const res = i % 2 ? await anonymous(url) : await anonymous(url).set('Cookie', forged);
+      expectProblem(res, 401, 'ADMIN_AUTH_REQUIRED');
+    }
+    const blocked = await anonymous(url);
+    expectProblem(blocked, 429, 'RATE_LIMITED');
+    expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
+    // The photo bucket was not touched: the signed-in admin still gets the photo.
+    expect((await admin().get(url)).status).toBe(200);
+  });
+
+  it('refuses a validly signed session of a deactivated admin before any photo is read', async () => {
+    const url = `/v1/admin/photos/${await photoId()}`;
+    const db = new Database(testDb.pool('m100_app'));
+    await createAdmin(db, pgAdminAccountRepositories(db), {
+      username: 'leaving.admin',
+      password: PASSWORD,
+      actor: 'script:admin:create',
+    });
+    const login = await request(app.getHttpServer())
+      .post('/v1/admin/auth/login')
+      .set(XRW)
+      .set('X-Forwarded-For', ip)
+      .send({ username: 'leaving.admin', password: PASSWORD });
+    expect(login.status).toBe(204);
+    const leaving = ([] as string[]).concat(login.headers['set-cookie'] ?? [])[0]!.split(';')[0]!;
+    expect((await anonymous(url).set('Cookie', leaving)).status).toBe(200);
+
+    await testDb.client.query(`UPDATE admins SET active = false WHERE username = 'leaving.admin'`);
+    const refused = await anonymous(url).set('Cookie', leaving);
+    expectProblem(refused, 401, 'ADMIN_AUTH_REQUIRED');
+    expect(refused.headers['content-type']).not.toMatch(/image\/jpeg/);
   });
 });
 
