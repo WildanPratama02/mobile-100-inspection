@@ -166,6 +166,7 @@ describe('on a folder', () => {
             return Promise.reject(new Error('audit also down'));
           },
           list: () => Promise.resolve([]),
+          search: () => Promise.resolve({ total: 0, items: [] }),
         },
       },
       { now: new Date(Date.now() + 2 * ORPHAN_AGE_MS) },

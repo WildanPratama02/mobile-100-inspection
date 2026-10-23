@@ -67,3 +67,52 @@ describe('PgAuditLogRepository (doc 02 §5.2–5.3)', () => {
     expect(next.map((r) => r.action)).toEqual(['page-2', 'page-1', 'submit:disable']);
   });
 });
+
+describe('PgAuditLogRepository.search (doc 05 §20.6)', () => {
+  beforeAll(async () => {
+    // 23:59 WIB on 16 Oct, 00:00 and 23:59 WIB on 17 Oct.
+    await db.client.query(
+      `INSERT INTO audit_log (at, actor, action, entity, entity_id) VALUES
+         ('2026-10-16T16:59:00Z', 'admin:ana', 'search-1', 'search', 'a'),
+         ('2026-10-16T17:00:00Z', 'admin:budi', 'search-2', 'search', 'b'),
+         ('2026-10-17T16:59:00Z', 'admin:ana', 'search-3', 'search', 'a')`,
+    );
+  });
+  const actions = async (filter: Parameters<PgAuditLogRepository['search']>[0], limit = 50) =>
+    (await repo.search({ entity: 'search', ...filter }, { offset: 0, limit })).items.map(
+      (r) => r.action,
+    );
+
+  it('filters on WIB days, both ends inclusive, newest first', async () => {
+    expect(await actions({})).toEqual(['search-3', 'search-2', 'search-1']);
+    expect(await actions({ from: '2026-10-17', to: '2026-10-17' })).toEqual([
+      'search-3',
+      'search-2',
+    ]);
+    expect(await actions({ to: '2026-10-16' })).toEqual(['search-1']);
+  });
+
+  it('orders by the numeric id, also past id 9 and 99 (not as text)', async () => {
+    for (let i = 1; i <= 100; i++) {
+      await repo.append({ actor: 'system', action: `order-${i}`, entity: 'order' });
+    }
+    const listed = (await repo.list({ limit: 200 }))
+      .filter((r) => r.entity === 'order')
+      .map((r) => r.action);
+    const searched = (await repo.search({ entity: 'order' }, { offset: 0, limit: 200 })).items.map(
+      (r) => r.action,
+    );
+    const expected = Array.from({ length: 100 }, (_, i) => `order-${100 - i}`);
+    expect(listed).toEqual(expected);
+    expect(searched).toEqual(expected);
+  });
+
+  it('filters on actor and entity id exactly, and counts every match', async () => {
+    expect(await actions({ actor: 'admin:ana' })).toEqual(['search-3', 'search-1']);
+    expect(await actions({ actor: 'admin:an' })).toEqual([]);
+    expect(await actions({ entityId: 'b' })).toEqual(['search-2']);
+    const page = await repo.search({ entity: 'search' }, { offset: 1, limit: 1 });
+    expect(page.total).toBe(3);
+    expect(page.items.map((r) => r.action)).toEqual(['search-2']);
+  });
+});

@@ -18,6 +18,8 @@ export interface Admin {
 }
 
 export interface AdminRepository {
+  /** Every admin, active or not, by username. */
+  list(q?: Queryable): Promise<Admin[]>;
   findByUsername(username: string, q?: Queryable): Promise<Admin | null>;
   findById(id: number, q?: Queryable): Promise<Admin | null>;
   /** Fails with SQLSTATE `23505` when the username is taken. */
@@ -44,6 +46,11 @@ const COLUMNS = `id, username, password_hash AS "passwordHash", active, created_
 
 export class PgAdminRepository implements AdminRepository {
   constructor(private readonly db: Database) {}
+
+  async list(q: Queryable = this.db): Promise<Admin[]> {
+    const { rows } = await q.query<Admin>(`SELECT ${COLUMNS} FROM admins ORDER BY username, id`);
+    return rows;
+  }
 
   async findByUsername(username: string, q: Queryable = this.db): Promise<Admin | null> {
     const { rows } = await q.query<Admin>(`SELECT ${COLUMNS} FROM admins WHERE username = $1`, [

@@ -209,12 +209,14 @@ Used only by the admin web app (doc 05 §20), in a desktop browser. Cookie auth 
 | `POST /admin/pos/import?dryRun=true\|false` | Upload CSV/XLSX (≤ 20 MB); dry run returns counts and row errors; the real run upserts by `po` and never deletes (§10 A9) |
 | `GET /admin/defects`, `GET /admin/area-map`, `PATCH /admin/defects/{id}`, `PATCH /admin/area-map/{id}` | View (`/admin/area-map` returns areas, sub-areas, families and map rows); toggle `active` |
 | `POST /admin/area-map/import?dryRun=` | Upload the mapping workbook; same validation as doc 02 §5.1, against the stored defects (§10 A10) |
-| `GET /admin/submissions?from=&to=&factory=&cell=&username=&po=` | Paged list |
-| `GET /admin/submissions/{id}` | Detail with findings and photo ids |
-| `GET /admin/photos/{id}` | Streams the JPEG after checking the admin session |
-| `GET /admin/submissions/export.csv?…` | The list's filters, one row per submission, with the Top 5 as columns |
-| `GET/POST/PATCH /admin/admins` | List, add, deactivate, reset a password |
-| `GET /admin/audit-log?…` | Read-only |
+| `GET /admin/submissions?from=&to=&factory=&cell=&username=&po=&page=` | Paged list, 50 per page, newest sealed first (§10 A12) |
+| `GET /admin/submissions/{id}` | Detail with findings, Top 5, photo ids and audit trail (§10 A13) |
+| `GET /admin/photos/{id}` | Streams the JPEG after checking the admin session (§10 A13) |
+| `GET /admin/submissions/export.csv?…` | The list's filters, one row per submission, with the Top 5 as columns (§10 A14) |
+| `GET/POST/PATCH /admin/admins` | List, add, deactivate, reactivate, reset a password (§10 A15) |
+| `GET /admin/audit-log?from=&to=&actor=&page=` | Read-only, 50 per page, newest first (§10 A16) |
+
+No admin endpoint changes a submission (AC-14.4): there is no route for it, and the database refuses an UPDATE or DELETE anyway (doc 02 §4.1). Reading a submission, a photo or the export writes no `audit_log` row; the log records changes.
 
 ## 9. Not in this API
 
@@ -237,3 +239,8 @@ Used only by the admin web app (doc 05 §20), in a desktop browser. Cookie auth 
 | A9 | (23 Oct 2026, product owner, T3b.2) The admin PO import is strict (AC-14.3): every row the one-time import would skip (empty PO, `ORDER QTY` not a whole number ≥ 1, rows of one PO number that differ) is an error, and so is a non-empty PODD/CRD that is not a date. The dry run answers `200` with the errors and the counts of the valid rows; applying with any error answers `422 IMPORT_INVALID` and writes nothing. `skipped` counts unchanged rows and identical repeats; blank lines are ignored. A workbook is read from its sheet `ALL_PO_MASTER`, else its first sheet. |
 | A10 | (23 Oct 2026, product owner, T3b.2) The mapping re-import only upserts: areas, sub-areas, families and map rows stored but missing from the workbook stay as they are and are listed in `warnings`; a single map row is switched off with `PATCH /admin/area-map/{id}`. |
 | A11 | (23 Oct 2026, product owner, T3b.2) The admin CRUD uses TypeORM entities over the existing tables (doc 03 §5.1); the two imports keep the batched SQL upserts of the one-time import. |
+| A12 | (23 Oct 2026, product owner, T3b.3) Submission list filters: `from` / `to` are inclusive WIB dates on `inspection_date`, each optional (the admin app sends today by default); `factory`, `cell` and `username` match exactly; `po` matches any part of the PO number, ignoring case; an empty value is no filter. Newest `sealed_at` first, then `display_no`; 50 per page; the answer is `{ total, page, pageSize, items }`. A bad date, `to` before `from` or a bad `page` is `422`. |
+| A13 | (23 Oct 2026, product owner, T3b.3) The detail adds the PO snapshot, `receivedAt`, `appVersion`, `counts`, the findings in first-tap order (the tablet history) with area, sub-area and family names, the Top 5 computed with the shared ranking (with the photo id of each place), the photo ids, and the audit-log rows about the submission (none are written in release 1). An unknown or malformed id is `404`. `GET /admin/photos/{id}` sends the stored bytes as `image/jpeg` with `Cache-Control: private, no-store`; a photo row without its object is `404` (and logged), a store error `503 PHOTO_STORE_UNAVAILABLE`. |
+| A14 | (23 Oct 2026, product owner, T3b.3) The CSV export: UTF-8 with a BOM, `,` between fields, CRLF, RFC 4180 quoting, one header row; the columns of `v_submissions` (`display_no` as `M100-000123`, `sealed_at` in WIB) and `top<n>_defect_id`, `top<n>_defect_name`, `top<n>_qty` for n = 1…5. Raw numbers: no thousands separator, a dot for decimals, `rft` and `defect_rate` as the stored fractions (`0.60000`). Text typed by people that starts with `=`, `+`, `-`, `@`, a tab or CR gets a leading `'` (CSV injection). The column list is in `04-openapi.yaml`. |
+| A15 | (23 Oct 2026, product owner, T3b.3) `PATCH /admin/admins/{id}` takes either `{ password }` (a reset, which also clears a lock) or `{ active }`, one change per request. A deactivated admin may be reactivated, audited like any change. Deactivating yourself or the last active admin is `422` with `errors[].code` `SELF` / `LAST_ACTIVE_ADMIN`; a taken username is `409 CONFLICT`; a password under 10 characters `422` (`PASSWORD_TOO_SHORT`). The list never carries a password hash. |
+| A16 | (23 Oct 2026, product owner, T3b.3) `GET /admin/audit-log`: `from` / `to` inclusive WIB days of `at`, `actor` exact (`admin:<name>`, `script:<name>`, `system`), newest first, 50 per page, `{ total, page, pageSize, items }`. The admin app renders the summary from `details`. |

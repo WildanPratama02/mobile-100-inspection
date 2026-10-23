@@ -521,35 +521,171 @@ paths:
     get:
       tags: [admin]
       operationId: adminListSubmissions
+      summary: Read-only list of submissions, newest sealed first, 50 per page (doc 04 section 10, A12).
+      description: |
+        Every filter is optional and they all apply together. `from` and `to` are inclusive WIB dates on the
+        inspection date; `factory`, `cell` and `username` match exactly; `po` matches any part of the PO number,
+        ignoring case. An empty value means no filter. There is no route that changes a submission (AC-14.4).
       security: [{ adminCookie: [] }]
       parameters:
-        - { in: query, name: from, schema: { type: string, format: date } }
-        - { in: query, name: to, schema: { type: string, format: date } }
-        - { in: query, name: factory, schema: { type: string } }
-        - { in: query, name: cell, schema: { type: string } }
-        - { in: query, name: username, schema: { type: string } }
-        - { in: query, name: po, schema: { type: string } }
-        - { in: query, name: page, schema: { type: integer, default: 1 } }
+        - $ref: '#/components/parameters/SubmissionFrom'
+        - $ref: '#/components/parameters/SubmissionTo'
+        - $ref: '#/components/parameters/SubmissionFactory'
+        - $ref: '#/components/parameters/SubmissionCell'
+        - $ref: '#/components/parameters/SubmissionUsername'
+        - $ref: '#/components/parameters/SubmissionPo'
+        - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
       responses:
-        '200': { description: A page of submissions., content: { application/json: { schema: { type: object, properties: { total: { type: integer }, items: { type: array, items: { $ref: '#/components/schemas/AdminSubmissionSummary' } } } } } } }
+        '200':
+          description: A page of submissions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total, page, pageSize, items]
+                properties:
+                  total: { type: integer, description: 'Submissions matching the filter, over all pages.' }
+                  page: { type: integer }
+                  pageSize: { type: integer, const: 50 }
+                  items: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/AdminSubmissionSummary' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /admin/submissions/export.csv:
+    get:
+      tags: [admin]
+      operationId: adminExportSubmissions
+      summary: The submissions of the list's filter as CSV, one row per submission, the Top 5 as columns (doc 04 section 10, A14).
+      description: |
+        The filters of `GET /admin/submissions`, without paging; rows in the list's order. UTF-8 with a BOM, a comma
+        between fields, CRLF between rows, RFC 4180 quoting, one header row. Columns: display_no (`M100-000123`),
+        id, inspection_date, sealed_at (ISO 8601 in WIB), username, level, factory, cell, po, article, model,
+        destination, order_qty, podd, crd, partial_no, partial_qty, partial_text, qty_rework,
+        qty_bgrade_inspections, qty_no_defect, qty_inspection, qty_a_grade, qty_b_grade, qty_defect, rft,
+        defect_rate, photo_count, counting_rule, then top1_defect_id, top1_defect_name, top1_qty … top5_qty (empty
+        when the submission has fewer defects). Numbers are raw: no thousands separator and a dot for decimals;
+        rft and defect_rate are the stored fractions with 5 decimals (`0.60000` = 60,0%). Text typed by people that
+        starts with `=`, `+`, `-`, `@`, a tab or CR gets a leading `'` so a spreadsheet does not run it.
+      security: [{ adminCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SubmissionFrom'
+        - $ref: '#/components/parameters/SubmissionTo'
+        - $ref: '#/components/parameters/SubmissionFactory'
+        - $ref: '#/components/parameters/SubmissionCell'
+        - $ref: '#/components/parameters/SubmissionUsername'
+        - $ref: '#/components/parameters/SubmissionPo'
+      responses:
+        '200':
+          description: 'The CSV file, `Content-Disposition: attachment; filename="m100-submissions-<from|all>-<to|all>.csv"`.'
+          content:
+            text/csv: { schema: { type: string } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /admin/submissions/{id}:
     get:
       tags: [admin]
       operationId: adminGetSubmission
+      summary: One submission with its findings, Top 5, photo ids and audit trail. Read-only (AC-14.4).
       security: [{ adminCookie: [] }]
       parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
       responses:
-        '200': { description: Submission with findings and photo ids., content: { application/json: { schema: { $ref: '#/components/schemas/AdminSubmissionSummary' } } } }
+        '200': { description: Submission with findings and photo ids., content: { application/json: { schema: { $ref: '#/components/schemas/AdminSubmissionDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /admin/photos/{id}:
     get:
       tags: [admin]
       operationId: adminGetPhoto
+      summary: Streams the stored JPEG, unchanged, to a signed-in admin only (doc 02 section 7). `Cache-Control` is `private, no-store`.
       security: [{ adminCookie: [] }]
       parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
       responses:
         '200': { description: The JPEG., content: { image/jpeg: { schema: { type: string, format: binary } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /admin/admins:
+    get:
+      tags: [admin]
+      operationId: adminListAdmins
+      summary: Every admin account, inactive included, by username.
+      security: [{ adminCookie: [] }]
+      responses:
+        '200': { description: The accounts., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminAccount' } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [admin]
+      operationId: adminCreateAdmin
+      summary: Add an active admin with an initial password of at least 10 characters.
+      security: [{ adminCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [username, password]
+              properties:
+                username: { type: string, minLength: 1, maxLength: 64, description: 'No spaces at either end.' }
+                password: { type: string, format: password, minLength: 10 }
+      responses:
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/AdminAccount' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/admins/{id}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdateAdmin
+      summary: Reset the password (also clears a lock), or deactivate / reactivate the account; one change per request.
+      description: |
+        An admin cannot deactivate their own account (`errors[].code` = `SELF`) nor the last active admin
+        (`LAST_ACTIVE_ADMIN`); both answer 422 (doc 04 section 10, A15).
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - { type: object, additionalProperties: false, required: [active], properties: { active: { type: boolean } } }
+                - { type: object, additionalProperties: false, required: [password], properties: { password: { type: string, format: password, minLength: 10 } } }
+      responses:
+        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/AdminAccount' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/audit-log:
+    get:
+      tags: [admin]
+      operationId: adminReadAuditLog
+      summary: Read-only audit log, newest first, 50 per page (doc 05 section 20.6, doc 04 section 10, A16).
+      security: [{ adminCookie: [] }]
+      parameters:
+        - { in: query, name: from, description: 'Inclusive WIB date of `at`.', schema: { type: string, format: date } }
+        - { in: query, name: to, description: 'Inclusive WIB date of `at`.', schema: { type: string, format: date } }
+        - { in: query, name: actor, description: 'Exact, e.g. `admin:qip.digital`, `script:import-master`, `system`.', schema: { type: string } }
+        - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
+      responses:
+        '200':
+          description: A page of the log.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total, page, pageSize, items]
+                properties:
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer, const: 50 }
+                  items: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/AuditLogEntry' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/Unavailable' }
 
 components:
   securitySchemes:
@@ -567,6 +703,14 @@ components:
       in: cookie
       name: m100_admin
       description: 'HttpOnly session cookie from POST /admin/auth/login. State-changing requests also send header X-Requested-With = m100-admin.'
+
+  parameters:
+    SubmissionFrom: { in: query, name: from, description: 'Inclusive WIB inspection date.', schema: { type: string, format: date } }
+    SubmissionTo: { in: query, name: to, description: 'Inclusive WIB inspection date; not before `from`.', schema: { type: string, format: date } }
+    SubmissionFactory: { in: query, name: factory, description: Exact., schema: { type: string, maxLength: 100 } }
+    SubmissionCell: { in: query, name: cell, description: Exact., schema: { type: string, maxLength: 100 } }
+    SubmissionUsername: { in: query, name: username, description: Exact., schema: { type: string, maxLength: 100 } }
+    SubmissionPo: { in: query, name: po, description: 'Any part of the PO number, ignoring case.', schema: { type: string, maxLength: 100 } }
 
   responses:
     Unauthorized:
@@ -1034,11 +1178,12 @@ components:
             properties: { inserted: { type: integer }, updated: { type: integer }, unchanged: { type: integer } }
     AdminSubmissionSummary:
       type: object
-      required: [id, displayNo, sealedAt, username, level, po]
+      required: [id, displayNo, sealedAt, inspectionDate, username, level, factory, cell, po, partialText, qtyInspection, qtyDefect, qtyAGrade, qtyBGrade, rft, defectRate, photoCount]
       properties:
         id: { type: string, format: uuid }
-        displayNo: { type: string }
-        sealedAt: { type: string, format: date-time }
+        displayNo: { type: string, examples: ['M100-000123'] }
+        sealedAt: { type: string, format: date-time, description: 'WIB (`+07:00`).' }
+        inspectionDate: { type: string, format: date, description: 'WIB date of `sealedAt`.' }
         username: { type: string }
         level: { $ref: '#/components/schemas/PsiLevel' }
         factory: { type: string }
@@ -1049,14 +1194,92 @@ components:
         qtyDefect: { type: integer }
         qtyAGrade: { type: integer }
         qtyBGrade: { type: integer }
-        rft: { type: number }
-        defectRate: { type: number }
+        rft: { type: number, description: 'Fraction, e.g. 0.6 = 60,0%.' }
+        defectRate: { type: number, description: 'Fraction; can exceed 1.' }
         photoCount: { type: integer }
-        findings:
-          type: array
-          description: Only in the detail response.
-          items: { type: object }
-        photos:
-          type: array
-          description: Only in the detail response.
-          items: { type: object, properties: { id: { type: integer }, defectId: { type: string } } }
+    AdminSubmissionDetail:
+      allOf:
+        - $ref: '#/components/schemas/AdminSubmissionSummary'
+        - type: object
+          required: [receivedAt, appVersion, article, model, destination, orderQty, podd, crd, partial, counts, findings, top5, photos, audit]
+          properties:
+            receivedAt: { type: string, format: date-time }
+            appVersion: { type: [string, 'null'] }
+            article: { type: string }
+            model: { type: string }
+            destination: { type: string }
+            orderQty: { type: integer }
+            podd: { type: [string, 'null'], format: date }
+            crd: { type: [string, 'null'], format: date }
+            partial:
+              oneOf:
+                - { type: 'null' }
+                - { type: object, required: [number, qty], properties: { number: { type: integer }, qty: { type: integer } } }
+            counts:
+              type: object
+              required: [rework, bGrade, noDefect]
+              properties: { rework: { type: integer }, bGrade: { type: integer }, noDefect: { type: integer } }
+            findings:
+              type: array
+              description: In the order the PSI first tapped them, like the tablet history (doc 05 section 20.3).
+              items:
+                type: object
+                required: [inspectionType, areaId, areaName, subAreaId, subAreaName, familyId, familyName, defectId, defectName, classification, qty, firstRecordedAt]
+                properties:
+                  inspectionType: { $ref: '#/components/schemas/InspectionType' }
+                  areaId: { $ref: '#/components/schemas/AreaId' }
+                  areaName: { type: string }
+                  subAreaId: { type: string }
+                  subAreaName: { type: string }
+                  familyId: { type: string }
+                  familyName: { type: string }
+                  defectId: { $ref: '#/components/schemas/DefectId' }
+                  defectName: { type: string, description: 'Snapshot taken when the submission was written.' }
+                  classification: { $ref: '#/components/schemas/Classification' }
+                  qty: { type: integer, minimum: 1 }
+                  firstRecordedAt: { type: string, format: date-time }
+            top5:
+              type: array
+              maxItems: 5
+              description: The Top 5 order of the tablet (quantity, then severity, then first recorded).
+              items:
+                type: object
+                required: [rank, defectId, defectName, classification, qty, photoId]
+                properties:
+                  rank: { type: integer, minimum: 1, maximum: 5 }
+                  defectId: { $ref: '#/components/schemas/DefectId' }
+                  defectName: { type: string }
+                  classification: { $ref: '#/components/schemas/Classification' }
+                  qty: { type: integer }
+                  photoId: { type: [integer, 'null'], description: 'For GET /admin/photos/{id}; null without a photo (PSI lv.1).' }
+            photos:
+              type: array
+              items: { type: object, required: [id, defectId], properties: { id: { type: integer }, defectId: { $ref: '#/components/schemas/DefectId' } } }
+            audit:
+              type: array
+              description: Audit-log rows about this submission (entity `submissions`); none are written in release 1.
+              items:
+                type: object
+                required: [id, at, actor, action, details]
+                properties: { id: { type: string }, at: { type: string, format: date-time }, actor: { type: string }, action: { type: string }, details: {} }
+    AdminAccount:
+      type: object
+      required: [id, username, active, createdAt, lastLoginAt, lockedUntil]
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        lastLoginAt: { type: [string, 'null'], format: date-time }
+        lockedUntil: { type: [string, 'null'], format: date-time, description: 'Set while the account is locked after 5 failed logins.' }
+    AuditLogEntry:
+      type: object
+      required: [id, at, actor, action, entity, entityId, details]
+      properties:
+        id: { type: string, description: 'bigint as text.' }
+        at: { type: string, format: date-time }
+        actor: { type: string, examples: ['admin:qip.digital', 'script:import-master', 'system'] }
+        action: { type: string }
+        entity: { type: string, examples: ['psi_users', 'admins'] }
+        entityId: { type: [string, 'null'] }
+        details: { description: 'Old and new values of the changed fields, or counts; never a password.' }

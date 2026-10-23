@@ -77,6 +77,13 @@ describe('PgAdminRepository (doc 02 §5.3)', () => {
     expect((await repo.findByUsername('qip.digital'))?.active).toBe(false);
   });
 
+  it('lists every admin, inactive included, by username', async () => {
+    expect((await repo.list()).map((a) => [a.username, a.active])).toEqual([
+      ['qip.digital', false],
+      ['second', true],
+    ]);
+  });
+
   it('locks the active admins until the transaction ends', async () => {
     const database = new Database(db.pool('m100_app'));
     const second = (await repo.findByUsername('second'))!;
