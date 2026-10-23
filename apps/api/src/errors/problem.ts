@@ -72,8 +72,19 @@ export const PROBLEMS = {
   DB_UNAVAILABLE: { status: 503, title: 'Database unavailable', retryable: true },
   PHOTO_STORE_UNAVAILABLE: { status: 503, title: 'Photo store unavailable', retryable: true },
   ADMIN_AUTH_REQUIRED: { status: 401, title: 'Admin login required', retryable: false },
-  ADMIN_LOGIN_FAILED: { status: 401, title: 'Admin login failed', retryable: false },
-  ADMIN_LOCKED: { status: 423, title: 'Admin account locked', retryable: false },
+  // The admin login texts of doc 05 §20.1.
+  ADMIN_LOGIN_FAILED: {
+    status: 401,
+    title: 'Admin login failed',
+    retryable: false,
+    detail: 'Username atau password salah.',
+  },
+  ADMIN_LOCKED: {
+    status: 423,
+    title: 'Admin account locked',
+    retryable: false,
+    detail: 'Akun dikunci 10 menit karena terlalu banyak percobaan.',
+  },
   NOT_FOUND: { status: 404, title: 'Not found', retryable: false },
   CONFLICT: { status: 409, title: 'Conflict', retryable: false },
   IMPORT_INVALID: { status: 422, title: 'Import invalid', retryable: false },

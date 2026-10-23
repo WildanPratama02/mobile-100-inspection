@@ -12,7 +12,8 @@ import { TokenGuard } from './token.guard';
 
 /**
  * `AuthModule` of doc 03 §5.1, tablet half: the device key and token guards (bound globally by `AppModule`, in
- * order), `/auth/login` and `/auth/refresh`. The signing key is read from `JWT_KEY_FILE` at start-up.
+ * order), `/auth/login` and `/auth/refresh`. The signing key is read from `JWT_KEY_FILE` at start-up; the
+ * `TokenSigner` also signs the admin sessions (`AdminModule`).
  */
 @Module({
   imports: [MasterDataModule],
@@ -28,6 +29,6 @@ import { TokenGuard } from './token.guard';
     DeviceKeyGuard,
     TokenGuard,
   ],
-  exports: [DeviceKeyGuard, TokenGuard, TabletTokens],
+  exports: [DeviceKeyGuard, TokenGuard, TabletTokens, TokenSigner],
 })
 export class AuthModule {}

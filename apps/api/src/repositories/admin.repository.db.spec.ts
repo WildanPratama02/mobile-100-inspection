@@ -41,21 +41,32 @@ describe('PgAdminRepository (doc 02 §5.3)', () => {
     expect((await repo.findByUsername('qip.digital'))?.failedLogins).toBe(5);
   });
 
-  it('locks until a time, and a successful login clears the counter and the lock', async () => {
+  it('locks until a time and restarts the count; a successful login clears the lock', async () => {
     const until = new Date(Date.now() + 10 * 60_000);
     await repo.lockUntil(id, until);
-    expect((await repo.findByUsername('qip.digital'))?.lockedUntil).toEqual(until);
+    expect(await repo.findByUsername('qip.digital')).toMatchObject({
+      lockedUntil: until,
+      failedLogins: 0,
+    });
 
+    await repo.recordLoginFailure(id);
     await repo.recordLoginSuccess(id);
     const admin = await repo.findByUsername('qip.digital');
     expect(admin).toMatchObject({ failedLogins: 0, lockedUntil: null });
     expect(admin?.lastLoginAt).toBeInstanceOf(Date);
   });
 
-  it('changes the password hash', async () => {
+  it('changes the password hash and clears the failure counter and the lock', async () => {
+    await repo.recordLoginFailure(id);
+    await repo.lockUntil(id, new Date(Date.now() + 60_000));
     expect(await repo.setPassword(id, `${HASH}2`)).toBe(true);
-    expect((await repo.findByUsername('qip.digital'))?.passwordHash).toBe(`${HASH}2`);
+    expect(await repo.findById(id)).toMatchObject({
+      passwordHash: `${HASH}2`,
+      failedLogins: 0,
+      lockedUntil: null,
+    });
     expect(await repo.setPassword(99_999, HASH)).toBe(false);
+    expect(await repo.findById(99_999)).toBeNull();
   });
 
   it('deactivates and counts the active admins', async () => {
@@ -64,6 +75,23 @@ describe('PgAdminRepository (doc 02 §5.3)', () => {
     expect(await repo.setActive(id, false)).toBe(true);
     expect(await repo.countActive()).toBe(1);
     expect((await repo.findByUsername('qip.digital'))?.active).toBe(false);
+  });
+
+  it('locks the active admins until the transaction ends', async () => {
+    const database = new Database(db.pool('m100_app'));
+    const second = (await repo.findByUsername('second'))!;
+    let released = false;
+    const holder = database.transaction(async (tx) => {
+      expect(await repo.lockActive(tx)).toEqual([second.id]);
+      await new Promise((r) => setTimeout(r, 300));
+      released = true;
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    await database.transaction(async (tx) => {
+      await repo.lockActive(tx);
+      expect(released).toBe(true);
+    });
+    await holder;
   });
 
   it('fails a failed-login count for an unknown admin', async () => {

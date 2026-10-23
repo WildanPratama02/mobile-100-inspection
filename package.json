@@ -19,6 +19,7 @@
     "e2e:install": "pnpm --filter web exec playwright install chromium",
     "db:bootstrap": "pnpm --filter api db:bootstrap",
     "db:migrate": "pnpm --filter api db:migrate",
+    "admin:create": "pnpm --filter api admin:create",
     "import-master": "pnpm --filter api import-master",
     "device:add": "pnpm --filter api device:add",
     "device:revoke": "pnpm --filter api device:revoke",

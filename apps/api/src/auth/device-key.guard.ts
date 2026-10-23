@@ -8,7 +8,7 @@ import {
   DEVICE_REPOSITORY,
   type DeviceRepository,
 } from '../repositories/device.repository';
-import { type AuthRequest, authLevel } from './auth.decorator';
+import { type AuthRequest, authLevel, isAdminLevel } from './auth.decorator';
 import { hashDeviceKey, isDeviceKeyShape } from './device-key';
 
 /** Doc 03 §5.6: 20 failed key attempts per minute per IP; the next ones are refused until the minute is over. */
@@ -38,7 +38,8 @@ export class DeviceKeyGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    if (authLevel(this.reflector, context) === 'none') return true;
+    const level = authLevel(this.reflector, context);
+    if (level === 'none' || isAdminLevel(level)) return true;
     const req = context.switchToHttp().getRequest<AuthRequest>();
     const ip = req.ip ?? 'unknown';
     const now = Date.now();
