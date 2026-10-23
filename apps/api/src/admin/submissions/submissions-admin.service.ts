@@ -289,7 +289,9 @@ export class SubmissionsAdminService {
       const findings = await this.repo.findings(rows.map((r) => r.id));
       const bySubmission = new Map<string, SubmissionFindingRow[]>();
       for (const f of findings) {
-        bySubmission.set(f.submissionId, [...(bySubmission.get(f.submissionId) ?? []), f]);
+        const list = bySubmission.get(f.submissionId);
+        if (list) list.push(f);
+        else bySubmission.set(f.submissionId, [f]);
       }
       return {
         lines: rows.map((row) => csvLine(exportCells(row, top5Of(bySubmission.get(row.id) ?? [])))),

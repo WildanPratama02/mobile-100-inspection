@@ -1,4 +1,4 @@
-import { Readable } from 'node:stream';
+import { Readable, type Writable } from 'node:stream';
 import { Controller, Get, Header, Inject, Param, Query, StreamableFile } from '@nestjs/common';
 import { Auth } from '../../auth/auth.decorator';
 import { CSV_CONTENT_TYPE } from './csv';
@@ -30,10 +30,12 @@ export class SubmissionsAdminController {
   @Header('X-Content-Type-Options', 'nosniff')
   async exportCsv(@Query() query: unknown): Promise<StreamableFile> {
     const { filename, chunks } = await this.submissions.exportCsv(query);
-    return new StreamableFile(Readable.from(chunks), {
-      type: CSV_CONTENT_TYPE,
-      disposition: `attachment; filename="${filename}"`,
-    });
+    return cutOnFailure(
+      new StreamableFile(Readable.from(chunks), {
+        type: CSV_CONTENT_TYPE,
+        disposition: `attachment; filename="${filename}"`,
+      }),
+    );
   }
 
   @Get('submissions/:id')
@@ -45,6 +47,23 @@ export class SubmissionsAdminController {
   @Header('Cache-Control', 'private, no-store')
   @Header('X-Content-Type-Options', 'nosniff')
   async photo(@Param('id') id: string): Promise<StreamableFile> {
-    return new StreamableFile(await this.submissions.photo(id), { type: 'image/jpeg' });
+    return cutOnFailure(
+      new StreamableFile(await this.submissions.photo(id), { type: 'image/jpeg' }),
+    );
   }
+}
+
+/**
+ * A read that fails after the headers went out cuts the connection. Nest's default ends the answer normally, which
+ * would leave the admin with a cut-off CSV or JPEG that looks complete; a cut connection shows as a failed download.
+ */
+export function cutOnFailure(file: StreamableFile): StreamableFile {
+  const before = file.errorHandler;
+  return file.setErrorHandler((error, res) => {
+    if (res.headersSent && !res.destroyed) {
+      (res as unknown as Writable).destroy(error);
+      return;
+    }
+    before(error, res);
+  });
 }
