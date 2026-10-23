@@ -1,5 +1,5 @@
 /**
- * Admin accounts (doc 02 §5.2, doc 05 §20.6): add, reset a password, deactivate. Used by the CLI `admin:create`
+ * Admin accounts (doc 02 §5.2, doc 05 §20.6): add, reset a password, deactivate, reactivate. Used by the CLI `admin:create`
  * (doc 03 §6, §7.4) and by the admin endpoints. Each change writes an `audit_log` row in its own transaction;
  * neither a password nor its hash ever goes into the audit log.
  */
@@ -127,6 +127,31 @@ export async function deactivateAdmin(
         entity: 'admins',
         entityId: String(id),
         details: { username: admin.username, old: { active: true }, new: { active: false } },
+      },
+      tx,
+    );
+    return (await repos.admins.findById(id, tx))!;
+  });
+}
+
+/** Reactivates the admin `id` (doc 04 §10 A15). An admin who is already active is returned unchanged. */
+export async function reactivateAdmin(
+  db: Database,
+  repos: AdminAccountRepositories,
+  { id, actor }: { id: number; actor: Actor },
+): Promise<Admin> {
+  return db.transaction(async (tx) => {
+    const admin = await repos.admins.findById(id, tx);
+    if (!admin) throw new AdminAccountError('NOT_FOUND', `No admin has the id ${id}`);
+    if (admin.active) return admin;
+    await repos.admins.setActive(id, true, tx);
+    await repos.auditLog.append(
+      {
+        actor,
+        action: 'reactivate',
+        entity: 'admins',
+        entityId: String(id),
+        details: { username: admin.username, old: { active: false }, new: { active: true } },
       },
       tx,
     );

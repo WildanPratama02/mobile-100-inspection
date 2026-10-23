@@ -16,6 +16,10 @@ import { PgPoRepository, PO_REPOSITORY } from '../repositories/po.repository';
 import { PgReadinessRepository, READINESS_REPOSITORY } from '../repositories/readiness.repository';
 import { PgSettingsRepository, SETTINGS_REPOSITORY } from '../repositories/settings.repository';
 import {
+  PgSubmissionAdminRepository,
+  SUBMISSION_ADMIN_REPOSITORY,
+} from '../repositories/submission-admin.repository';
+import {
   PgSubmissionRepository,
   SUBMISSION_REPOSITORY,
 } from '../repositories/submission.repository';
@@ -30,6 +34,7 @@ const REPOSITORIES = [
   [ADMIN_REPOSITORY, PgAdminRepository],
   [AUDIT_LOG_REPOSITORY, PgAuditLogRepository],
   [SUBMISSION_REPOSITORY, PgSubmissionRepository],
+  [SUBMISSION_ADMIN_REPOSITORY, PgSubmissionAdminRepository],
   [READINESS_REPOSITORY, PgReadinessRepository],
 ] as const;
 
