@@ -53,11 +53,16 @@ function urlFor(base: URL, database: string, role?: string): string {
   return url.href;
 }
 
-function run(command: string, args: string[], options: { cwd: string; env?: NodeJS.ProcessEnv }) {
+function run(
+  command: string,
+  args: string[],
+  options: { cwd: string; env?: NodeJS.ProcessEnv; input?: string },
+) {
   const result = spawnSync(command, args, {
     cwd: options.cwd,
     env: options.env ?? process.env,
     encoding: 'utf8',
+    input: options.input,
     // pnpm is a .cmd on Windows.
     shell: command === 'pnpm',
   });
@@ -159,8 +164,13 @@ async function waitForHealth(url: string, api: ChildProcess, output: () => strin
   throw new Error(`The API did not answer ${url} within 60 s:\n${output()}`);
 }
 
+export interface TestApiOptions {
+  /** An admin account made with `admin:create` before the API starts (the admin app's tests, T3b.4). */
+  admin?: { username: string; password: string };
+}
+
 /** Starts everything; the returned function stops the API and drops the database. */
-export async function startTestApi(): Promise<() => Promise<void>> {
+export async function startTestApi(options: TestApiOptions = {}): Promise<() => Promise<void>> {
   const base = adminUrl();
   const name = `m100_test_e2e_${String(process.pid)}_${randomBytes(4).toString('hex')}`;
   const scratch = mkdtempSync(join(tmpdir(), 'm100-e2e-'));
@@ -215,6 +225,18 @@ export async function startTestApi(): Promise<() => Promise<void>> {
       cwd: scratch,
       env: apiEnv({ DATABASE_URL: urlFor(base, name, 'm100_app') }),
     });
+    if (options.admin) {
+      // The password is the first line of standard input (doc 03 §7.4).
+      run(
+        process.execPath,
+        [join(dist, 'cli', 'admin-create.js'), '--username', options.admin.username],
+        {
+          cwd: scratch,
+          env: apiEnv({ DATABASE_URL: urlFor(base, name, 'm100_app') }),
+          input: `${options.admin.password}\n`,
+        },
+      );
+    }
 
     const jwtKey = join(scratch, 'jwt.key');
     writeFileSync(jwtKey, randomBytes(32));
