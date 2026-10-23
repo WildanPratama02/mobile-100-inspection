@@ -83,6 +83,12 @@ export class Database implements Queryable {
   }
 }
 
+/** The name of the database `q` is connected to, as the server reports it (not as a URL claims it). */
+export async function currentDatabase(q: Queryable): Promise<string> {
+  const { rows } = await q.query<{ name: string }>('SELECT current_database() AS name');
+  return rows[0]!.name;
+}
+
 /** The SQLSTATE of an error from PostgreSQL, `undefined` for anything else (a network error has `ECONN…`). */
 function sqlStateOf(error: unknown): string | undefined {
   const code = (error as { code?: unknown } | null)?.code;

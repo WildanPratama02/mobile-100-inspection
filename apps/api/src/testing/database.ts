@@ -68,12 +68,19 @@ async function connect(url: URL, label: string): Promise<Client> {
   return client;
 }
 
-/** Creates an empty test database owned by `m100_migrate`; with `migrated`, applies `db/migrations` as that role. */
+/**
+ * Creates an empty test database owned by `m100_migrate`; with `migrated`, applies `db/migrations` as that role.
+ * It is named `<prefix>_<pid>_<random>`; `prefix` (default `m100_test`) is for a test that needs a database outside
+ * the `m100_test_*` pattern, and can never make the name `m100` or `m100_dev`.
+ */
 export async function createTestDatabase(
-  options: { migrated?: boolean } = {},
+  options: { migrated?: boolean; prefix?: string } = {},
 ): Promise<TestDatabase> {
+  const prefix = options.prefix ?? 'm100_test';
+  if (!/^m100_[a-z]+$/.test(prefix))
+    throw new Error(`Test database prefix ${prefix} is not m100_<letters>`);
   const base = adminUrl();
-  const name = `m100_test_${process.pid}_${randomBytes(4).toString('hex')}`;
+  const name = `${prefix}_${process.pid}_${randomBytes(4).toString('hex')}`;
 
   const admin = await connect(base, 'admin');
   try {

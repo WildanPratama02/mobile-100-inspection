@@ -238,16 +238,18 @@ paths:
                 username: { type: string }
                 password: { type: string, format: password }
       responses:
-        '204': { description: Logged in; cookie set. }
+        '204': { description: 'Logged in; cookie set: m100_admin=<JWT, aud admin>; Max-Age=28800; Path=/v1/admin; HttpOnly; Secure; SameSite=Strict.' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '423': { description: Account locked for 10 minutes after 5 failures (ADMIN_LOCKED). }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '423': { $ref: '#/components/responses/AdminLocked' }
   /admin/auth/logout:
     post:
       tags: [admin]
       operationId: adminLogout
       security: [{ adminCookie: [] }]
       responses:
-        '204': { description: Logged out. }
+        '204': { description: Logged out; the cookie is cleared. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /admin/me:
     get:
       tags: [admin]
@@ -260,6 +262,28 @@ paths:
             application/json:
               schema: { type: object, properties: { username: { type: string }, lastLoginAt: { type: string, format: date-time } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /admin/me/password:
+    post:
+      tags: [admin]
+      operationId: adminChangeOwnPassword
+      summary: The signed-in admin's own password; a wrong current password counts as a failed login.
+      security: [{ adminCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string, format: password }
+                newPassword: { type: string, format: password, minLength: 10 }
+      responses:
+        '204': { description: Password changed. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '423': { $ref: '#/components/responses/AdminLocked' }
   /admin/psi-users:
     get:
       tags: [admin]
@@ -376,7 +400,15 @@ components:
 
   responses:
     Unauthorized:
-      description: Missing or invalid device key or token. Codes DEVICE_KEY_INVALID, TOKEN_INVALID, TOKEN_EXPIRED.
+      description: Missing or invalid device key or token. Codes DEVICE_KEY_INVALID, TOKEN_INVALID, TOKEN_EXPIRED; on /admin, ADMIN_AUTH_REQUIRED (no valid session cookie, or no X-Requested-With on a state change) and ADMIN_LOGIN_FAILED.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    AdminLocked:
+      description: Code ADMIN_LOCKED. The account is locked for 10 minutes after 5 failed logins; `Retry-After` gives the seconds left.
+      headers:
+        Retry-After:
+          schema: { type: integer }
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

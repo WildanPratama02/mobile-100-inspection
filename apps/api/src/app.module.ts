@@ -2,6 +2,8 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import type { DestinationStream } from 'pino';
+import { AdminGuard } from './admin/admin.guard';
+import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { DeviceKeyGuard } from './auth/device-key.guard';
 import { TokenGuard } from './auth/token.guard';
@@ -39,12 +41,15 @@ export class AppModule {
         AuthModule,
         PoModule,
         SubmissionsModule,
+        AdminModule,
       ],
-      // Global guards run in this order: which device it is, its rate budget, then the PSI's token (doc 03 §5.1, §5.6).
+      // Global guards run in this order: which device it is, its rate budget, then the PSI's token (doc 03 §5.1, §5.6),
+      // then the admin session on `/admin` routes (doc 04 §8), which the tablet guards leave alone.
       providers: [
         { provide: APP_GUARD, useExisting: DeviceKeyGuard },
         { provide: APP_GUARD, useClass: DeviceThrottlerGuard },
         { provide: APP_GUARD, useExisting: TokenGuard },
+        { provide: APP_GUARD, useExisting: AdminGuard },
         { provide: APP_FILTER, useClass: ProblemFilter },
       ],
     };
