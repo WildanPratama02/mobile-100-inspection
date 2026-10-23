@@ -290,63 +290,233 @@ paths:
       operationId: adminListPsiUsers
       security: [{ adminCookie: [] }]
       responses:
-        '200': { description: All PSI users including inactive., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminPsiUser' } } } } }
+        '200': { description: All PSI users including inactive, by username then level., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminPsiUser' } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [admin]
       operationId: adminCreatePsiUser
       security: [{ adminCookie: [] }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdminPsiUserInput' } } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdminPsiUserCreate' } } } }
       responses:
         '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/AdminPsiUser' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /admin/psi-users/{id}:
     patch:
       tags: [admin]
       operationId: adminUpdatePsiUser
+      summary: Rename, change level, deactivate or reactivate. A change that changes nothing writes nothing.
       security: [{ adminCookie: [] }]
       parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdminPsiUserInput' } } } }
       responses:
         '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/AdminPsiUser' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/factories:
+    get:
+      tags: [admin]
+      operationId: adminListFactories
+      security: [{ adminCookie: [] }]
+      responses:
+        '200': { description: All factories including inactive, in the order they were added., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminFactory' } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [admin]
+      operationId: adminCreateFactory
+      security: [{ adminCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [name], properties: { name: { type: string, minLength: 1, maxLength: 50 } } }
+      responses:
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/AdminFactory' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/factories/{id}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdateFactory
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, minProperties: 1, properties: { name: { type: string, minLength: 1, maxLength: 50 }, active: { type: boolean } } }
+      responses:
+        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/AdminFactory' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/cells:
+    get:
+      tags: [admin]
+      operationId: adminListCells
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: query, name: factoryId, schema: { type: integer } }]
+      responses:
+        '200': { description: All cells including inactive (only those of factoryId when given), in the order they were added., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminCell' } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    post:
+      tags: [admin]
+      operationId: adminCreateCell
+      security: [{ adminCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [factoryId, code], properties: { factoryId: { type: integer }, code: { type: string, minLength: 1, maxLength: 50 } } }
+      responses:
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/AdminCell' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/cells/{id}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdateCell
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, minProperties: 1, properties: { factoryId: { type: integer }, code: { type: string, minLength: 1, maxLength: 50 }, active: { type: boolean } } }
+      responses:
+        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/AdminCell' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /admin/pos:
     get:
       tags: [admin]
       operationId: adminSearchPos
+      summary: The match and order of GET /pos (doc 04 section 3.3) over every PO, inactive included.
       security: [{ adminCookie: [] }]
-      parameters: [{ in: query, name: q, schema: { type: string } }]
+      parameters: [{ in: query, name: q, required: true, schema: { type: string, minLength: 3, maxLength: 40 } }]
       responses:
-        '200': { description: Up to 50 POs., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Po' } } } } }
+        '200': { description: Up to 50 POs., content: { application/json: { schema: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/AdminPo' } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    post:
+      tags: [admin]
+      operationId: adminCreatePo
+      summary: Add one PO (`source` = `admin`). `finished` is not set here (PRD OQ-06).
+      security: [{ adminCookie: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdminPoCreate' } } } }
+      responses:
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/AdminPo' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/pos/{po}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdatePo
+      summary: Edit one PO, or deactivate / reactivate it. The PO number cannot change; a changed value sets `source` to `admin`.
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: path, name: po, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdminPoInput' } } } }
+      responses:
+        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/AdminPo' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /admin/pos/import:
     post:
       tags: [admin]
       operationId: adminImportPos
       summary: Upload a CSV or XLSX of POs; upsert by `po`, never delete.
+      description: |
+        Columns PO, ARTICLE, MODEL, DESTINATION, ORDER QTY, PODD, CRD (header names ignore case and surrounding
+        spaces); a workbook is read from its sheet ALL_PO_MASTER, else its first sheet. Every row with an empty PO, an
+        ORDER QTY that is not a whole number of at least 1, a PODD or CRD that is not a date, or a PO number whose rows
+        differ is an error (doc 04 section 10, A9). A dry run reports the errors and the counts of the valid rows;
+        applying with any error answers 422 and writes nothing.
       security: [{ adminCookie: [] }]
       parameters: [{ in: query, name: dryRun, schema: { type: boolean, default: true } }]
       requestBody:
         required: true
         content:
           multipart/form-data:
-            schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } }
+            schema: { type: object, required: [file], properties: { file: { type: string, format: binary, description: 'At most 20 MB.' } } }
       responses:
         '200': { description: Import report., content: { application/json: { schema: { $ref: '#/components/schemas/ImportReport' } } } }
-        '422': { description: IMPORT_INVALID with row errors., content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '422': { $ref: '#/components/responses/ImportInvalid' }
+  /admin/defects:
+    get:
+      tags: [admin]
+      operationId: adminListDefects
+      security: [{ adminCookie: [] }]
+      responses:
+        '200': { description: D001–D098 including inactive., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminDefect' } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /admin/defects/{id}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdateDefect
+      summary: Deactivate or reactivate a defect. Names are not editable in release 1 (doc 05 section 20.5).
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { $ref: '#/components/schemas/DefectId' } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdminActiveInput' } } } }
+      responses:
+        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/AdminDefect' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/area-map:
+    get:
+      tags: [admin]
+      operationId: adminGetAreaMap
+      security: [{ adminCookie: [] }]
+      responses:
+        '200': { description: Areas, sub-areas, families and map rows, inactive included., content: { application/json: { schema: { $ref: '#/components/schemas/AdminAreaMap' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /admin/area-map/{id}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdateMapRow
+      summary: Deactivate or reactivate one map row.
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdminActiveInput' } } } }
+      responses:
+        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/AdminMapRow' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
   /admin/area-map/import:
     post:
       tags: [admin]
       operationId: adminImportAreaMap
-      summary: Upload the mapping workbook (doc 02 section 5.1).
+      summary: Upload the mapping workbook (doc 02 section 5.1); upsert areas, sub-areas, families and map rows, never delete.
+      description: |
+        The same validation as the one-time import, against the stored defects (every DEFECT_ID must exist and carry
+        the stored name). Stored rows missing from the workbook stay as they are and are listed in `warnings`
+        (doc 04 section 10, A10). With any error a dry run reports the errors without counts and applying answers 422.
       security: [{ adminCookie: [] }]
       parameters: [{ in: query, name: dryRun, schema: { type: boolean, default: true } }]
       requestBody:
         required: true
         content:
           multipart/form-data:
-            schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } }
+            schema: { type: object, required: [file], properties: { file: { type: string, format: binary, description: 'At most 20 MB.' } } }
       responses:
         '200': { description: Import report., content: { application/json: { schema: { $ref: '#/components/schemas/ImportReport' } } } }
-        '422': { description: IMPORT_INVALID., content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '422': { $ref: '#/components/responses/ImportInvalid' }
   /admin/submissions:
     get:
       tags: [admin]
@@ -418,12 +588,17 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     Conflict:
-      description: Code SUBMISSION_UUID_REUSED (same UUID, different content).
+      description: Code SUBMISSION_UUID_REUSED (same UUID, different content); on /admin, CONFLICT (a duplicate natural key).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ImportInvalid:
+      description: Code IMPORT_INVALID; `errors` lists every problem (path = sheet and row). Nothing was written (AC-14.3).
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     TooLarge:
-      description: Code PAYLOAD_TOO_LARGE (request over 8 MB or a photo over 1 MB).
+      description: Code PAYLOAD_TOO_LARGE (request over 8 MB or a photo over 1 MB; an admin import file over 20 MB).
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -715,24 +890,148 @@ components:
         username: { type: string }
         level: { $ref: '#/components/schemas/PsiLevel' }
         active: { type: boolean }
+    AdminPsiUserCreate:
+      type: object
+      additionalProperties: false
+      required: [username, level]
+      properties:
+        username: { type: string, minLength: 1, maxLength: 100, description: 'Exactly as shown on screen; no spaces at either end.' }
+        level: { $ref: '#/components/schemas/PsiLevel' }
+        active: { type: boolean, default: true }
     AdminPsiUserInput:
       type: object
+      additionalProperties: false
+      minProperties: 1
       properties:
-        username: { type: string }
+        username: { type: string, minLength: 1, maxLength: 100 }
         level: { $ref: '#/components/schemas/PsiLevel' }
         active: { type: boolean }
+    AdminFactory:
+      type: object
+      required: [id, name, active]
+      properties:
+        id: { type: integer }
+        name: { type: string, examples: ['F 3'], description: 'Only `F <number>` factories reach the tablets.' }
+        active: { type: boolean }
+    AdminCell:
+      type: object
+      required: [id, factoryId, factory, code, active]
+      properties:
+        id: { type: integer }
+        factoryId: { type: integer }
+        factory: { type: string }
+        code: { type: string, examples: ['F3-10'] }
+        active: { type: boolean }
+    AdminPo:
+      allOf:
+        - { $ref: '#/components/schemas/Po' }
+        - type: object
+          required: [finished, active, source]
+          properties:
+            finished: { type: [boolean, 'null'], description: 'Not imported or editable until PRD OQ-06 is decided.' }
+            active: { type: boolean }
+            source: { type: string, examples: ['admin', 'import:ALL_PO_MASTER.csv'] }
+    AdminPoCreate:
+      type: object
+      additionalProperties: false
+      required: [po, article, model, destination, orderQty, podd, crd]
+      properties:
+        po: { type: string, minLength: 1, maxLength: 40, description: 'Kept exactly; no spaces at either end.' }
+        article: { type: string, maxLength: 200 }
+        model: { type: string, maxLength: 200 }
+        destination: { type: string, maxLength: 200 }
+        orderQty: { type: integer, minimum: 1 }
+        podd: { type: [string, 'null'], format: date }
+        crd: { type: [string, 'null'], format: date }
+    AdminPoInput:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        article: { type: string, maxLength: 200 }
+        model: { type: string, maxLength: 200 }
+        destination: { type: string, maxLength: 200 }
+        orderQty: { type: integer, minimum: 1 }
+        podd: { type: [string, 'null'], format: date }
+        crd: { type: [string, 'null'], format: date }
+        active: { type: boolean }
+    AdminActiveInput:
+      type: object
+      additionalProperties: false
+      required: [active]
+      properties:
+        active: { type: boolean }
+    AdminDefect:
+      type: object
+      required: [id, name, classification, ctqCategory, ctqCode, active]
+      properties:
+        id: { $ref: '#/components/schemas/DefectId' }
+        name: { type: string, description: 'Exactly as in the defect list; D049 and D071 share a name (ADR-009).' }
+        classification: { $ref: '#/components/schemas/Classification' }
+        ctqCategory: { type: [string, 'null'] }
+        ctqCode: { type: [string, 'null'] }
+        active: { type: boolean }
+    AdminMapRow:
+      type: object
+      required: [id, areaId, subAreaId, familyId, defectId, active]
+      properties:
+        id: { type: string, examples: ['MAP-035-03'] }
+        areaId: { $ref: '#/components/schemas/AreaId' }
+        subAreaId: { type: string }
+        familyId: { type: string }
+        defectId: { $ref: '#/components/schemas/DefectId' }
+        active: { type: boolean }
+    AdminAreaMap:
+      type: object
+      required: [areas, subAreas, families, rows]
+      properties:
+        areas:
+          type: array
+          items:
+            type: object
+            required: [id, name, sort, active]
+            properties: { id: { $ref: '#/components/schemas/AreaId' }, name: { type: string }, sort: { type: integer }, active: { type: boolean } }
+        subAreas:
+          type: array
+          items:
+            type: object
+            required: [id, areaId, name, sort, active]
+            properties: { id: { type: string }, areaId: { $ref: '#/components/schemas/AreaId' }, name: { type: string }, sort: { type: integer }, active: { type: boolean } }
+        families:
+          type: array
+          items:
+            type: object
+            required: [id, name, active]
+            properties: { id: { type: string }, name: { type: string }, active: { type: boolean } }
+        rows: { type: array, items: { $ref: '#/components/schemas/AdminMapRow' } }
     ImportReport:
       type: object
-      required: [dryRun, read, inserted, updated, skipped]
+      required: [dryRun, read, inserted, updated, skipped, errors, warnings]
       properties:
         dryRun: { type: boolean }
-        read: { type: integer }
+        read: { type: integer, description: 'Non-empty rows read (map rows for the mapping workbook).' }
         inserted: { type: integer }
         updated: { type: integer }
-        skipped: { type: integer }
+        skipped: { type: integer, description: 'Rows that change nothing: unchanged in the database, or the same as an earlier row of the file.' }
         errors:
           type: array
-          items: { type: object, properties: { row: { type: integer }, message: { type: string } } }
+          description: Every invalid row; while any exists, applying is refused (AC-14.3).
+          items:
+            type: object
+            required: [sheet, code, message]
+            properties:
+              sheet: { type: string }
+              row: { type: integer, description: 'Row in the sheet; 1 is the header.' }
+              code: { type: string, examples: ['PO_EMPTY', 'ORDER_QTY_INVALID', 'DATE_INVALID', 'PO_CONFLICT', 'MAPPING_INVALID'] }
+              message: { type: string }
+        warnings: { type: array, items: { type: string }, description: 'Not errors, e.g. stored rows the workbook does not list (A10).' }
+        tables:
+          type: object
+          description: Counts per table (mapping workbook).
+          additionalProperties:
+            type: object
+            required: [inserted, updated, unchanged]
+            properties: { inserted: { type: integer }, updated: { type: integer }, unchanged: { type: integer } }
     AdminSubmissionSummary:
       type: object
       required: [id, displayNo, sealedAt, username, level, po]

@@ -26,7 +26,14 @@ import type {
   DefectInput,
   SubAreaInput,
 } from '../repositories/master-data.repository';
-import { type CellValue, isBlank, type MasterTables, type Table, type TableRow } from './sources';
+import {
+  type CellValue,
+  isBlank,
+  type MappingSheet,
+  type MasterTables,
+  type Table,
+  type TableRow,
+} from './sources';
 
 export interface ImportProblem {
   sheet: string;
@@ -138,10 +145,10 @@ export function parseMaster(tables: MasterTables): ParsedMaster {
   };
 }
 
-type Problem = (table: Table, message: string, line?: number) => void;
+export type Problem = (table: Table, message: string, line?: number) => void;
 
 /** Text as it was in the sheet; a number from a workbook becomes its plain digits. */
-function text(value: CellValue): string {
+export function text(value: CellValue): string {
   if (value === null) return '';
   if (value instanceof Date) return isoDate(value);
   return String(value);
@@ -157,7 +164,7 @@ function key(value: CellValue): string {
 }
 
 /** A whole number ≥ 1, from a number cell or from text holding digits only. */
-function positiveInteger(value: CellValue): number | null {
+export function positiveInteger(value: CellValue): number | null {
   const n =
     typeof value === 'number'
       ? value
@@ -172,7 +179,7 @@ function isoDate(date: Date): string {
 }
 
 /** A workbook date (UTC midnight) or ISO text `2026-01-12` (optionally with a time); anything else is null. */
-function parseDate(value: CellValue): string | null {
+export function parseDate(value: CellValue): string | null {
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : isoDate(value);
   if (typeof value !== 'string') return null;
   const match = /^\s*(\d{4})-(\d{2})-(\d{2})(?:[T ][0-9:.]+Z?)?\s*$/.exec(value);
@@ -266,7 +273,16 @@ function parseDefects(table: Table, problem: Problem) {
   return { rows };
 }
 
-function parseMapping(tables: MasterTables, defects: readonly DefectInput[], problem: Problem) {
+/**
+ * The mapping workbook (doc 02 §3.5, §5.1) against the defects it must name exactly: `DEFECT_LIST` in the one-time
+ * import, the `defects` table when an admin uploads the workbook again (`defectSource` names which, in messages).
+ */
+export function parseMapping(
+  tables: Record<MappingSheet, Table>,
+  defects: readonly Pick<DefectInput, 'id' | 'name'>[],
+  problem: Problem,
+  defectSource = 'DEFECT_LIST',
+) {
   const uniqueIds = (table: Table, column: string): Map<string, TableRow> => {
     const seen = new Map<string, TableRow>();
     for (const row of table.rows) {
@@ -332,11 +348,11 @@ function parseMapping(tables: MasterTables, defects: readonly DefectInput[], pro
     const defect = defectById.get(id);
     const familyId = key(row.cells.FAMILY_ID!);
     if (!defect) {
-      problem(masterTable, `${id} is not a defect of DEFECT_LIST`, row.line);
+      problem(masterTable, `${id} is not a defect of ${defectSource}`, row.line);
       continue;
     }
     if (text(row.cells.DEFECT_NAME!) !== defect.name) {
-      problem(masterTable, `${id} is named differently than in DEFECT_LIST`, row.line);
+      problem(masterTable, `${id} is named differently than in ${defectSource}`, row.line);
     }
     if (!familyRows.has(familyId)) {
       problem(masterTable, `${id} has unknown FAMILY_ID "${familyId}"`, row.line);

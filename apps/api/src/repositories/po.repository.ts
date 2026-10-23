@@ -28,6 +28,8 @@ export interface PoRepository {
    * article/model matches; within each, the newest PODD first (none last), then `po`.
    */
   search(text: string, limit: number, q?: Queryable): Promise<Po[]>;
+  /** The same match and order over every PO, active or not, with its bookkeeping columns (admin search, doc 05 §20.5). */
+  searchAll(text: string, limit: number, q?: Queryable): Promise<PoRecord[]>;
   /**
    * Upserts by `po`; `source` is `import:<file>` or `admin` and is recorded only on rows that are new or changed.
    * `active` of an existing row is left as it is.
@@ -50,16 +52,30 @@ export class PgPoRepository implements PoRepository {
     return rows[0] ?? null;
   }
 
-  async search(text: string, limit: number, q: Queryable = this.db): Promise<Po[]> {
+  search(text: string, limit: number, q: Queryable = this.db): Promise<Po[]> {
+    return this.match<Po>(text, limit, false, q);
+  }
+
+  searchAll(text: string, limit: number, q: Queryable = this.db): Promise<PoRecord[]> {
+    return this.match<PoRecord>(text, limit, true, q);
+  }
+
+  private async match<R extends Po>(
+    text: string,
+    limit: number,
+    all: boolean,
+    q: Queryable,
+  ): Promise<R[]> {
     // `%`, `_` and `\` are literal; the text is lowered and its U+00A0 replaced in SQL, the same way as the
     // indexed expression of `pos_search_trgm_idx`, which the first condition repeats exactly to hit the index.
     // The per-field recheck drops a match that only spans the spaces joining po, article and model.
     const literal = text.replace(/[\\%_]/g, '\\$&');
-    const { rows } = await q.query<Po>(
+    const { rows } = await q.query<R>(
       `SELECT po, article, model, destination, order_qty AS "orderQty",
               to_char(podd, 'YYYY-MM-DD') AS podd, to_char(crd, 'YYYY-MM-DD') AS crd
+              ${all ? ', finished, active, source' : ''}
          FROM pos
-        WHERE active
+        WHERE ($4::boolean OR active)
           AND lower(replace(po || ' ' || article || ' ' || model, U&'\\00A0', ' '))
               LIKE lower(replace($1, U&'\\00A0', ' '))
           AND (lower(po) LIKE lower(replace($1, U&'\\00A0', ' '))
@@ -72,7 +88,7 @@ export class PgPoRepository implements PoRepository {
                  END,
                  podd DESC NULLS LAST, po
         LIMIT $3`,
-      [`%${literal}%`, `%${literal}`, limit],
+      [`%${literal}%`, `%${literal}`, limit, all],
     );
     return rows;
   }
