@@ -1,0 +1,29 @@
+<!--
+  WinSW 2.12 service for Caddy (doc 03 §7.1, §7.2.1). install.ps1 and upgrade.ps1 fill the {{…}} values and write it
+  as services\m100-caddy.xml next to services\m100-caddy.exe. Runs as the virtual account NT SERVICE\m100-caddy.
+  The Caddyfile comes from the current release; PUBLIC_HOST and CF_API_TOKEN from the install folder's .env.
+-->
+<service>
+  <id>m100-caddy</id>
+  <name>M100 Caddy</name>
+  <description>HTTPS on port 443 for m100: the tablet app, /admin/ and /v1 to the API (Let's Encrypt via Cloudflare DNS).</description>
+  <executable>{{ROOT}}\caddy\caddy.exe</executable>
+  <arguments>run --config "{{ROOT}}\current\deploy\Caddyfile" --adapter caddyfile --envfile "{{ROOT}}\.env"</arguments>
+  <workingdirectory>{{ROOT}}</workingdirectory>
+  <env name="M100_HOME" value="{{ROOT_SLASHED}}" />
+  <!-- Certificates and the ACME account: backed up nightly (doc 03 §7.6). -->
+  <env name="XDG_DATA_HOME" value="{{ROOT}}\caddy-data" />
+  <env name="XDG_CONFIG_HOME" value="{{ROOT}}\caddy-config" />
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="10 sec" />
+  <onfailure action="restart" delay="30 sec" />
+  <onfailure action="restart" delay="60 sec" />
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>15 sec</stoptimeout>
+  <logpath>{{ROOT}}\logs</logpath>
+  <log mode="roll-by-size-time">
+    <sizeThreshold>10240</sizeThreshold>
+    <pattern>yyyyMMdd</pattern>
+    <autoRollAtTime>00:00:00</autoRollAtTime>
+  </log>
+</service>

@@ -12,6 +12,13 @@ const tokens = JSON.parse(
   readFileSync(fileURLToPath(new URL('../../design-system/tokens.json', import.meta.url)), 'utf8'),
 ) as { color: { tokens: Array<{ name: string; value: { light: string } }> } };
 
+const securityHeaders = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL('../../deploy/security-headers.json', import.meta.url)),
+    'utf8',
+  ),
+) as Record<string, string>;
+
 /** A light-theme colour token, for the manifest, which cannot read CSS variables. */
 function lightColor(name: string): string {
   const token = tokens.color.tokens.find((t) => t.name === name);
@@ -38,6 +45,8 @@ export default defineConfig({
   },
   preview: {
     proxy: apiProxy,
+    // The headers Caddy sends in production (deploy/Caddyfile), so the PWA end-to-end tests run under the same CSP.
+    headers: securityHeaders,
   },
   plugins: [
     react(),

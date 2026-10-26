@@ -1,0 +1,60 @@
+# Caddy in front of the M100 apps and API (doc 03 §7.1, §7.2.1). Started by the m100-caddy service with
+# `--envfile <root>\.env`, which supplies PUBLIC_HOST and CF_API_TOKEN; the service sets M100_HOME (the install
+# folder, forward slashes) and XDG_DATA_HOME (certificates and ACME account, backed up nightly).
+{
+	# No local admin endpoint: a configuration change is a service restart.
+	admin off
+}
+
+{$PUBLIC_HOST} {
+	# Let's Encrypt through the Cloudflare DNS challenge: no inbound port from the internet (ADR-016).
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+	}
+	encode zstd gzip
+
+	# Every answer (doc 03 §6). Must equal deploy/security-headers.json (checked by deploy/test).
+	header {
+		Content-Security-Policy "default-src 'self'; img-src 'self' blob: data:; connect-src 'self'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		# HSTS once HTTPS is stable (doc 03 §6); after that the name can never go back to plain HTTP.
+		# Strict-Transport-Security "max-age=31536000"
+		-Server
+		defer
+	}
+
+	# The API listens on loopback only; never cached (doc 03 §7.1).
+	handle /v1/* {
+		header {
+			Cache-Control "no-store"
+			defer
+		}
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	redir /admin /admin/ 308
+
+	# Admin app (doc 05 §20): online only, no service worker.
+	handle /admin/* {
+		root * {$M100_HOME}/current
+		@adminAssets path /admin/assets/*
+		header @adminAssets Cache-Control "public, max-age=31536000, immutable"
+		@adminShell not path /admin/assets/*
+		header @adminShell Cache-Control "no-cache"
+		try_files {path} /admin/index.html
+		file_server
+	}
+
+	# Tablet PWA. Hashed files under /assets/ never change; everything else (index.html, sw.js, the manifest,
+	# icons, and app routes that fall back to index.html) is revalidated so a new release reaches the tablets.
+	handle {
+		root * {$M100_HOME}/current/web
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@shell not path /assets/*
+		header @shell Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

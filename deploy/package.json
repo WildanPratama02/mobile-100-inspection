@@ -1,0 +1,15 @@
+{
+  "name": "deploy",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Deployment files for the Windows server (doc 03 §7): Caddyfile, WinSW services, PowerShell install, upgrade, backup and restore, and the release builder",
+  "type": "module",
+  "scripts": {
+    "release": "node build-release.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "vitest": "5.0.5"
+  }
+}

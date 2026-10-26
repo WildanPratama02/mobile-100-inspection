@@ -1,0 +1,29 @@
+<!--
+  WinSW 2.12 service for the M100 API (doc 03 §7.1, §7.3). install.ps1 and upgrade.ps1 fill the {{…}} values and
+  write it as services\m100-api.xml next to services\m100-api.exe. The service runs as the virtual account
+  NT SERVICE\m100-api (set by install.ps1) in the install folder, where the API reads .env (doc 03 §7.4).
+-->
+<service>
+  <id>m100-api</id>
+  <name>M100 API</name>
+  <description>Mobile 100% Inspection API (NestJS) on 127.0.0.1:3000. Starts after PostgreSQL.</description>
+  <executable>{{NODE}}</executable>
+  <arguments>"{{ROOT}}\current\api\dist\main.js"</arguments>
+  <workingdirectory>{{ROOT}}</workingdirectory>
+  <env name="NODE_ENV" value="production" />
+  <startmode>Automatic</startmode>
+  <!-- PostgreSQL before the API (doc 03 §7.1). -->
+  <depend>{{POSTGRES_SERVICE}}</depend>
+  <onfailure action="restart" delay="10 sec" />
+  <onfailure action="restart" delay="30 sec" />
+  <onfailure action="restart" delay="60 sec" />
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>15 sec</stoptimeout>
+  <!-- pino's JSON lines on stdout, rotated by size and day; m100.ps1 nightly removes files older than 30 days. -->
+  <logpath>{{ROOT}}\logs</logpath>
+  <log mode="roll-by-size-time">
+    <sizeThreshold>10240</sizeThreshold>
+    <pattern>yyyyMMdd</pattern>
+    <autoRollAtTime>00:00:00</autoRollAtTime>
+  </log>
+</service>
