@@ -112,7 +112,8 @@ describe('Caddyfile (doc 03 §6, §7.1, §7.2.1)', () => {
           ...process.env,
           PUBLIC_HOST: 'm100.qdms.web.id',
           M100_HOME: 'C:/m100',
-          CF_API_TOKEN: 'test-token',
+          // Shaped like a real token (40 characters): the module checks the format, validate never calls Cloudflare.
+          CF_API_TOKEN: 'x'.repeat(40),
         },
       },
     );
