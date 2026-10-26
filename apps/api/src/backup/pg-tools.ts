@@ -13,11 +13,18 @@ export function pgToolPath(tool: PgTool, pgBin: string | undefined): string {
   return join(pgBin, process.platform === 'win32' ? `${tool}.exe` : tool);
 }
 
-/** `url` without its password, and the password for `PGPASSWORD`. */
+/**
+ * `url` without its password, and the password for `PGPASSWORD`. Query parameters are percent-encoded again:
+ * `URL` writes a space as `+`, which libpq does not decode (`options=-c+role%3Dx` would name the setting `+role`).
+ */
 export function splitPassword(url: string): { url: string; password: string | undefined } {
   const parsed = new URL(url);
   const password = parsed.password ? decodeURIComponent(parsed.password) : undefined;
   parsed.password = '';
+  const query = [...parsed.searchParams]
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+  parsed.search = query ? `?${query}` : '';
   return { url: parsed.href, password };
 }
 

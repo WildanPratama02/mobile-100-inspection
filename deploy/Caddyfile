@@ -24,7 +24,8 @@
 		defer
 	}
 
-	# The API listens on loopback only; never cached (doc 03 §7.1).
+	# The API listens on loopback only; never cached (doc 03 §7.1). The Cache-Control values below must equal
+	# deploy/cache-control.json, which vite preview applies for the PWA end-to-end tests (checked by deploy/test).
 	handle /v1/* {
 		header {
 			Cache-Control "no-store"

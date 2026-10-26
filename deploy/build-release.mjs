@@ -19,6 +19,7 @@ const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const DEPLOY_FILES = [
   'Caddyfile',
   'security-headers.json',
+  'cache-control.json',
   'windows/common.ps1',
   'windows/precheck.ps1',
   'windows/install.ps1',

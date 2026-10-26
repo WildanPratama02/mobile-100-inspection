@@ -20,7 +20,7 @@ describe('build-release', () => {
   it('ships every script and service definition of deploy/windows, and the Caddyfile', () => {
     const windows = readdirSync(join(deployDir, 'windows')).map((f) => `windows/${f}`);
     expect([...DEPLOY_FILES].sort()).toEqual(
-      ['Caddyfile', 'security-headers.json', ...windows].sort(),
+      ['Caddyfile', 'security-headers.json', 'cache-control.json', ...windows].sort(),
     );
   });
 

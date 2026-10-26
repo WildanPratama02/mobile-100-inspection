@@ -104,7 +104,8 @@ export async function runBackup(options: BackupOptions): Promise<BackupResult> {
       config.push(entry);
     }
 
-    if (options.photoDir) {
+    // No folder yet means no photo yet (the store creates it with the first one).
+    if (options.photoDir && existsSync(options.photoDir)) {
       // Missing files only; a file already in the mirror is the same photo (immutable keys). Skips the store's
       // `.name.tmp` files of a write in progress.
       await cp(options.photoDir, photoMirror(options.backupDir), {

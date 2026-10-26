@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { APP_NAME } from '../../packages/shared/src/index.ts';
 import { appVersionDefine } from './version.config.ts';
@@ -18,6 +18,35 @@ const securityHeaders = JSON.parse(
     'utf8',
   ),
 ) as Record<string, string>;
+
+const cacheControl = JSON.parse(
+  readFileSync(fileURLToPath(new URL('../../deploy/cache-control.json', import.meta.url)), 'utf8'),
+) as { hashedAssets: string; appShell: string; api: string };
+
+/**
+ * `vite preview` answers with the Cache-Control of deploy/Caddyfile: hashed files under `/assets/` immutable, `/v1`
+ * no-store, everything else (index.html, sw.js, the manifest, icons) revalidated. The PWA end-to-end tests thus run
+ * the service worker against the production cache rules.
+ */
+function productionCacheHeaders(): Plugin {
+  return {
+    name: 'm100-production-cache-headers',
+    configurePreviewServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const path = req.url ?? '/';
+        res.setHeader(
+          'Cache-Control',
+          path.startsWith('/v1/')
+            ? cacheControl.api
+            : path.startsWith('/assets/')
+              ? cacheControl.hashedAssets
+              : cacheControl.appShell,
+        );
+        next();
+      });
+    },
+  };
+}
 
 /** A light-theme colour token, for the manifest, which cannot read CSS variables. */
 function lightColor(name: string): string {
@@ -50,6 +79,7 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    productionCacheHeaders(),
     VitePWA({
       // The new service worker waits; the app activates it only when no inspection is active (doc 03 §4.8).
       registerType: 'prompt',

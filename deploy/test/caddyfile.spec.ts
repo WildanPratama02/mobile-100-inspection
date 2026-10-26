@@ -9,6 +9,11 @@ const caddyfile = readFileSync(join(deployDir, 'Caddyfile'), 'utf8');
 const securityHeaders = JSON.parse(
   readFileSync(join(deployDir, 'security-headers.json'), 'utf8'),
 ) as Record<string, string>;
+const cacheControl = JSON.parse(readFileSync(join(deployDir, 'cache-control.json'), 'utf8')) as {
+  hashedAssets: string;
+  appShell: string;
+  api: string;
+};
 
 /** The body of the first `<opening> {` block in `text`, braces balanced. */
 function block(text: string, opening: string): string {
@@ -81,6 +86,19 @@ describe('Caddyfile (doc 03 §6, §7.1, §7.2.1)', () => {
   it('is the header set the PWA preview runs its end-to-end tests under', () => {
     const viteConfig = readFileSync(join(deployDir, '..', 'apps', 'web', 'vite.config.ts'), 'utf8');
     expect(viteConfig).toContain('deploy/security-headers.json');
+  });
+
+  it('uses the Cache-Control values of cache-control.json, which vite preview applies too', () => {
+    expect(block(block(site, 'handle /v1/*'), 'header')).toContain(
+      `Cache-Control "${cacheControl.api}"`,
+    );
+    for (const opening of ['handle /admin/*', 'handle']) {
+      const body = block(site, opening);
+      expect(body).toContain(`Cache-Control "${cacheControl.hashedAssets}"`);
+      expect(body).toContain(`Cache-Control "${cacheControl.appShell}"`);
+    }
+    const viteConfig = readFileSync(join(deployDir, '..', 'apps', 'web', 'vite.config.ts'), 'utf8');
+    expect(viteConfig).toContain('deploy/cache-control.json');
   });
 
   // Needs a Caddy with the Cloudflare module; e.g. CADDY_BIN=C:\tools\caddy.exe pnpm --filter deploy test

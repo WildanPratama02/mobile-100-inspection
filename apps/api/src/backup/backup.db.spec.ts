@@ -101,7 +101,7 @@ describeIfPgTools('backup and restore (doc 03 §7.6)', () => {
   }
 
   it('dumps the database, the install folder and the photos; a restore matches the manifest', async () => {
-    await submissionWithPhotos(['D001', 'D035']);
+    await submissionWithPhotos(['D001', 'D003']);
     await submissionWithPhotos([]);
 
     const result = await backup();
@@ -227,5 +227,19 @@ describeIfPgTools('backup and restore (doc 03 §7.6)', () => {
       }),
     ).rejects.toThrow();
     expect((await readdir(dir)).filter((n) => n.endsWith('.partial'))).toEqual([]);
+  });
+
+  it('backs up a server that has no photo folder yet', async () => {
+    const result = await backup({ photoDir: join(work, 'no-photos-yet') });
+    expect(result.manifest.photos).toBe('mirrored');
+    expect(existsSync(join(result.folder, DUMP_FILE))).toBe(true);
+  });
+
+  it('leaves no scratch database behind, also after a failed restore', async () => {
+    const { rows } = await db.client.query<{ datname: string }>(
+      'SELECT datname FROM pg_database WHERE datname LIKE $1',
+      [`m100_test_restore_${process.pid}_%`],
+    );
+    expect(rows).toEqual([]);
   });
 });
