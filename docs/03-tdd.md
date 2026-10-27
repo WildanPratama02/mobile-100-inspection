@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Version | 0.3 — PostgreSQL + photo store + admin app (ADR-018) |
-| Date | 20 Oct 2026 |
+| Version | 0.4 — Qty Inspection entered by the PSI (ADR-019: §3, §4.2, §5.5, §5.7, §8). v0.3 — PostgreSQL + photo store + admin app (ADR-018) |
+| Date | 27 Oct 2026 |
 | Status | Replaces v0.2, which was built on Google Sheets and Drive. Everything here can be built now. The HTTPS method is decided (option A, `m100.qdms.web.id`, §7.2, ADR-016); the server is known (Windows, operated by QIP Digital). Photo store decided: a plain folder for release 1 (§5.2). Open: the server pre-checks of §7.3. |
-| Related | [01 PRD](01-prd.md); [02 Data Design](02-data-design.md) v2.0; [04 API Contract](04-api-contract.md) v2.0; ADR-004, 005, 014, 015, 016, **018** in [07 Decision Log](07-decision-log.md) |
+| Related | [01 PRD](01-prd.md); [02 Data Design](02-data-design.md) v2.1; [04 API Contract](04-api-contract.md) v2.1; ADR-004, 005, 014, 015, 016, **018**, **019** in [07 Decision Log](07-decision-log.md) |
 
 This document says how the pieces are built and run: what is on the tablet, what is on the server, how a Submit PO travels from one to the other without loss or duplication, and what the server needs from PWI IT. Behaviour that is already specified (tables, endpoints, error codes) is referenced, not repeated.
 
@@ -80,7 +80,7 @@ reference/       prototype and mapping inputs (read only)
 docs/
 ```
 
-`packages/shared` is used by the PWA and the API for the things that must never disagree: the counting rules (ADR-008), the Top 5 order (AC-05.1) and the formatters. The request carries no totals (doc 04 §4.1): the API computes them from the counts and findings and rejects counts that disagree with the findings (doc 04 §4.2 rules 3–4).
+`packages/shared` is used by the PWA and the API for the things that must never disagree: the counting rules (ADR-019, and ADR-008 for payloads sealed before it), the Qty Inspection limits (BR-10), the Top 5 order (AC-05.1) and the formatters. The request carries no totals except the Qty Inspection the PSI entered (doc 04 §4.1): the API computes the rest from the counts and findings and rejects counts that disagree with the findings or break BR-10 (doc 04 §4.2 rules 3–4).
 
 ## 4. The PWA
 
@@ -100,13 +100,13 @@ docs/
 | `auth` | `'current'` | username, level, factory, cell, token, token expiry |
 | `pos` | `[username, po]` | PO details from `/pos`, partial `{number, qty}` or none, `addedAt` |
 | `sessions` | `id` | `username`, `po`, `status: open`, `createdAt` |
-| `events` | `[sessionId, seq]` | one row per tap: `START_REWORK`, `START_BGRADE`, `NO_DEFECT`, `DEFECT{areaId, subAreaId, familyId, defectId}`, `END`, `UNDO`, with a timestamp |
+| `events` | `[sessionId, seq]` | one row per tap: `START_REWORK`, `START_BGRADE`, `DEFECT{areaId, subAreaId, familyId, defectId}`, `END`, `UNDO`, `SET_QTY_INSPECTION{qty}` (SIMPAN in the QTY INSPECTION dialog, FR-15), with a timestamp. `NO_DEFECT` is no longer written (ADR-019); one left in a session that was open during the update is ignored by the reducer |
 | `photos` | `[sessionId, defectId]` | JPEG blob (≤ 960 px, ≤ 1 MB), SHA-256, taken-at |
 | `outbox` | `submissionUuid` | sealed submission (§4.6) |
 | `outboxPhotos` | `[submissionUuid, defectId]` | the photo blobs of a sealed session |
 | `view` | `username` | the screen (Home or Defect), the selected PO and the Defect drill-down path, so a restart returns to the same place (doc 05 §4, §8.4, §11.5, AC-06.2); per user because tablets are shared (BR-09) |
 
-**A session is the result of reducing its event list** with the pure functions of `packages/shared`. Persisting events instead of counters makes the rules of persistence trivial: one tap = one IndexedDB write of one event, and the screen is updated from the stored result (NFR-05, AC-06.2). UNDO is an event that the reducer interprets by the four cases of FR-08. Totals, Top 5 and the findings list of FR-09 are derived, never stored.
+**A session is the result of reducing its event list** with the pure functions of `packages/shared`. Persisting events instead of counters makes the rules of persistence trivial: one tap = one IndexedDB write of one event, and the screen is updated from the stored result (NFR-05, AC-06.2). UNDO is an event that the reducer interprets by the cases of FR-08 (it never touches Qty Inspection). Qty Inspection is the `qty` of the session's last `SET_QTY_INSPECTION` event, empty when there is none (ADR-019). Totals, Top 5 and the findings list of FR-09 are derived, never stored. Sealing (§4.6) puts the session's Qty Inspection into `counts.qtyInspection` and never writes `noDefect`.
 
 ### 4.3 State and the persistence rule
 
@@ -268,7 +268,8 @@ The steps and their invariants are in doc 02 §6; this document adds only:
 
 | Function | Input → output |
 |---|---|
-| `computeTotals(counts, findings)` | doc 04 §4.1 table → Qty Inspection, A-Grade, Qty Defect, B-Grade, RFT, Defect Rate |
+| `computeTotals(counts, findings)` | doc 04 §4.1 table → Qty Inspection, A-Grade, Qty Defect, B-Grade, RFT, Defect Rate, and the counting rule (`ADR-019` when `counts.qtyInspection` is present, `ADR-008` for a `noDefect` payload) |
+| `qtyInspectionLimits(counts, partial, orderQty)` | BR-10 → `{ min: max(1, rework + bGrade), max: partial?.qty ?? orderQty }`; the same function feeds the tablet's number pad, the Submit PO check and the API's validation |
 | `top5(findings, defects)` | order by quantity, severity, first recorded (AC-05.1); the same function on tablet and server |
 | `photoKey(uuid, defectId, sealedAt)` | `submissions/<yyyy>/<MM>/<uuid>/<defectId>.jpg` (month from `sealedAt` in WIB) |
 | `partialText(...)` | `P1 1.200 OF 10.002` with `Intl.NumberFormat('id-ID')` (Node 22 ships full ICU) |
@@ -288,7 +289,7 @@ The steps and their invariants are in doc 02 §6; this document adds only:
 | Cannot connect, pool timeout | `DB` check fails, `submitEnabled=false` | `503 DB_UNAVAILABLE` (retryable) → Menunggu koneksi, resend |
 | Photo store unreachable or full | `PHOTO_STORE` check fails | `503 PHOTO_STORE_UNAVAILABLE` (retryable) |
 | Serialization failure / deadlock in the transaction | retry once inside the request | normal answer |
-| The request's counts disagree with its findings (a finding of a type never started, no inspection at all) | rejected in validation (doc 04 §4.2); nothing written | `422 VALIDATION_FAILED` |
+| The request's counts disagree with its findings or break BR-10 (a finding of a type never started; Qty Inspection missing, below the REWORK + B-GRADE inspections or above the partial / order quantity) | rejected in validation (doc 04 §4.2); nothing written | `422 VALIDATION_FAILED` |
 | The in-transaction re-check or a table constraint fails (a server bug) | roll back, log request id and body | `500 INTERNAL` |
 | Anything else | log request id; `INTERNAL` | `500`, retried with back-off; needs a developer |
 
@@ -465,7 +466,7 @@ As built (T4.1, files in `deploy/`):
 
 | Level | What | Tool |
 |---|---|---|
-| Unit | Counting engine against the ADR-008 table and FR-08; `top5`; `photoKey`, `partialText`, `inspectionDate` | Vitest |
+| Unit | Counting engine against the ADR-019 table (and ADR-008 for old payloads), BR-10 limits and FR-08; `top5`; `photoKey`, `partialText`, `inspectionDate` | Vitest |
 | Database | Migrations from empty; every table constraint and the immutability trigger (an UPDATE or DELETE of a submission, finding or photo must fail); views against fixtures with hand-computed totals | Jest against a real PostgreSQL 16 (local service or testcontainers) |
 | API integration | Every endpoint against the real database and a temp-folder `PhotoStore`, validated against `04-openapi.yaml`; all checks of doc 04 §4.2; auth, device revocation, admin lockout | Jest + supertest |
 | Idempotency and faults | Same UUID twice (same and different hash) including in parallel; crash injected after photos and before commit (fake store that throws); store down; database down | Jest |

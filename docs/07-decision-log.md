@@ -11,7 +11,7 @@ Each entry records one decision: the situation, what was decided, and what it co
 | 005 | Frontend: Progressive Web App (React + Vite) | Accepted | 15–16 Oct 2026 |
 | 006 | Login by choosing the PSI's name; no NIK, no password | Accepted | 15 Oct 2026 |
 | 007 | No admin role inside the app | **Superseded by 018** | 15 Oct 2026 |
-| 008 | Inspection counting rules (Rework / B-Grade / No Defect) | Accepted | 15 Oct 2026 |
+| 008 | Inspection counting rules (Rework / B-Grade / No Defect) | **Superseded by 019** (defect and B-Grade rules stay) | 15 Oct 2026 |
 | 009 | Defect identity and the area mapping database | Accepted | 15 Oct 2026 |
 | 010 | Product name: Mobile 100% Inspection | Accepted | 15 Oct 2026 |
 | 011 | Photos uploaded to Google Drive; links in LINK1–LINK75 | **Superseded by 018** (the photo rule stays) | 16 Oct 2026 |
@@ -22,6 +22,7 @@ Each entry records one decision: the situation, what was decided, and what it co
 | 016 | HTTPS through a domain of our own (`qdms.web.id`, Cloudflare DNS, Let's Encrypt via Caddy) | Accepted | 16 Oct 2026 |
 | 017 | Server shape: Caddy + NestJS, no database, the tablet is the durable store | **Superseded by 018** | 16 Oct 2026 |
 | 018 | PostgreSQL + object storage (MinIO or another S3-compatible store) replace Google Sheets and Drive | Accepted (photo store: plain folder for release 1) | 20 Oct 2026 |
+| 019 | Qty Inspection is entered by the PSI; NO DEFECT removed; Qty A-Grade = Qty Inspection − REWORK and B-GRADE pairs | Accepted | 27 Oct 2026 |
 
 ---
 
@@ -111,6 +112,8 @@ Each entry records one decision: the situation, what was decided, and what it co
 - A wrong submission is corrected in the spreadsheet, in both `DATA_INSPECTION` and `M100_DEFECT_DETAIL`.
 
 ## ADR-008 — Inspection counting rules
+
+**Status: Superseded by ADR-019** (27 Oct 2026): Qty Inspection is entered by the PSI and NO DEFECT is removed; the two defect rows below still apply. Kept for history and for submissions marked `counting_rule = 'ADR-008'`.
 
 **Decision.** Confirmed by the product owner on 15 Oct 2026:
 
@@ -270,3 +273,35 @@ Defect Rate = Qty Defect ÷ Qty Inspection. Pass Rate (RFT) = Qty A-Grade ÷ Qty
 - New work: an admin web app and master-data import (PRD FR-14, doc 05 §20, plan Phase 2b).
 - **Decision on the photo store (20 Oct 2026): a plain folder (`DiskPhotoStore`) for release 1.** The S3 implementation stays behind `PhotoStore` for a later move. Reporting (OQ-13): release 1 reads results through the admin app and CSV; the owner plans a separate central dashboard later, which will use the read-only views and role `m100_report`.
 - **MinIO caveat (verified 20 Oct 2026).** MinIO Community Edition's repository was archived in 2026, community binaries and Docker images stopped in October 2025, and only source builds remain ([summary](https://glukhov.org/data-infrastructure/object-storage/minio-dead/)). It still works if built from source or if an existing binary is used, but it will not receive community updates or security fixes. Because the design uses only the S3 API behind `PhotoStore`, the product can be swapped later (for example SeaweedFS or Garage, whose Windows support must be checked) or replaced by a plain folder. At the expected volume (about 1,500 photos a month, roughly 2–3 GB a year) a plain folder on a backed-up disk is sufficient; the object store is a convenience, not a need. **Open decision:** which store to run in release 1.
+
+## ADR-019 — Qty Inspection is entered by the PSI
+
+**Status: Accepted** by the product owner on 27 Oct 2026. Supersedes ADR-008; its defect and B-Grade rules are carried over unchanged.
+
+**Situation.** Under ADR-008, Qty Inspection is counted one tap per pair: every pair needs a REWORK, B-GRADE or NO DEFECT tap, so each pair that passes costs one NO DEFECT tap and the results are only right if every pair is tapped. The product owner asked to replace the automatic count with a QTY INSPECTION that the PSI enters, and to calculate every result (Qty A-Grade, Defect Rate, Pass Rate) from that number.
+
+**Decision.**
+1. **Entry.** The PSI enters QTY INSPECTION on Home: tapping the QTY INSPECTION row of the results box opens the app's own number pad (as for the partial quantity, ADR-013). It can be changed at any time until SUBMIT PO. It belongs to the session: after SUBMIT PO the next session starts with it empty.
+2. **NO DEFECT is removed.** REWORK and B-GRADE stay: each starts the inspection of one pair with a defect and sets the type of its findings. END INSPECTION and UNDO stay (UNDO loses its NO DEFECT case).
+3. **Counting** (replaces the ADR-008 table):
+
+| Figure | Rule |
+|---|---|
+| Qty Inspection | Entered by the PSI |
+| REWORK pairs, B-GRADE pairs | +1 per REWORK or B-GRADE inspection started, also one ended without a defect (PRD AC-06.3) |
+| Qty A-Grade | Qty Inspection − REWORK pairs − B-GRADE pairs |
+| Qty Defect | +1 per defect tapped in a REWORK or B-GRADE inspection |
+| Qty B-Grade | +1 per defect tapped in a B-GRADE inspection (per finding, as in ADR-008) |
+
+Defect Rate = Qty Defect ÷ Qty Inspection. Pass Rate (RFT) = Qty A-Grade ÷ Qty Inspection.
+
+4. **Limits.** Qty Inspection is a whole number, at least 1, at least REWORK pairs + B-GRADE pairs (so Qty A-Grade is never negative), and at most the PO's partial quantity when PO PARTIAL is set, otherwise its Qty Order. SUBMIT PO is refused on the tablet when Qty Inspection is empty or outside these limits, and the API checks the same rules.
+5. **Existing data.** Submissions written under ADR-008 stay as they are (BR-07) and are marked `counting_rule = 'ADR-008'`; new ones are marked `'ADR-019'`. A session sealed by an older app version before the update keeps its ADR-008 counts (`noDefect`) and is still accepted, because a sealed payload never changes (doc 04 §4.3).
+
+**Consequences.**
+- One number replaces one tap per passed pair. The results now depend on the PSI entering the right number; the tablet and the API can check only the limits above.
+- Until Qty Inspection is entered, Home shows Qty A-Grade, Defect Rate and Pass Rate as "—".
+- A-Grade is counted per pair, by subtraction. One pair can still carry several defects and B-Grade still counts per finding, so RFT + Defect Rate need not add to 100%, and Qty A-Grade + Qty B-Grade can exceed Qty Inspection.
+- Reports that mix rows must read `counting_rule`: in ADR-008 rows `qty_no_defect` is the tapped A-Grade count; in ADR-019 rows it is empty and `qty_a_grade` is derived.
+- Open sessions on a tablet at the moment of the update may hold NO DEFECT taps; they no longer count, and the PSI enters Qty Inspection before SUBMIT PO like in any other session (doc 03 §4.2).
+- Work: a database migration (`counting_rule`, `qty_no_defect` nullable, checks per rule), the API's `counts.qtyInspection`, the shared counting engine, Home, the Defect screen, UNDO, exports and the admin detail (doc 08 Phase 5).

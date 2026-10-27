@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Mobile 100% Inspection API
-  version: 2.0.0
+  version: 2.1.0
   summary: Backend for the Mobile 100% Inspection PWA (PT Parkland World Indonesia, QIP Digital Team).
   description: |
     Contract between the tablet PWA and the NestJS API. Behaviour, rules and examples are in
@@ -563,7 +563,7 @@ paths:
         destination, order_qty, podd, crd, partial_no, partial_qty, partial_text, qty_rework,
         qty_bgrade_inspections, qty_no_defect, qty_inspection, qty_a_grade, qty_b_grade, qty_defect, rft,
         defect_rate, photo_count, counting_rule, then top1_defect_id, top1_defect_name, top1_qty … top5_qty (empty
-        when the submission has fewer defects). Numbers are raw: no thousands separator and a dot for decimals;
+        when the submission has fewer defects; qty_no_defect is empty when counting_rule is ADR-019). Numbers are raw: no thousands separator and a dot for decimals;
         rft and defect_rate are the stored fractions with 5 decimals (`0.60000` = 60,0%). Text typed by people that
         starts with `=`, `+`, `-`, `@`, a tab or CR gets a leading `'` so a spreadsheet does not run it.
       security: [{ adminCookie: [] }]
@@ -987,12 +987,23 @@ components:
             qty: { type: integer, minimum: 1 }
         counts:
           type: object
-          description: Number of inspections started, by type (ADR-008).
-          required: [rework, bGrade, noDefect]
+          description: |
+            REWORK and B-GRADE inspections started, and the Qty Inspection entered by the PSI (ADR-019, doc 04
+            section 4.1). Exactly one of `qtyInspection` and `noDefect`: `noDefect` (ADR-008) only appears in a
+            session sealed by an app version from before ADR-019 and is computed with the ADR-008 rules.
+            `qtyInspection` must be at least 1, at least rework + bGrade, and at most `partial.qty` or the PO's
+            ORDER QTY (BR-10, doc 04 section 4.2 rule 3).
+          required: [rework, bGrade]
+          oneOf:
+            - required: [qtyInspection]
+              not: { required: [noDefect] }
+            - required: [noDefect]
+              not: { required: [qtyInspection] }
           properties:
             rework: { type: integer, minimum: 0 }
             bGrade: { type: integer, minimum: 0 }
-            noDefect: { type: integer, minimum: 0 }
+            qtyInspection: { type: integer, minimum: 1, description: 'Pairs inspected, entered by the PSI (FR-15).' }
+            noDefect: { type: integer, minimum: 0, deprecated: true, description: 'ADR-008 payloads sealed before the update only.' }
         findings:
           type: array
           items: { $ref: '#/components/schemas/Finding' }
@@ -1179,7 +1190,7 @@ components:
             properties: { inserted: { type: integer }, updated: { type: integer }, unchanged: { type: integer } }
     AdminSubmissionSummary:
       type: object
-      required: [id, displayNo, sealedAt, inspectionDate, username, level, factory, cell, po, partialText, qtyInspection, qtyDefect, qtyAGrade, qtyBGrade, rft, defectRate, photoCount]
+      required: [id, displayNo, sealedAt, inspectionDate, username, level, factory, cell, po, partialText, qtyInspection, qtyDefect, qtyAGrade, qtyBGrade, rft, defectRate, photoCount, countingRule]
       properties:
         id: { type: string, format: uuid }
         displayNo: { type: string, examples: ['M100-000123'] }
@@ -1198,6 +1209,7 @@ components:
         rft: { type: number, description: 'Fraction, e.g. 0.6 = 60,0%.' }
         defectRate: { type: number, description: 'Fraction; can exceed 1.' }
         photoCount: { type: integer }
+        countingRule: { type: string, enum: ['ADR-008', 'ADR-019'], description: 'ADR-019 = Qty Inspection entered by the PSI (doc 02 section 4.1).' }
     AdminSubmissionDetail:
       allOf:
         - $ref: '#/components/schemas/AdminSubmissionSummary'
@@ -1218,8 +1230,9 @@ components:
                 - { type: object, required: [number, qty], properties: { number: { type: integer }, qty: { type: integer } } }
             counts:
               type: object
-              required: [rework, bGrade, noDefect]
-              properties: { rework: { type: integer }, bGrade: { type: integer }, noDefect: { type: integer } }
+              description: '`noDefect` is null for ADR-019 rows; `qtyInspection` is the stored qty_inspection (A17).'
+              required: [rework, bGrade, noDefect, qtyInspection]
+              properties: { rework: { type: integer }, bGrade: { type: integer }, noDefect: { type: [integer, 'null'] }, qtyInspection: { type: integer } }
             findings:
               type: array
               description: In the order the PSI first tapped them, like the tablet history (doc 05 section 20.3).

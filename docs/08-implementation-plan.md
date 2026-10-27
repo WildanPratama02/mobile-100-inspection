@@ -1,10 +1,10 @@
-# Mobile 100% Inspection — Implementation Plan (draft v0.5)
+# Mobile 100% Inspection — Implementation Plan (draft v0.6)
 
 | | |
 |---|---|
-| Status | **Draft.** Rewritten for PostgreSQL + photo store + admin app (ADR-018). Phases 0–4 are ready to build (docs 01–05, 07 exist). HTTPS (ADR-016) and the server (Windows, QIP Digital) are decided. The photo store is a plain folder for release 1 (TQ-6 decided); open before Phase 4: the server pre-checks (TQ-5). |
+| Status | **Draft.** Rewritten for PostgreSQL + photo store + admin app (ADR-018). Phases 0–4 are ready to build (docs 01–05, 07 exist). HTTPS (ADR-016) and the server (Windows, QIP Digital) are decided. The photo store is a plain folder for release 1 (TQ-6 decided); open before Phase 4: the server pre-checks (TQ-5). v0.6 adds Phase 5: Qty Inspection entered by the PSI (ADR-019). Tasks of Phases 0–3b that mention NO DEFECT or the ADR-008 table describe what was built then; Phase 5 changes it. |
 | Executed by | Claude Code, one task per session, following `CLAUDE.md` |
-| Last updated | 20 Oct 2026 |
+| Last updated | 27 Oct 2026 |
 
 ## How to use this plan
 
@@ -218,3 +218,34 @@ One or two tablets in production for a defined period. The old AppSheet process 
 ### T4.5 Rollout to all tablets
 Device keys in batch, setup of every tablet (doc 03 §7.5), the PSI instruction card handed out, the waiting counters watched during the first week.
 - [ ] Every tablet shows "Tablet terdaftar", lets a PSI log in, and has completed one test submission checked in the admin app.
+
+## Phase 5 — Qty Inspection entered by the PSI (ADR-019) · Ready
+
+A change request of 27 Oct 2026 to code that is already built (T0.3, T1.3, T1.4, T1.7, T2.2, T3.1–T3.3, T3.5, T3b.3, T3b.4). Qty Inspection is entered on Home with the number pad; NO DEFECT disappears; Qty A-Grade = Qty Inspection − REWORK pairs − B-GRADE pairs; limits BR-10. Specs: PRD v0.7 FR-04, FR-06, FR-08, FR-11, **FR-15**, BR-01, BR-02, **BR-10**; doc 02 v2.1 §4.1, §6.3, §9; doc 04 v2.1 §4.1, §4.2, A17; doc 03 v0.4 §4.2, §5.5; doc 05 v0.3 §8, **§10b (S5b)**, §11, §13.1, §15, U20–U22. Do the tasks in order; T5.1–T5.3 ship in one release (the API accepts both payload shapes, so tablets that have not updated yet keep working). Recommended before T4.4, so the pilot runs with the counting the PSI will keep.
+
+### T5.1 Shared counting engine and limits (`packages/shared`)
+Replace the ADR-008 counting with ADR-019: the `SET_QTY_INSPECTION{qty}` event, `noDefect()` removed, `totals(session)` with Qty Inspection empty until set, `qtyInspectionLimits(counts, partial, orderQty)`, `computeTotals(counts, findings)` for both payload shapes (doc 03 §5.5).
+- [ ] Unit tests reproduce every row of the ADR-019 table; the doc 02 §9 example (Qty Inspection 30, 10 REWORK pairs with 8 defects, 2 B-GRADE pairs with 3 defects) gives A-Grade 18, B-Grade 3, Qty Defect 11, RFT 0,600, Defect Rate 0,367.
+- [ ] Qty Inspection empty → Qty A-Grade, Defect Rate and Pass Rate are "—"; below the REWORK + B-GRADE pairs → Qty A-Grade and Pass Rate "—" (BR-02).
+- [ ] `qtyInspectionLimits`: min = max(1, rework + bGrade); max = partial qty when set, else Qty Order (BR-10).
+- [ ] The last `SET_QTY_INSPECTION` wins; UNDO follows FR-08 (two cases) and never changes Qty Inspection; a `NO_DEFECT` event left in an old session is ignored.
+- [ ] `computeTotals` with `{ rework, bGrade, noDefect }` still gives the ADR-008 figures and rule `ADR-008`; with `qtyInspection` it gives the ADR-019 figures and rule `ADR-019`.
+
+### T5.2 Database and API (migration 0006, submission write, admin read)
+Migration `0006` exactly as doc 02 §4.1 "Migration 0006"; the submission schema and checks of doc 04 §4.1–§4.2 (rule 3); the write stores `counting_rule`; the admin list, detail and CSV carry `countingRule` and the new `counts` (A17).
+- [ ] On a database that holds ADR-008 submissions, `pnpm db:migrate` applies 0006, every old row reads `counting_rule = 'ADR-008'` with its numbers unchanged, and the immutability trigger is still in place; a second run applies nothing.
+- [ ] The checks reject an ADR-019 row with `qty_no_defect` set, `qty_a_grade` ≠ `qty_inspection − qty_rework − qty_bgrade_inspections`, `qty_inspection` below the pairs or above `COALESCE(partial_qty, order_qty)`; they accept a valid ADR-019 row and still accept an ADR-008 row.
+- [ ] `POST /submissions`: one test per rule-3 failure (both or neither of `qtyInspection`/`noDefect`, < 1, below the pairs, above the partial, above `ORDER QTY`), each `422 VALIDATION_FAILED` with path `counts.qtyInspection`; a valid ADR-019 payload is stored with `counting_rule = 'ADR-019'` and `qty_no_defect` null; an ADR-008 payload (sealed by the old app) is stored with `'ADR-008'`.
+- [ ] The views and the CSV export show `counting_rule` from the row; `qty_no_defect` is empty for ADR-019 rows.
+
+### T5.3 Tablet app (web)
+Home: QTY INSPECTION row tappable (`StatRow onClick`, U20), dialog S5b with `NumberPad min` (U21), results and notices of §8.1–§8.2. Defect screen: NO DEFECT gone (§11.1–§11.2), UNDO cases (§11.4). Submit PO: the Qty Inspection checks of §13.1; sealing writes `counts.qtyInspection`. Exports show the same seven values as Home. Port the two new optional props into `design-system/components` (index.d.ts, README, bundle) and `apps/web/src/ui` with the same names.
+- [ ] S5b: SIMPAN disabled outside `min`…`max` with the NumberPad message; SIMPAN stores the event before closing; the value survives a reload and belongs to the selected PO only (AC-15.1 … AC-15.4).
+- [ ] Each row of the §8.2 state table and each new row of §13.1 has a test; the `/ui` catalogue shows `StatRow` with `onClick` and `NumberPad` with `min`; every tappable element is ≥ 44 × 44 px.
+- [ ] Playwright covers: login → add PO with partial → REWORK with 2 defects → END → B-GRADE with 1 defect → END → UNDO disabled → QTY INSPECTION 1 refused (below 2 pairs) → QTY INSPECTION 30 → Home shows A-Grade 28, Defect Rate 10,0%, Pass Rate 93,3% → submit; the stored submission has Qty Inspection 30, A-Grade 28 and `counting_rule = 'ADR-019'`.
+- [ ] An outbox item sealed before the update (fixture with `noDefect`) is sent unchanged and stored as ADR-008.
+
+### T5.4 Admin app
+A1 list and A1b detail show the counting rule and the counts (doc 05 §20.3).
+- [ ] The detail of an ADR-019 submission shows Qty Inspection, REWORK and B-GRADE pairs and "Qty Inspection diisi PSI"; an ADR-008 one shows its NO DEFECT count and "Hitung per tap (lama)".
+- [ ] The admin Playwright tests pass with both kinds of submission in the database.

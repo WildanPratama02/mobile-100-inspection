@@ -2,14 +2,14 @@
 
 | | |
 |---|---|
-| Version | 0.6 — backend moved to PostgreSQL + photo store; admin screens added (ADR-018) |
-| Date | 20 Oct 2026 |
+| Version | 0.7 — Qty Inspection entered by the PSI, NO DEFECT removed (ADR-019, FR-15, BR-01, BR-10). v0.6: backend moved to PostgreSQL + photo store; admin screens added (ADR-018) |
+| Date | 27 Oct 2026 |
 | Owner | QIP Digital Team, PT Parkland World Indonesia |
 | Related | [00 Document Map](00-document-map.md), [07 Decision Log](07-decision-log.md), clickable prototype "Mobile 100% Inspection" v3 |
 
 ## 1. Summary
 
-Mobile 100% Inspection is a tap-only tablet app that PSI inspectors (levels 1 and 2) use on the production line to record defects while they inspect shoes. The PSI picks the PO, taps REWORK, B-GRADE or NO DEFECT for each pair, taps where the defect is on a shoe diagram, and taps the defect. The app counts inspections, defects, A-Grade and B-Grade, and shows Top 5 Defect, Defect Rate and Pass Rate as the PSI works. When the round is done, **SUBMIT PO** stores the result in the app's own PostgreSQL database (photos in a photo store), where the Leader Quality reads it through reports built on the database (OQ-13). The old `100%INLINE IMPACTIVA` spreadsheet and AppSheet app are no longer touched (ADR-018).
+Mobile 100% Inspection is a tap-only tablet app that PSI inspectors (levels 1 and 2) use on the production line to record defects while they inspect shoes. The PSI picks the PO, taps REWORK or B-GRADE for each pair with a defect, taps where the defect is on a shoe diagram, and taps the defect. The PSI enters the number of pairs inspected (QTY INSPECTION) on Home with the app's own number pad (ADR-019). From that number and the taps the app calculates defects, A-Grade and B-Grade, and shows Top 5 Defect, Defect Rate and Pass Rate as the PSI works. When the round is done, **SUBMIT PO** stores the result in the app's own PostgreSQL database (photos in a photo store), where the Leader Quality reads it through reports built on the database (OQ-13). The old `100%INLINE IMPACTIVA` spreadsheet and AppSheet app are no longer touched (ADR-018).
 
 ## 2. Problem and goals
 
@@ -44,7 +44,8 @@ The PSI app has no admin features; admins use a separate web app (FR-14, ADR-018
 
 - Login by name, factory and cell; logout.
 - PO list on the tablet: add a PO from the PO master, select a PO, remove a PO with no open session.
-- Inspection by pair: REWORK, B-GRADE, NO DEFECT, END INSPECTION.
+- Inspection of each pair with a defect: REWORK, B-GRADE, END INSPECTION.
+- QTY INSPECTION (pairs inspected) entered by the PSI on Home with the app's number pad (FR-15, ADR-019).
 - Defect input on the shoe diagram: 12 areas → sub-area → defect family → defect, using the area mapping database.
 - BACK, HOME and UNDO on the defect screen, and the session's defect history.
 - Home results: Qty PO Order, Qty Inspection, Qty Defect, Qty A-Grade, Qty B-Grade, Defect Rate, Pass Rate (RFT), Top 5 Defect.
@@ -76,8 +77,9 @@ flowchart TD
   D -->|REWORK or B-GRADE| I[Inspection active: areas enabled]
   I -->|tap area, sub-area, family, defect| I
   I -->|END INSPECTION| D
-  D -->|NO DEFECT| D
   D -->|HOME| H
+  H -->|tap QTY INSPECTION| N[Number pad: pairs inspected]
+  N --> H
   H -->|Photo on Top 5 Defect, PSI lv.2| H
   H -->|SUBMIT PO| S[Confirm summary]
   S -->|Online| W[Stored in database; counters reset]
@@ -87,7 +89,7 @@ flowchart TD
   H -->|Gear, Logout| L
 ```
 
-A **session** is everything recorded for one PO on one tablet between two Submit POs. An **inspection** is one pair, from tapping REWORK, B-GRADE or NO DEFECT until END INSPECTION.
+A **session** is everything recorded for one PO on one tablet between two Submit POs. An **inspection** is one pair with a defect, from tapping REWORK or B-GRADE until END INSPECTION. Pairs without a defect are not tapped; they are counted through the Qty Inspection the PSI enters (BR-01).
 
 ## 6. Functional requirements
 
@@ -142,15 +144,28 @@ For the selected PO's **current session**, Home shows:
 | Field | Value |
 |---|---|
 | Qty PO Order | `order_qty` of the PO master |
-| Qty Inspection | BR-01 |
+| Qty Inspection | Entered by the PSI (FR-15); "—" until entered |
 | Qty Defect | BR-01 |
-| Qty A-Grade | BR-01 |
+| Qty A-Grade | BR-01; "—" while Qty Inspection is empty or below the REWORK + B-GRADE pairs (BR-10) |
 | Qty B-Grade | BR-01 |
-| Defect Rate | BR-02, one decimal, "—" when Qty Inspection is 0 |
-| Pass Rate (RFT) | BR-02, one decimal, "—" when Qty Inspection is 0 |
+| Defect Rate | BR-02, one decimal, "—" while Qty Inspection is empty |
+| Pass Rate (RFT) | BR-02, one decimal, "—" while Qty A-Grade is "—" |
 
-- AC-04.1 Values update immediately after every tap on the defect screen; no network is needed.
-- AC-04.2 After a Submit PO is sealed (stored or waiting), all values return to 0 for the next session.
+- AC-04.1 Values update immediately after every tap on the defect screen and every change of Qty Inspection; no network is needed.
+- AC-04.2 After a Submit PO is sealed (stored or waiting), all values return to 0 and Qty Inspection to empty for the next session.
+
+### FR-15 QTY INSPECTION entry (M) — added 27 Oct 2026, ADR-019
+
+The PSI enters how many pairs were inspected in the session; the app never counts it from taps.
+
+1. The QTY INSPECTION row of the results box on Home can be tapped when a PO is selected. It opens a dialog with the app's own number pad (no device keyboard, NFR-02), pre-filled with the current value.
+2. SIMPAN stores the value for the selected PO's session; BATAL changes nothing. The value can be changed any number of times until SUBMIT PO, also while an inspection is active.
+3. The number pad accepts only a whole number within the limits of BR-10 and says which limit is broken ("Minimal {n} pasang", "Maksimum {n} pasang").
+
+- AC-15.1 Qty Inspection is saved on the tablet before the dialog closes, survives a reload and belongs to the session of the selected PO only (NFR-05, BR-09).
+- AC-15.2 The lower limit shown by the number pad is the larger of 1 and the session's REWORK + B-GRADE pairs; the upper limit is the PO's partial quantity when PO PARTIAL is set, otherwise its Qty Order.
+- AC-15.3 If the limits change after the value was entered (more REWORK / B-GRADE pairs, a smaller partial), the value is kept, Home shows a warning, and SUBMIT PO refuses until it is corrected (FR-11).
+- AC-15.4 After SUBMIT PO the next session of the PO starts with Qty Inspection empty.
 
 ### FR-05 Top 5 Defect (M)
 
@@ -161,16 +176,16 @@ A table on Home lists the session's five defects with the highest total quantity
 
 ### FR-06 Starting and ending an inspection (M)
 
-The defect screen has REWORK, B-GRADE and NO DEFECT buttons above the shoe diagram, and END INSPECTION below it.
+The defect screen has REWORK and B-GRADE buttons above the shoe diagram, and END INSPECTION below it.
 
-1. With no active inspection, the shoe areas, sub-areas, families and defects are disabled and visibly dimmed. The right panel says to choose REWORK, B-GRADE or NO DEFECT.
-2. **REWORK** or **B-GRADE** starts an inspection (BR-01) and enables defect input. The chosen button is highlighted, the other two are disabled, and the panel shows the inspection type.
-3. **NO DEFECT** records an A-Grade pair (BR-01) and completes it at once. Defect input stays disabled. (Prototype behavior; confirmed 20 Oct 2026, OQ-07.)
+1. With no active inspection, the shoe areas, sub-areas, families and defects are disabled and visibly dimmed. The right panel says to choose REWORK or B-GRADE.
+2. **REWORK** or **B-GRADE** starts an inspection of one pair (BR-01) and enables defect input. The chosen button is highlighted, the other is disabled, and the panel shows the inspection type.
+3. ~~**NO DEFECT**~~ **Removed 27 Oct 2026 (ADR-019).** A pair without a defect is not tapped; it is counted through Qty Inspection (FR-15). (Was: records an A-Grade pair at once, OQ-07.)
 4. **END INSPECTION** ends the active inspection and disables defect input again. It is disabled when no inspection is active.
 
 - AC-06.1 Defects can be recorded only while a REWORK or B-GRADE inspection is active.
 - AC-06.2 An active inspection survives HOME, switching to another screen, reloading or closing the app; returning to the defect screen shows it still active.
-- AC-06.3 Ending a REWORK or B-GRADE inspection with no defects is allowed and counts as one inspection.
+- AC-06.3 Ending a REWORK or B-GRADE inspection with no defects is allowed and counts as one REWORK or B-GRADE pair (not A-Grade).
 
 ### FR-07 Recording a defect (M)
 
@@ -191,9 +206,9 @@ The defect screen has REWORK, B-GRADE and NO DEFECT buttons above the shoe diagr
 - **HOME** returns to Home. The active inspection stays active.
 - **UNDO**:
   - during an active inspection with recorded defects, it removes the last defect recorded in that inspection;
-  - during an active inspection with no defects, it cancels the inspection (reverses its +1 Qty Inspection);
-  - right after NO DEFECT, with nothing started since, it cancels that NO DEFECT (reverses its +1 Qty Inspection and +1 Qty A-Grade);
-  - otherwise it is disabled. UNDO never reaches an inspection that has already ended.
+  - during an active inspection with no defects, it cancels the inspection (it no longer counts as a REWORK or B-GRADE pair);
+  - otherwise it is disabled. UNDO never reaches an inspection that has already ended, and never changes Qty Inspection (that is changed on Home, FR-15).
+  - (The case "right after NO DEFECT" was removed with NO DEFECT on 27 Oct 2026, ADR-019.)
 
 - AC-08.1 Every UNDO shows a short message saying what was undone.
 
@@ -223,7 +238,8 @@ SUBMIT PO on Home sends the selected PO's session to the server, which stores it
 
 1. **Checks before confirming** (each failure says what to do):
    - an inspection is still active → "Selesaikan inspeksi dulu (END INSPECTION)";
-   - Qty Inspection is 0 → "Belum ada inspeksi untuk PO ini";
+   - Qty Inspection is empty → "Isi QTY INSPECTION dulu" (opens FR-15);
+   - Qty Inspection is below the REWORK + B-GRADE pairs or above the partial quantity / Qty Order (BR-10) → says which limit and opens FR-15;
    - PSI lv.2 and a Top 5 Defect has no photo → list the defects missing a photo (BR-04).
 2. **Confirmation** shows PO, Qty Inspection, Qty Defect, A-Grade, B-Grade, Defect Rate, Pass Rate, and the number of photos, with KIRIM and BATAL.
 3. **On KIRIM**, the session is sealed: it can't be changed any more, and the PO starts a new empty session.
@@ -231,7 +247,7 @@ SUBMIT PO on Home sends the selected PO's session to the server, which stores it
    - Offline or server error: the sealed session waits in the tablet's outbox and is sent automatically when the connection returns. The app shows "Menunggu koneksi" with the number of waiting submissions.
 4. Each sealed session carries a UUID created on the tablet. Sending the same UUID twice never creates a second submission (BR-06).
 
-- AC-11.1 After a successful Submit PO, the new `submissions` row has the user's name and level, the factory and cell, the PO fields (snapshot of the PO master), the counts from BR-01 and the rates from BR-02, and one `submission_findings` row per area + sub-area + defect + inspection type, with no limit on the number of distinct defects.
+- AC-11.1 After a successful Submit PO, the new `submissions` row has the user's name and level, the factory and cell, the PO fields (snapshot of the PO master), the Qty Inspection entered by the PSI, the counts from BR-01 and the rates from BR-02, and one `submission_findings` row per area + sub-area + defect + inspection type, with no limit on the number of distinct defects.
 - AC-11.2 Turning Wi-Fi off, submitting, closing the app, then turning Wi-Fi on and reopening the app results in exactly one submission.
 - AC-11.3 The header shows how many submissions are waiting, and the gear menu lists each with its PO, time and status (waiting, sending, sent, failed with reason).
 - AC-11.4 A submission the API rejects as invalid (not a network error) stays in the outbox as "Gagal" with the reason, and is never silently dropped.
@@ -273,15 +289,16 @@ A separate web app at `/admin/` for the administrators, on a laptop or tablet br
 
 | ID | Rule |
 |---|---|
-| BR-01 | Counting (ADR-008). Each REWORK, B-GRADE or NO DEFECT start: Qty Inspection +1. NO DEFECT: Qty A-Grade +1. Each defect recorded in a REWORK inspection: Qty Defect +1. Each defect recorded in a B-GRADE inspection: Qty Defect +1 and Qty B-Grade +1. B-Grade is counted per defect finding. |
-| BR-02 | Defect Rate = Qty Defect ÷ Qty Inspection. Pass Rate (RFT) = Qty A-Grade ÷ Qty Inspection. Both are percentages; Defect Rate can exceed 100% because one pair can have several defects. |
+| BR-01 | Counting (ADR-019, which supersedes ADR-008). Qty Inspection is entered by the PSI (FR-15). Each REWORK or B-GRADE start: one REWORK or B-GRADE pair. Qty A-Grade = Qty Inspection − REWORK pairs − B-GRADE pairs. Each defect recorded in a REWORK inspection: Qty Defect +1. Each defect recorded in a B-GRADE inspection: Qty Defect +1 and Qty B-Grade +1. B-Grade is counted per defect finding. |
+| BR-02 | Defect Rate = Qty Defect ÷ Qty Inspection. Pass Rate (RFT) = Qty A-Grade ÷ Qty Inspection. Both are percentages; Defect Rate can exceed 100% because one pair can have several defects. Both show "—" while Qty Inspection is empty; Pass Rate also while Qty Inspection is below the REWORK + B-GRADE pairs. |
 | BR-03 | A defect's classification (MINOR, MAJOR, CRITICAL) is fixed by the defect list. The user never sets it. |
 | BR-04 | For PSI lv.2, every defect in the Top 5 at the moment of Submit PO must have a photo. |
-| BR-05 | Only one inspection can be active per PO at a time. REWORK, B-GRADE and NO DEFECT are disabled while one is active. |
+| BR-05 | Only one inspection can be active per PO at a time. REWORK and B-GRADE are disabled while one is active. |
 | BR-06 | A sealed session is written at most once. Its UUID identifies it across retries. |
 | BR-07 | Submissions are immutable. Nobody edits, deletes or voids one through the app; the database rejects every UPDATE and DELETE. |
 | BR-08 | A level of the drill-down with exactly one option (sub-area or family) is selected automatically and skipped by BACK. |
 | BR-09 | Sessions and the PO list belong to one user on one tablet (AC-02.3). |
+| BR-10 | Qty Inspection limits (ADR-019): a whole number, at least 1, at least the session's REWORK + B-GRADE pairs, and at most the PO's partial quantity when PO PARTIAL is set, otherwise its Qty Order. A session is submitted only within these limits; the API checks them again (doc 04 §4.2). |
 
 ## 8. Data stored (summary)
 
@@ -300,7 +317,7 @@ Master data (`psi_users`, `factories`, `cells`, `pos`, `defects`, `areas`, `sub_
 | ID | Requirement |
 |---|---|
 | NFR-01 | **Devices.** Target tablet: Xiaomi Redmi Pad 2 (11", 2560 × 1600, Android 15 / HyperOS), Chrome, installed as a PWA, landscape first; about 1280 × 800 CSS px. Tablets may be shared by several PSI (BR-09, AC-02.3). Portrait and phone widths must remain usable. iOS is not supported in release 1. |
-| NFR-02 | **Touch.** Every tappable element is at least 44 × 44 CSS px. No device keyboard except the PO search box; numbers (the partial quantity) are entered with the app's own number pad. |
+| NFR-02 | **Touch.** Every tappable element is at least 44 × 44 CSS px. No device keyboard except the PO search box; numbers (the partial quantity, Qty Inspection) are entered with the app's own number pad. |
 | NFR-03 | **Speed.** Recording a tap never waits on the network; feedback within 100 ms. App start from cache within 3 s on the target tablet. |
 | NFR-04 | **Offline.** After the first online launch, login, inspection, defect input, photos, results and export all work without a connection. Submit PO waits in the outbox. |
 | NFR-05 | **Durability.** Every change to a session is saved on the tablet before the screen confirms it. Closing, reloading or a browser crash loses nothing that was confirmed. |
@@ -322,7 +339,7 @@ Master data (`psi_users`, `factories`, `cells`, `pos`, `defects`, `areas`, `sub_
 | ~~OQ-04~~ | **Answered 16 Oct 2026:** most likely Xiaomi Redmi Pad 2; a tablet can be shared by several PSI. Number of tablets: more than 30, on Wi-Fi with internet access (16 Oct 2026). | — |
 | OQ-05 | Once Mobile 100% Inspection is live, do PSI stop entering the same results in the AppSheet app? The two systems are now separate, so reports must not add both. | Rollout |
 | OQ-06 | Which POs should Add PO offer: all active POs, or only those not finished (`finished` = false)? The import sets `finished` from the source file. | Doc 02, 04 |
-| ~~OQ-07~~ | **Answered 20 Oct 2026:** NO DEFECT records the pair immediately, without END INSPECTION (U1). | — |
+| ~~OQ-07~~ | **Answered 20 Oct 2026:** NO DEFECT records the pair immediately, without END INSPECTION (U1). **Superseded 27 Oct 2026 (ADR-019):** NO DEFECT is removed; Qty Inspection is entered by the PSI. | — |
 | ~~OQ-08~~ | **Answered 20 Oct 2026:** Home shows the current session only (U2). | — |
 | OQ-09 | Who in QIP Digital maintains defects and the area map in the admin app, and how are changes announced to PSI? | Rollout |
 | OQ-10 | The product is named "for CFA", and the old `USER_LIST` had CFA users. Release 1 serves PSI only. Is a CFA flow planned later? | Roadmap |
@@ -345,9 +362,11 @@ Master data (`psi_users`, `factories`, `cells`, `pos`, `defects`, `areas`, `sub_
 | PSI | Line inspector, level 1 or 2, as listed in `psi_users` (`PSI lv.1`, `PSI lv.2`) |
 | PO | Production order, identified by PO number in the PO master (`pos`) |
 | Session | Everything recorded for one PO on one tablet between two Submit POs |
-| Inspection | One pair, from REWORK / B-GRADE / NO DEFECT until END INSPECTION |
+| Inspection | One pair with a defect, from REWORK / B-GRADE until END INSPECTION |
+| Qty Inspection | Number of pairs inspected in the session, entered by the PSI (FR-15, ADR-019) |
+| REWORK / B-GRADE pairs | Number of REWORK / B-GRADE inspections started in the session |
 | Finding | One defect tapped during an inspection |
-| A-Grade | Pair passed with no defect (NO DEFECT) |
+| A-Grade | Pair passed with no defect: Qty A-Grade = Qty Inspection − REWORK pairs − B-GRADE pairs |
 | B-Grade | Inspection type for a pair downgraded to B-Grade; each finding counts toward Qty B-Grade |
 | Rework | Inspection type for a pair that goes back for repair |
 | RFT | Right First Time = Pass Rate = Qty A-Grade ÷ Qty Inspection |
