@@ -50,6 +50,44 @@ test('is installable: manifest, icons and an active service worker', async ({ pa
   });
 });
 
+test('runs under the production headers of deploy/Caddyfile without a CSP violation (T4.1)', async ({
+  page,
+}) => {
+  const violations: string[] = [];
+  page.on('console', (message) => {
+    if (/Content Security Policy|Refused to/i.test(message.text())) violations.push(message.text());
+  });
+  await page.addInitScript(() => {
+    document.addEventListener('securitypolicyviolation', (e) =>
+      console.error(`Refused to (CSP) ${e.violatedDirective} ${e.blockedURI}`),
+    );
+  });
+  const answer = await page.goto('/');
+  const headers = answer!.headers();
+  expect(headers['content-security-policy']).toBe(
+    "default-src 'self'; img-src 'self' blob: data:; connect-src 'self'",
+  );
+  expect(headers['x-content-type-options']).toBe('nosniff');
+  expect(headers['referrer-policy']).toBe('no-referrer');
+  expect(headers['cache-control']).toBe('no-cache');
+
+  const sw = await page.request.get('/sw.js');
+  expect(sw.headers()['cache-control']).toBe('no-cache');
+  const asset = await page.evaluate(
+    () => document.querySelector<HTMLScriptElement>('script[type="module"][src^="/assets/"]')!.src,
+  );
+  expect((await page.request.get(asset)).headers()['cache-control']).toBe(
+    'public, max-age=31536000, immutable',
+  );
+
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+  });
+  await login(page, 'DEWI CONTOH');
+  await addPo(page, PO);
+  expect(violations).toEqual([]);
+});
+
 test('after the first load, inspection, photos, results, export and SUBMIT PO work offline (NFR-04)', async ({
   page,
   context,

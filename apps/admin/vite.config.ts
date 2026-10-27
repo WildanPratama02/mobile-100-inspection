@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
@@ -5,6 +6,13 @@ import { defineConfig } from 'vite';
 const sharedSrc = fileURLToPath(new URL('../../packages/shared/src/index.ts', import.meta.url));
 // The design-system components of the tablet app (doc 05 §20: same tokens, fonts and basic components).
 const uiSrc = fileURLToPath(new URL('../web/src/ui/index.ts', import.meta.url));
+
+const securityHeaders = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL('../../deploy/security-headers.json', import.meta.url)),
+    'utf8',
+  ),
+) as Record<string, string>;
 
 // The API under `/v1` on the same origin, as Caddy serves it in production (doc 03 §7.1). `pnpm e2e` points this at
 // the API it starts on its own test database.
@@ -26,6 +34,8 @@ export default defineConfig({
   },
   preview: {
     proxy: apiProxy,
+    // The headers Caddy sends in production (deploy/Caddyfile).
+    headers: securityHeaders,
   },
   plugins: [react()],
 });

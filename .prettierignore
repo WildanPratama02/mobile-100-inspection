@@ -5,6 +5,7 @@ coverage/
 playwright-report/
 test-results/
 dev-dist/
+release/
 
 # Starter-kit inputs: kept as delivered, not reformatted
 docs/

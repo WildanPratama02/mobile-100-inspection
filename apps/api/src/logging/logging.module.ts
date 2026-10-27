@@ -26,7 +26,7 @@ export function assignRequestId(req: IncomingMessage, res: ServerResponse, next:
 
 /**
  * JSON logs with pino; every request line carries the id of `assignRequestId` as `req.id`. Output goes to
- * stdout; the service wrapper captures it (files and rotation: T4.1).
+ * stdout; the WinSW service wrapper writes it to `logs\` and rotates it (deploy/windows/m100-api.xml, doc 03 §5.8).
  */
 @Module({})
 export class LoggingModule {

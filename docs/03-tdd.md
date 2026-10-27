@@ -74,8 +74,8 @@ apps/admin/      React + Vite admin web app (served at /admin/)
 apps/api/        NestJS API
 packages/shared/ types · counting engine · top5 · formatters (id-ID, WIB)
 db/migrations/   explicit SQL migrations (no schema auto-sync)
-deploy/          Caddyfile · windows/ (install.ps1, upgrade.ps1, WinSW service definitions) · backup scripts · runbook
-scripts/         CLI run on the server: admin:create · import-master · device:add · device:revoke · device:list · sweep-photos
+deploy/          Caddyfile · security-headers.json · windows/ (precheck, install, upgrade, restore, m100 PowerShell scripts; WinSW service definitions) · build-release.mjs · tests
+                 (the server CLIs are in apps/api/src/cli; on the server deploy/windows/m100.ps1 runs them: admin:create · import-master · device:* · sweep-photos · db:migrate · backup)
 reference/       prototype and mapping inputs (read only)
 docs/
 ```
@@ -296,6 +296,8 @@ The steps and their invariants are in doc 02 §6; this document adds only:
 
 JSON logs (pino) written to files under `logs/` and rotated by size and age (the WinSW wrapper captures the console as a second source). Every request has `requestId`; every submission logs `submissionUuid`, `displayNo`, `username`, `po`, `photoCount`, `durationMs`, `result` (NFR-10). Device keys, tokens, passwords and photo bytes are never logged. `GET /health` is for an uptime check by QIP Digital; `GET /system/status` shows why submitting is disabled. Alert-worthy: `SUBMIT_DISABLED` for more than 10 minutes, any `INTERNAL`, a failed nightly backup, free disk below 15 %.
 
+As built (T4.1): pino writes JSON lines to stdout only; the WinSW wrapper of each service writes them to `logs\` and rotates them by size (10 MB) and by day (`roll-by-size-time`), and the nightly task deletes log files older than 30 days. There is no second, in-process file logger. The nightly task writes Application event-log entries with source `M100`: 1000 backup finished, **1001 backup failed** (Error), **1002 less than 15 % free** on the data or backup disk (Warning); QIP Digital's monitoring watches 1001 and 1002.
+
 ## 6. Security
 
 | Threat | Control | Residual risk |
@@ -429,8 +431,12 @@ A `.env` file in the install folder (readable only by the service account; never
 | `CF_API_TOKEN` | Cloudflare token for the certificate (§7.2.1). |
 | `TZ` | `Asia/Jakarta` |
 | `LOG_LEVEL` | `info` |
+| `BACKUP_DIR` | Backup target (§7.6): a folder on another disk or a share (`\\server\share\m100`). Used by `backup` only. |
+| `PG_BIN` | PostgreSQL `bin` folder for `pg_dump` / `pg_restore` when they are not on `PATH`. Used by `backup` and `backup:restore` only. |
 
-CLI scripts run on the server with the same `.env`: `admin:create` (first admin, or a reset), `import-master` (doc 02 §5.1), `device:add` (also `--batch tablets.csv`), `device:revoke`, `device:list`, `sweep-photos` (`--dry-run` first).
+CLI scripts run on the server with the same `.env`: `admin:create` (first admin, or a reset), `import-master` (doc 02 §5.1), `device:add` (also `--batch tablets.csv`), `device:revoke`, `device:list`, `sweep-photos` (`--dry-run` first), `backup`.
+
+As built (T4.1): `install.ps1` writes `.env` once (random passwords for `m100_app` and `m100_migrate`, the Cloudflare token typed at a hidden prompt, `NODE_ENV=production`). `ADMIN_DATABASE_URL` and `REPORT_DB_PASSWORD` are never written to it: the scripts pass them to `db:bootstrap` / `backup:restore` in their own process, from the superuser password typed at a prompt and `secrets\report-db-password.txt` (administrators only). On the server the CLIs run through `C:\m100\current\deploy\windows\m100.ps1 <command> [options]` (in the install folder, relative paths from where it is typed). Caddy reads `PUBLIC_HOST` and `CF_API_TOKEN` from the same `.env` (`--envfile`).
 
 ### 7.5 Tablet provisioning and shared-tablet practice
 
@@ -446,6 +452,14 @@ CLI scripts run on the server with the same `.env`: `admin:create` (first admin,
 - **Restore test** at the start of the pilot and then every quarter: restore the latest dump into a scratch database on another machine, count submissions and open a few photos. A backup that has never been restored is not a backup.
 - **Recover** a lost server: install Node, Caddy and PostgreSQL with `install.ps1`, restore the database dump, the photos, `.env`, `secrets/` and the Caddy data folder, run `db:migrate`, start the services. Tablets keep working offline meanwhile and send when it returns; nothing the tablets hold is lost.
 - **Upgrade**: `upgrade.ps1` unpacks the new release next to the old one (`C:\m100\releases\<version>`), takes a `pg_dump` first, runs `db:migrate` with `m100_migrate`, switches the `current` junction and restarts the API; the previous release stays for rollback (migrations are written to be backward compatible within one release so a rollback of the code is safe). Do it at a shift change. Requests in flight fail and the tablets resend.
+
+As built (T4.1, files in `deploy/`):
+- **Release**: `pnpm release` (on Windows x64) builds everything and writes `release/m100-<yyyy.MM.dd>-<sha>.zip` holding `web/`, `admin/`, `api/` (dist and production `node_modules`), `db/migrations/`, `reference/mapping/`, `deploy/` and `VERSION`. It refuses to package any `.env` or `secrets` folder.
+- **Server layout**: `C:\m100\` holds `.env`, `install.json` (paths chosen at install), `secrets\`, `photos\`, `logs\`, `caddy\caddy.exe`, `caddy-data\` (`XDG_DATA_HOME`), `services\` (WinSW 2.12 `m100-api`, `m100-caddy`), `releases\<version>\` and the junction `current`. The services run as the virtual accounts `NT SERVICE\m100-api` and `NT SERVICE\m100-caddy`. The API reads `secrets\`, Caddy does not; only the API writes `photos\`. `m100-api` depends on the PostgreSQL service. PostgreSQL listens on `127.0.0.1` only. The firewall rule `M100-HTTPS` allows TCP 443 from the subnets given to `install.ps1`.
+- **Pre-checks** (§7.3, TQ-5): `deploy\windows\precheck.ps1 -BackupDir <target>` checks everything a script can and lists the rest as MANUAL; `install.ps1` runs it first.
+- **Backup** (`backup`, scheduled task "M100 nightly" as SYSTEM, default 01:00): `pg_dump -Fc` as `m100_migrate` into `BACKUP_DIR\daily\<yyyy-MM-dd_HHmmss>\m100.dump`, with `manifest.json` (submission and photo-row counts taken from the same snapshot as the dump, the dump's SHA-256, the release) and `config\` (`.env`, `secrets\`, `caddy-data\`). Photos are copied into one shared `BACKUP_DIR\photos\` that only gains files: photos never change and their keys are unique, so that copy holds the photos of every kept dump. Kept: 14 daily and the newest of each of 12 months; `upgrade.ps1`'s `pre-upgrade\` copies: the last 5. An unfinished backup stays `*.partial` and never counts. Restricting the backup target to QIP Digital is part of the runbook (T4.3).
+- **Restore test**: `restore.ps1 -From <backup folder>` (from an unpacked release, on any machine with PostgreSQL 16 and Node.js 22) restores into a new scratch database, compares the counts with the manifest, checks that every photo row's file is in the photo copy, opens a sample of them, and drops the scratch database. **Recover**: on a fresh `install.ps1`, `restore.ps1 -From <backup folder> -Full` puts back `.env`, `secrets\` and `caddy-data\`, resets the role passwords to that `.env`, replaces the database, copies the photos, migrates and starts the services.
+- **Rollback**: `upgrade.ps1 -Rollback` points `current` at the release recorded in `previous-release.txt`. When the new API is not healthy within 60 s, `upgrade.ps1` switches back by itself. It keeps 5 releases besides the current and the previous one.
 
 ## 8. Testing strategy
 

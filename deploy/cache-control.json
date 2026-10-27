@@ -1,0 +1,5 @@
+{
+  "hashedAssets": "public, max-age=31536000, immutable",
+  "appShell": "no-cache",
+  "api": "no-store"
+}

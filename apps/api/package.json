@@ -15,6 +15,8 @@
     "device:revoke": "pnpm run build && node dist/cli/device-revoke.js",
     "device:list": "pnpm run build && node dist/cli/device-list.js",
     "sweep-photos": "pnpm run build && node dist/cli/sweep-photos.js",
+    "backup": "pnpm run build && node dist/cli/backup.js",
+    "backup:restore": "pnpm run build && node dist/cli/backup-restore.js",
     "test": "jest",
     "test:load": "pnpm run build && jest --runInBand --testPathIgnorePatterns /node_modules/ --testPathPatterns \\.load\\.spec\\.ts$",
     "test:watch": "jest --watch",

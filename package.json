@@ -25,7 +25,10 @@
     "device:add": "pnpm --filter api device:add",
     "device:revoke": "pnpm --filter api device:revoke",
     "device:list": "pnpm --filter api device:list",
-    "sweep-photos": "pnpm --filter api sweep-photos"
+    "sweep-photos": "pnpm --filter api sweep-photos",
+    "backup": "pnpm --filter api backup",
+    "backup:restore": "pnpm --filter api backup:restore",
+    "release": "pnpm --filter deploy release"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
