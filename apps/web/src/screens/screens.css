@@ -132,6 +132,13 @@
   color: var(--ink-3);
   font-size: var(--fs-meta);
 }
+/* The list fills the dialog and scrolls inside its own frame when the PSI list is long (app.css caps the dialog
+   at the screen height, so the last names stay reachable). */
+.login__names {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
 .login__names .login__option {
   min-height: 52px;
 }

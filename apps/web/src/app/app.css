@@ -13,8 +13,18 @@
   max-height: calc(100dvh - 2 * var(--space-4));
 }
 
+/* A dialog never grows past the screen (doc 05 §2): the head keeps its height, the body takes the rest and scrolls.
+   `min-height: 0` is what lets the body shrink below its content — a flex item defaults to `min-height: auto`, which
+   used to make a long PILIH NAMA list overflow the dialog and get cut off. */
+.app-scrim > .m100-dialog > .m100-dialog__head {
+  flex: none;
+}
+
 .app-scrim > .m100-dialog > .m100-dialog__body {
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Heights from doc 05 §4a. */
