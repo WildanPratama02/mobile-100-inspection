@@ -17,7 +17,7 @@ const securityHeaders = JSON.parse(
 // The API under `/v1` on the same origin, as Caddy serves it in production (doc 03 §7.1). `pnpm e2e` points this at
 // the API it starts on its own test database.
 const apiProxy = {
-  '/v1': { target: process.env.M100_API_URL ?? 'http://127.0.0.1:3000', changeOrigin: false },
+  '/v1': { target: process.env.M100_API_URL ?? 'http://127.0.0.1:3100', changeOrigin: false },
 };
 
 export default defineConfig({
