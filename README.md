@@ -1,5 +1,7 @@
 # Mobile 100% Inspection — Starter Kit untuk Claude Code
 
+Panduan menjalankan API, web, dan admin secara lokal: [Development setup](docs/development.md).
+
 Folder ini adalah titik awal repo. Isinya dokumen perencanaan, design system, mapping defect, prototype, dan aturan kerja (`CLAUDE.md`) yang dibaca otomatis oleh Claude Code setiap sesi.
 
 ```

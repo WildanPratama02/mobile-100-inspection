@@ -76,7 +76,10 @@ test('the Nama picker scrolls to every name instead of cutting the list off', as
 
   const list = dialog.getByRole('listbox');
   const last = list.getByRole('option').last();
-  await list.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+  expect(await list.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await list.hover();
+  await page.mouse.wheel(0, 2000);
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   await expect(last, 'the last name is fully visible once scrolled').toBeInViewport({ ratio: 1 });
   await last.click();
   await expect(dialog).toHaveCount(0);

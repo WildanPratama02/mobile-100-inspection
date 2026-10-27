@@ -133,8 +133,10 @@
   font-size: var(--fs-meta);
 }
 /* The list fills the dialog and scrolls inside its own frame when the PSI list is long (app.css caps the dialog
-   at the screen height, so the last names stay reachable). */
-.login__names {
+   at the screen height, so the last names stay reachable). Override the shared list's overflow: hidden
+   regardless of stylesheet load order. */
+.login__names.m100-list {
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
