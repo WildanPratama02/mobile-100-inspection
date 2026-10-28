@@ -217,7 +217,7 @@ describe('logout (FR-02)', () => {
       await store.getState().addPo(PO, null);
       await store.getState().addPo({ ...PO, po: 'CX-0902368685' }, null);
       await store.getState().tap(PO.po, { type: 'START', inspection: 'REWORK' });
-      await store.getState().tap('CX-0902368685', { type: 'NO_DEFECT' });
+      await store.getState().tap('CX-0902368685', { type: 'SET_QTY_INSPECTION', qty: 30 });
     });
 
     logoutViaMenu();

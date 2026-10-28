@@ -583,7 +583,7 @@
 }
 .defect__cmds {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
 }
 .defect__cmds > .m100-cmd {
@@ -846,6 +846,9 @@
   .home__body .m100-stat {
     min-height: 0;
     padding: 2px 0;
+  }
+  .home__body button.m100-stat {
+    min-height: var(--tap-min);
   }
   .home__body .m100-stat > b {
     font-size: 21px;

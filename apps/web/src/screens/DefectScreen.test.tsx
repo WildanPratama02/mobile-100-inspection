@@ -87,7 +87,7 @@ describe('command states (doc 05 §11.2)', () => {
     renderDefect();
     expect(button('REWORK')).toBeEnabled();
     expect(button('B-GRADE')).toBeEnabled();
-    expect(button('NO DEFECT')).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'NO DEFECT' })).not.toBeInTheDocument();
     expect(button('END INSPECTION')).toBeDisabled();
     expect(bar('UNDO')).toBeDisabled();
     expect(pill('QUARTER')).toBeDisabled();
@@ -101,7 +101,6 @@ describe('command states (doc 05 §11.2)', () => {
     await startRework();
     expect(button('REWORK')).toHaveAttribute('aria-pressed', 'true');
     expect(button('B-GRADE')).toBeDisabled();
-    expect(button('NO DEFECT')).toBeDisabled();
     expect(button('END INSPECTION')).toBeEnabled();
     expect(pill('QUARTER')).toBeEnabled();
     expect(screen.getByText('Pilih area sepatu')).toBeVisible();
@@ -117,22 +116,18 @@ describe('command states (doc 05 §11.2)', () => {
     expect(session().active?.type).toBe('B-GRADE');
   });
 
-  it('NO DEFECT records an A-Grade pair at once and stays idle (U1)', async () => {
+  it('removes NO DEFECT and keeps Qty Inspection independent of inspection starts', () => {
     renderDefect();
-    fireEvent.click(button('NO DEFECT'));
-    await toast('No Defect tercatat. A-Grade +1');
-    expect(totals(session())).toMatchObject({ qtyInspection: 1, qtyAGrade: 1 });
-    expect(button('REWORK')).toBeEnabled();
-    expect(button('END INSPECTION')).toBeDisabled();
-    expect(pill('QUARTER')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'NO DEFECT' })).not.toBeInTheDocument();
+    expect(totals(session()).qtyInspection).toBeNull();
   });
 
-  it('END INSPECTION without defects counts one inspection (AC-06.3)', async () => {
+  it('END INSPECTION without defects leaves Qty Inspection empty (ADR-019)', async () => {
     renderDefect();
     await startRework();
     fireEvent.click(button('END INSPECTION'));
     await toast('Inspeksi selesai tanpa defect');
-    expect(totals(session())).toMatchObject({ qtyInspection: 1, qtyDefect: 0 });
+    expect(totals(session())).toMatchObject({ qtyInspection: null, qtyDefect: 0 });
     expect(button('END INSPECTION')).toBeDisabled();
     expect(screen.getByText('Mulai inspeksi')).toBeVisible();
   });
@@ -181,7 +176,7 @@ describe('recording defects (FR-07, FR-09)', () => {
     expect(historyRows()[1]).toHaveTextContent('B-GRADE');
     // The row count is of the active inspection only (AC-07.3): the REWORK tap does not show.
     expect(option(D1!.name)).toHaveTextContent(/1$/);
-    expect(totals(session())).toMatchObject({ qtyInspection: 2, qtyDefect: 3, qtyBGrade: 2 });
+    expect(totals(session())).toMatchObject({ qtyInspection: null, qtyDefect: 3, qtyBGrade: 2 });
   });
 
   it('opens an area with one sub-area at its families', async () => {
@@ -209,19 +204,19 @@ describe('BACK, HOME, UNDO (FR-08)', () => {
 
     fireEvent.click(bar('UNDO'));
     await toast('Inspeksi dibatalkan');
-    expect(totals(session()).qtyInspection).toBe(0);
+    expect(totals(session()).qtyInspection).toBeNull();
     expect(bar('UNDO')).toBeDisabled();
     await waitFor(() => expect(store.getState().view.defectPath).toEqual(NO_PATH));
   });
 
-  it('UNDO right after NO DEFECT cancels it', async () => {
+  it('UNDO stays disabled after END and never changes Qty Inspection', async () => {
+    await store.getState().tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 30 });
     renderDefect();
-    fireEvent.click(button('NO DEFECT'));
-    await toast('No Defect tercatat');
-    fireEvent.click(bar('UNDO'));
-    await toast('No Defect dibatalkan');
-    expect(totals(session())).toMatchObject({ qtyInspection: 0, qtyAGrade: 0 });
+    await startRework();
+    fireEvent.click(button('END INSPECTION'));
+    await toast('Inspeksi selesai tanpa defect');
     expect(bar('UNDO')).toBeDisabled();
+    expect(totals(session()).qtyInspection).toBe(30);
   });
 
   it('UNDO never reaches an ended inspection', async () => {

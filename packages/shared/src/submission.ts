@@ -5,7 +5,14 @@
  * a session into the `submission` part of `POST /submissions` (doc 04 §4.1); the tablet serialises it once when
  * it seals the session and resends those bytes (doc 03 §4.6). Everything here is pure.
  */
-import { findings, type RankedDefect, type SessionState } from './counting';
+import {
+  findings,
+  totals,
+  type PoQuantities,
+  type QtyInspectionIssue,
+  type RankedDefect,
+  type SessionState,
+} from './counting';
 import type { Cell, DefectId, PoPartial, PsiLevel, SubmissionRequest, User } from './domain';
 import { toWibIso } from './format';
 import { missingPhotos, takesPhotos } from './photos';
@@ -13,12 +20,14 @@ import { missingPhotos, takesPhotos } from './photos';
 /** Why SUBMIT PO stops before the confirmation; each has its own dialog (doc 05 §13.1). */
 export type SubmitBlock =
   | { kind: 'ACTIVE' }
-  /** Qty Inspection not entered (FR-15). The BR-10 limit checks join here with their dialogs (T5.3). */
+  /** Qty Inspection not entered (FR-15). */
   | { kind: 'EMPTY' }
+  | Exclude<QtyInspectionIssue, { kind: 'EMPTY' }>
   /** PSI lv.2: the Top 5 defects without a photo, in rank order (BR-04). */
   | { kind: 'PHOTOS_MISSING'; defects: RankedDefect[] };
 
 export interface SubmitCheckInput {
+  po: PoQuantities;
   state: SessionState;
   level: PsiLevel;
   /** TOP 5 DEFECT of the session (`top5`). */
@@ -33,9 +42,12 @@ export function checkSubmit({
   level,
   top,
   photographed,
+  po,
 }: SubmitCheckInput): SubmitBlock | null {
   if (state.active) return { kind: 'ACTIVE' };
   if (state.qtyInspection === null) return { kind: 'EMPTY' };
+  const issue = totals(state, po).qtyInspectionIssue;
+  if (issue) return issue;
   if (takesPhotos(level)) {
     const defects = missingPhotos(top, photographed);
     if (defects.length > 0) return { kind: 'PHOTOS_MISSING', defects };

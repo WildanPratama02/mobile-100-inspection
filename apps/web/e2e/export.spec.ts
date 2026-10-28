@@ -1,3 +1,4 @@
+import { setQtyInspection } from './helpers';
 // EXPORT PDF / EXPORT EXCEL on Home (T1.6: FR-12, AC-12.1 … AC-12.4, doc 05 §8.5).
 import { readFile } from 'node:fs/promises';
 import { strFromU8, unzipSync } from 'fflate';
@@ -30,7 +31,7 @@ async function pick(page: Page, field: 'Nama' | 'Factory' | 'Cell', option: stri
     .click();
 }
 
-/** Logs in, adds PO 0903359388, records REWORK with one defect, END, one NO DEFECT, and returns to Home. */
+/** Logs in, adds PO 0903359388, records REWORK with one defect, END, and enters Qty Inspection 2 on Home. */
 async function homeWithDefect(page: Page, name: string) {
   await page.goto('/');
   await pick(page, 'Nama', name);
@@ -58,11 +59,11 @@ async function homeWithDefect(page: Page, name: string) {
   await defect.click();
   await expect(defect).toContainText('1');
   await page.getByRole('button', { name: 'END INSPECTION' }).click();
-  await page.getByRole('button', { name: 'NO DEFECT' }).click();
   await page
     .getByRole('navigation', { name: 'Navigasi input defect' })
     .getByRole('button', { name: 'HOME' })
     .click();
+  await setQtyInspection(page, 2);
   await expect(page.getByRole('region', { name: 'TOP 5 DEFECT' })).toContainText(DEFECT);
 }
 

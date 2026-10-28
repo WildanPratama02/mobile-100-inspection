@@ -9,3 +9,5 @@ An in-app digit pad with a large readout. The tablet keyboard never opens.
 **Do / don't**
 - Do place it inside the Add PO dialog under the Stepper; keys are 58px high.
 - Don't add a decimal or sign key.
+
+Optional `min` defaults to 1. A nonempty value below it displays "Minimal {min} pasang" in the danger style.

@@ -3,7 +3,7 @@
 // of the submission is tested end to end in T3.6.
 import { type BrowserContext, type Page, type Route } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { addPo, bar, login, logout, outbox, toast } from './helpers';
+import { addPo, setQtyInspection, login, logout, outbox } from './helpers';
 
 const PO = '0903359388';
 
@@ -75,15 +75,12 @@ async function stubSubmissions(context: BrowserContext) {
   };
 }
 
-/** Logs in, adds the PO and records one NO DEFECT (PSI lv.1: no photo step), back on Home. */
+/** Logs in, adds the PO and enters Qty Inspection 1 (PSI lv.1: no photo step), back on Home. */
 async function readyToSubmit(page: Page, name = 'ANDI CONTOH') {
   await page.goto('/');
   await login(page, name);
   await addPo(page, PO);
-  await page.getByRole('button', { name: 'ADD DEFECT' }).click();
-  await page.getByRole('button', { name: 'NO DEFECT' }).click();
-  await expect(toast(page)).toHaveText('No Defect tercatat. A-Grade +1');
-  await bar(page, 'HOME').click();
+  await setQtyInspection(page, 1);
 }
 
 async function kirim(page: Page) {

@@ -241,11 +241,11 @@ Migration `0006` exactly as doc 02 §4.1 "Migration 0006"; the submission schema
 
 ### T5.3 Tablet app (web)
 Home: QTY INSPECTION row tappable (`StatRow onClick`, U20), dialog S5b with `NumberPad min` (U21), results and notices of §8.1–§8.2. Defect screen: NO DEFECT gone (§11.1–§11.2), UNDO cases (§11.4). Submit PO: the Qty Inspection checks of §13.1; sealing writes `counts.qtyInspection`. Exports show the same seven values as Home. Port the two new optional props into `design-system/components` (index.d.ts, README, bundle) and `apps/web/src/ui` with the same names.
-- [ ] S5b: SIMPAN disabled outside `min`…`max` with the NumberPad message; SIMPAN stores the event before closing; the value survives a reload and belongs to the selected PO only (AC-15.1 … AC-15.4).
-- [ ] Each row of the §8.2 state table and each new row of §13.1 has a test; the `/ui` catalogue shows `StatRow` with `onClick` and `NumberPad` with `min`; every tappable element is ≥ 44 × 44 px.
-- [ ] Home shows Qty A-Grade `0` and both rates `0,0%` while Qty Inspection is empty or not valid; Qty Defect and Qty B-Grade always show the findings; a finding recorded after Qty Inspection makes it not valid without blocking the tap.
-- [ ] Playwright covers: login → add PO with partial → REWORK with 2 defects → END → B-GRADE with 1 defect → END → UNDO disabled → Home shows A-Grade 0, rates 0,0% → QTY INSPECTION 2 refused (below 3 defects) → QTY INSPECTION 30 → Home shows A-Grade 27, Defect Rate 10,0%, Pass Rate 90,0% → submit; the stored submission has Qty Inspection 30, Qty Defect 3, A-Grade 27 and `counting_rule = 'ADR-019'`.
-- [ ] An outbox item sealed before the update (fixture with `noDefect`) is sent unchanged and stored as ADR-008.
+- [x] S5b: SIMPAN disabled outside `min`…`max` with the NumberPad message; SIMPAN stores the event before closing; the value survives a reload and belongs to the selected PO only (AC-15.1 … AC-15.4).
+- [x] Each row of the §8.2 state table and each new row of §13.1 has a test; the `/ui` catalogue shows `StatRow` with `onClick` and `NumberPad` with `min`; every tappable element is ≥ 44 × 44 px.
+- [x] Home shows Qty A-Grade `0` and both rates `0,0%` while Qty Inspection is empty or not valid; Qty Defect and Qty B-Grade always show the findings; a finding recorded after Qty Inspection makes it not valid without blocking the tap.
+- [x] Playwright covers: login → add PO with partial → REWORK with 2 defects → END → B-GRADE with 1 defect → END → UNDO disabled → Home shows A-Grade 0, rates 0,0% → QTY INSPECTION 2 refused (below 3 defects) → QTY INSPECTION 30 → Home shows A-Grade 27, Defect Rate 10,0%, Pass Rate 90,0% → submit; the stored submission has Qty Inspection 30, Qty Defect 3, A-Grade 27 and `counting_rule = 'ADR-019'`.
+- [x] An outbox item sealed before the update (fixture with `noDefect`) is sent unchanged and stored as ADR-008.
 
 ### T5.4 Admin app
 A1 list and A1b detail show the counting rule and the counts (doc 05 §20.3).

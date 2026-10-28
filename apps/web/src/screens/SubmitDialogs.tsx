@@ -24,15 +24,15 @@ export function SubmitActiveDialog({ onAddDefect }: { onAddDefect: () => void })
   );
 }
 
-/** "Belum ada inspeksi" (must answer): Qty Inspection is 0. */
+/** Qty Inspection is empty: the action opens the quantity editor. */
 export function SubmitEmptyDialog({ onClose }: { onClose: () => void }) {
   return (
     <Overlay>
-      <Dialog title="Belum ada inspeksi" role="alertdialog" onClose={false}>
-        <p className="dialog__text">Belum ada inspeksi untuk PO ini. Mulai dari ADD DEFECT.</p>
+      <Dialog title="QTY INSPECTION belum diisi" role="alertdialog" onClose={false}>
+        <p className="dialog__text">Isi jumlah pasang yang diinspeksi sebelum SUBMIT PO.</p>
         <div className="dialog__actions">
           <Button variant="primary" onClick={onClose}>
-            Mengerti
+            Isi QTY INSPECTION
           </Button>
         </div>
       </Dialog>
@@ -56,7 +56,7 @@ export function SubmitConfirmDialog({
   onCancel,
   onSend,
 }: SubmitConfirmDialogProps) {
-  const t = totals(session.state);
+  const t = totals(session.state, po);
   return (
     <Overlay onDismiss={onCancel}>
       <Dialog title="Submit PO" onClose={onCancel}>
@@ -67,10 +67,10 @@ export function SubmitConfirmDialog({
           ) : null}
           <StatRow label="Qty Inspection" value={formatCount(t.qtyInspection)} />
           <StatRow label="Qty Defect" value={formatCount(t.qtyDefect)} />
-          <StatRow label="Qty A-Grade" value={formatCount(t.qtyAGrade)} />
+          <StatRow label="Qty A-Grade" value={formatCount(t.qtyAGrade ?? 0)} />
           <StatRow label="Qty B-Grade" value={formatCount(t.qtyBGrade)} />
-          <StatRow label="Defect Rate" value={formatRate(t.defectRate)} />
-          <StatRow label="Pass Rate (RFT)" value={formatRate(t.passRate)} />
+          <StatRow label="Defect Rate" value={formatRate(t.defectRate ?? 0)} />
+          <StatRow label="Pass Rate (RFT)" value={formatRate(t.passRate ?? 0)} />
           {takesPhotos(level) ? (
             <StatRow label="Foto" value={formatCount(photosToSubmit(level, session).length)} />
           ) : null}

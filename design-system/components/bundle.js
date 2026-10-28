@@ -4,6 +4,7 @@ var React = window.React, h = React.createElement;
 function cx(){ var a=[]; for (var i=0;i<arguments.length;i++){ if(arguments[i]) a.push(arguments[i]); } return a.join(' '); }
 function rest(p, omit){ var o={}; for (var k in p){ if (Object.prototype.hasOwnProperty.call(p,k) && omit.indexOf(k)<0) o[k]=p[k]; } return o; }
 var ICONS = {
+  edit:[['path',{d:'M14 5l5 5M4 20l4-1L20 7l-5-5L3 14z'}]],
   plus:[['path',{d:'M12 4v16M4 12h16'}]],
   'chevron-down':[['path',{d:'M5 9l7 7 7-7'}]],
   'chevron-right':[['path',{d:'M9 5l7 7-7 7'}]],
@@ -81,8 +82,8 @@ function POListItem(p){
 }
 function StatRow(p){
   var v = p.value == null ? '—' : p.value;
-  return h('div', {className:cx('m100-stat', p.tone && 'm100-stat--'+p.tone, p.className)},
-    h('span', null, p.label), h('b', null, v, p.unit && p.value != null ? h('small', null, p.unit) : null));
+  return h(p.onClick ? 'button' : 'div', {type:p.onClick?'button':undefined,onClick:p.onClick,'aria-label':p.onClick?'Ubah Qty Inspection':undefined,className:cx('m100-stat', p.tone && 'm100-stat--'+p.tone, p.className)},
+    h('span', null, p.label), h('b', null, v, p.unit && p.value != null ? h('small', null, p.unit) : null, p.onClick ? h(Icon,{name:'edit'}) : null));
 }
 function PhotoButton(p){
   var st = p.state || 'add';
@@ -182,11 +183,11 @@ function Stepper(p){
 function NumberPad(p){
   var digits = String(p.value == null ? '' : p.value);
   var max = p.max, n = digits === '' ? 0 : parseInt(digits,10);
-  var over = max != null && n > max, zero = digits !== '' && n < 1;
+  var over = max != null && n > max, zero = digits !== '' && n < (p.min == null ? 1 : p.min);
   var fmt = function(s){ return s === '' ? '' : s.replace(/\B(?=(\d{3})+(?!\d))/g,'.'); };
   function press(d){ if(!p.onChange) return; var nx = (digits === '0' ? '' : digits) + d; if (nx.length > 9) return; p.onChange(nx); }
   var keys = ['1','2','3','4','5','6','7','8','9'];
-  var msg = over ? 'Maksimum '+fmt(String(max))+' pasang' : zero ? 'Minimal 1 pasang' : (p.hint || '');
+  var msg = over ? 'Maksimum '+fmt(String(max))+' pasang' : zero ? 'Minimal '+fmt(String(p.min == null ? 1 : p.min))+' pasang' : (p.hint || '');
   return h('div',{className:cx('m100-pad',p.className), role:'group', 'aria-label': p.label || 'Input angka'},
     p.label ? h('span',{className:'m100-pad__label'},p.label) : null,
     h('output',{className:cx('m100-pad__out', (over||zero)&&'m100-pad__out--bad'), 'aria-live':'polite'}, digits === '' ? h('span',{className:'m100-ph'},p.placeholder||'0') : fmt(digits), p.unit ? h('small',null,p.unit) : null),

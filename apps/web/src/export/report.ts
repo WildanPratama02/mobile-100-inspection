@@ -104,7 +104,7 @@ export function exportReport({ po, session, auth, mapping, now }: ExportInput): 
   // Ranked by the rules of TOP 5 DEFECT (AC-05.1); the first five are exactly what Home shows.
   const ranked = rankDefects(list, (id) => defectOf(id).classification);
   const top = ranked.slice(0, 5);
-  const t = totals(state);
+  const t = totals(state, po);
 
   const info: Array<[string, string]> = [
     ['PO NUMBER', po.po],
@@ -126,10 +126,10 @@ export function exportReport({ po, session, auth, mapping, now }: ExportInput): 
       { label: 'Qty PO Order', kind: 'count', value: po.orderQty },
       { label: 'Qty Inspection', kind: 'count', value: t.qtyInspection },
       { label: 'Qty Defect', kind: 'count', value: t.qtyDefect },
-      { label: 'Qty A-Grade', kind: 'count', value: t.qtyAGrade },
+      { label: 'Qty A-Grade', kind: 'count', value: t.qtyAGrade ?? 0 },
       { label: 'Qty B-Grade', kind: 'count', value: t.qtyBGrade },
-      { label: 'Defect Rate', kind: 'rate', value: t.defectRate },
-      { label: 'Pass Rate (RFT)', kind: 'rate', value: t.passRate },
+      { label: 'Defect Rate', kind: 'rate', value: t.defectRate ?? 0 },
+      { label: 'Pass Rate (RFT)', kind: 'rate', value: t.passRate ?? 0 },
     ],
     top5: top.map((row, i) => ({
       no: i + 1,

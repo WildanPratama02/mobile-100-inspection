@@ -32,6 +32,7 @@ function session(...payloads: SessionEventPayload[]): SessionState {
 
 function check(state: SessionState, level: PsiLevel, photographed: DefectId[] = []) {
   return checkSubmit({
+    po: { partial: null, orderQty: 10002 },
     state,
     level,
     top: top5(findings(state), mapping),

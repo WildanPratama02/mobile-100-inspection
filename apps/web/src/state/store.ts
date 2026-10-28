@@ -17,6 +17,7 @@ import {
   endInspection,
   findings,
   recordDefect,
+  setQtyInspection,
   replay,
   startInspection,
   submissionPhotos,
@@ -57,7 +58,7 @@ import {
 /** A tap on Home or the Defect screen (FR-06, FR-07, FR-08). */
 export type TapCommand =
   | { type: 'START'; inspection: InspectionType }
-  | { type: 'NO_DEFECT' }
+  | { type: 'SET_QTY_INSPECTION'; qty: number }
   | { type: 'DEFECT'; entry: AreaMapEntry }
   | { type: 'END' }
   | { type: 'UNDO' };
@@ -161,9 +162,11 @@ export function submitBlock(
   level: Auth['level'],
   session: PoSession | undefined,
   mapping: Pick<MappingIndex, 'defect'>,
+  po: Pick<PoRow, 'partial' | 'orderQty'>,
 ): SubmitBlock | null {
   const state = session?.state ?? EMPTY_SESSION;
   return checkSubmit({
+    po,
     state,
     level,
     top: top5(findings(state), mapping),
@@ -201,13 +204,16 @@ const LOGGED_OUT: UserData = {
   view: DEFAULT_VIEW,
 };
 
-function toPayload(state: SessionState, command: TapCommand): SessionEventPayload | null {
+function toPayload(
+  state: SessionState,
+  command: TapCommand,
+  po: PoRow,
+): SessionEventPayload | null {
   switch (command.type) {
     case 'START':
       return startInspection(state, command.inspection);
-    case 'NO_DEFECT':
-      // NO DEFECT is removed (ADR-019); the button and this command go with T5.3.
-      return null;
+    case 'SET_QTY_INSPECTION':
+      return setQtyInspection(state, command.qty, po);
     case 'DEFECT':
       return recordDefect(state, command.entry);
     case 'END':
@@ -447,7 +453,9 @@ export function createAppStore(
         serial(async () => {
           const username = requireUser();
           const { session, state } = requireSession(po);
-          const payload = toPayload(state, command);
+          const listed = get().pos.find((p) => p.po === po);
+          if (!listed) throw new Error(`PO ${po} is not in the list`);
+          const payload = toPayload(state, command, listed);
           if (!payload) return null;
           const event = await repo.appendEvent(db, username, session.id, payload, now());
           const after = applyEvent(state, event);
@@ -496,7 +504,7 @@ export function createAppStore(
           const current = requireSession(po);
           const listed = get().pos.find((p) => p.po === po);
           if (!listed) throw new Error(`PO ${po} is not in the list`);
-          const block = submitBlock(auth.level, current, mapping);
+          const block = submitBlock(auth.level, current, mapping, listed);
           if (block) throw new SubmitBlockedError(block);
 
           // The submission is serialised once, here, and that string is what is ever sent (doc 03 §4.6).

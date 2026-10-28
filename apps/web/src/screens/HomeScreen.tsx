@@ -65,6 +65,9 @@ import { PartialDialog } from './PartialDialog';
 import { PhotoViewDialog } from './PhotoViewDialog';
 import { SettingsDialog } from './SettingsDialog';
 import { SubmitActiveDialog, SubmitConfirmDialog, SubmitEmptyDialog } from './SubmitDialogs';
+import { QtyInspectionDialog } from './QtyInspectionDialog';
+import { QtySubmitDialog } from './QtySubmitDialog';
+import { qtyNotice } from './qtyInspectionNotice';
 import './screens.css';
 
 /** U3: Defect Rate shows `bad` above this. A display aid only, not a business rule; change it here. */
@@ -84,6 +87,7 @@ type Open =
   | { kind: 'submit-active' }
   | { kind: 'submit-empty' }
   | { kind: 'submit-confirm' };
+type QtyOpen = { kind: 'qty' } | { kind: 'submit-qty'; issue: 'BELOW' | 'ABOVE' | 'IMPOSSIBLE' };
 
 export interface HomeScreenProps {
   auth: Auth;
@@ -103,7 +107,7 @@ export function HomeScreen({ auth }: HomeScreenProps) {
   const waiting = useAppStore(waitingCount);
   const sender = useOutboxSender();
   const toast = useToast();
-  const [open, setOpen] = useState<Open | null>(null);
+  const [open, setOpen] = useState<Open | QtyOpen | null>(null);
   const close = () => setOpen(null);
 
   const session = po ? sessions[po.po] : undefined;
@@ -164,10 +168,12 @@ export function HomeScreen({ auth }: HomeScreenProps) {
   /** S8 step 1 (doc 05 §13.1): the first failing check opens its dialog, otherwise the confirmation. */
   const onSubmit = () => {
     if (!po) return;
-    const block = submitBlock(auth.level, session, mapping);
+    const block = submitBlock(auth.level, session, mapping, po);
     if (!block) setOpen({ kind: 'submit-confirm' });
     else if (block.kind === 'ACTIVE') setOpen({ kind: 'submit-active' });
     else if (block.kind === 'EMPTY') setOpen({ kind: 'submit-empty' });
+    else if (block.kind === 'BELOW' || block.kind === 'ABOVE' || block.kind === 'IMPOSSIBLE')
+      setOpen({ kind: 'submit-qty', issue: block.kind });
     else {
       const names = block.defects.map((d) => mapping.defect(d.defectId)?.name ?? d.defectId);
       setOpen({ kind: 'missing-photos', names });
@@ -290,7 +296,7 @@ export function HomeScreen({ auth }: HomeScreenProps) {
         </Pane>
 
         <Pane label="Hasil" className="home__stats">
-          <Results po={po} session={session} />
+          <Results po={po} session={session} onEdit={() => setOpen({ kind: 'qty' })} />
         </Pane>
 
         {active ? (
@@ -370,7 +376,21 @@ export function HomeScreen({ auth }: HomeScreenProps) {
           }}
         />
       ) : null}
-      {open?.kind === 'submit-empty' ? <SubmitEmptyDialog onClose={close} /> : null}
+      {open?.kind === 'submit-empty' ? (
+        <SubmitEmptyDialog onClose={() => setOpen({ kind: 'qty' })} />
+      ) : null}
+      {open?.kind === 'qty' && po && session ? (
+        <QtyInspectionDialog po={po} session={session} onClose={close} />
+      ) : null}
+      {open?.kind === 'submit-qty' && po && session ? (
+        <QtySubmitDialog
+          po={po}
+          session={session}
+          issue={open.issue}
+          onClose={close}
+          onEdit={() => setOpen({ kind: 'qty' })}
+        />
+      ) : null}
       {open?.kind === 'submit-confirm' && po && session ? (
         <SubmitConfirmDialog
           po={po}
@@ -563,13 +583,13 @@ function Empty({ title, hint }: { title: string; hint: string }) {
   );
 }
 
-/** The results box (FR-04): seven values of the open session, "—" for a rate when Qty Inspection is 0. */
-function Results({ po, session }: PanelProps) {
+/** The results box (FR-04): seven values, using zero fallbacks until Qty Inspection is valid. */
+function Results({ po, session, onEdit }: PanelProps & { onEdit: () => void }) {
   if (!po) {
     return (
       <div className="home__results home__results--off">
         <StatRow label="Qty PO Order" value={null} />
-        <StatRow label="Qty Inspection" value="0" />
+        <StatRow label="Qty Inspection" value={null} />
         <StatRow label="Qty Defect" value="0" />
         <StatRow label="Qty A-Grade" value="0" />
         <StatRow label="Qty B-Grade" value="0" />
@@ -578,24 +598,30 @@ function Results({ po, session }: PanelProps) {
       </div>
     );
   }
-  const t = totals(session?.state ?? EMPTY_SESSION);
+  const t = totals(session?.state ?? EMPTY_SESSION, po);
   const bad = t.defectRate !== null && t.defectRate > DEFECT_RATE_BAD_ABOVE;
   return (
     <div className="home__results">
       <StatRow label="Qty PO Order" value={formatCount(po.orderQty)} />
-      <StatRow label="Qty Inspection" value={formatCount(t.qtyInspection)} />
+      <StatRow
+        label="Qty Inspection"
+        value={t.qtyInspection === null ? null : formatCount(t.qtyInspection)}
+        tone={t.qtyInspection !== null && t.qtyInspectionIssue ? 'bad' : undefined}
+        onClick={onEdit}
+      />
+      {t.qtyInspection === null ? <span>Ketuk untuk isi</span> : null}
       <StatRow label="Qty Defect" value={formatCount(t.qtyDefect)} />
-      <StatRow label="Qty A-Grade" value={formatCount(t.qtyAGrade)} />
+      <StatRow label="Qty A-Grade" value={formatCount(t.qtyAGrade ?? 0)} />
       <StatRow label="Qty B-Grade" value={formatCount(t.qtyBGrade)} />
       <StatRow
         label="Defect Rate"
-        value={t.defectRate === null ? null : formatRate(t.defectRate)}
+        value={formatRate(t.defectRate ?? 0)}
         tone={bad ? 'bad' : undefined}
       />
-      <StatRow
-        label="Pass Rate (RFT)"
-        value={t.passRate === null ? null : formatRate(t.passRate)}
-      />
+      <StatRow label="Pass Rate (RFT)" value={formatRate(t.passRate ?? 0)} />
+      {t.qtyInspectionIssue ? (
+        <Notice tone="warning">{qtyNotice(t.qtyInspectionIssue.kind, t.qtyDefect, po)}</Notice>
+      ) : null}
     </div>
   );
 }
