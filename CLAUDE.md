@@ -43,10 +43,11 @@ Tests: Vitest (unit), Playwright (web end-to-end), Jest (NestJS default; reposit
 4. **Taps never hit the network.** Every tap is saved to IndexedDB before the UI confirms it (NFR-03, NFR-05).
 5. **Counting rules (BR-01, BR-10, ADR-019)** live in one pure function in `packages/shared` with unit tests that reproduce the ADR-019 table exactly:
    - Qty Inspection is entered by the PSI on Home with the app's number pad (FR-15); it is never counted from taps. There is no NO DEFECT.
-   - Each REWORK / B-GRADE start is one REWORK / B-GRADE pair. Qty A-Grade = Qty Inspection − REWORK pairs − B-GRADE pairs.
-   - Defect during REWORK: Qty Defect +1. Defect during B-GRADE: Qty Defect +1 and Qty B-Grade +1 (per finding).
-   - Defect Rate = Qty Defect ÷ Qty Inspection; Pass Rate (RFT) = Qty A-Grade ÷ Qty Inspection; show "—" while Qty Inspection is empty (A-Grade and Pass Rate also while it is below the REWORK + B-GRADE pairs).
-   - Limits (BR-10): Qty Inspection ≥ 1, ≥ REWORK + B-GRADE pairs, ≤ the partial quantity when set, else Qty Order. Tablet, API and database check them.
+   - Qty Defect counts defect findings, not defective pairs: defect during REWORK: Qty Defect +1; during B-GRADE: Qty Defect +1 and Qty B-Grade +1 (one pair with three findings adds 3).
+   - Qty A-Grade = Qty Inspection − Qty Defect. REWORK / B-GRADE starts are recorded as pairs but enter no formula.
+   - Defect Rate = Qty Defect ÷ Qty Inspection; Pass Rate (RFT) = Qty A-Grade ÷ Qty Inspection (a findings-based metric, not a pair yield). While Qty Inspection is empty or not valid the engine returns `null` for A-Grade and both rates; screens show `0` and `0,0%` (display fallback, never submitted).
+   - Limits (BR-10): Qty Inspection ≥ 1, ≥ Qty Defect, ≤ the partial quantity when set, else Qty Order; when Qty Defect is above that maximum no value is valid. Recording a finding is never blocked by it, and the app never raises Qty Inspection or deletes findings. Tablet, API and database check the limits independently.
+   - ADR-008 submissions (and payloads sealed before the update) keep the ADR-008 calculation; never recalculate them.
 6. **Photos (FR-10, BR-04, doc 02 §4.3, §7):** PSI lv.2 takes exactly one photo per Top 5 defect (more only for a defect photographed while in the Top 5 that later left it, AC-10.4); PSI lv.1 takes no photos at all. One `submission_photos` row per defect, key `submissions/<yyyy>/<MM>/<uuid>/<defectId>.jpg`. JPEG ≤ 1 MB, never re-encoded on the server.
 7. **Defect identity (ADR-009):** use `DEFECT_ID` D001–D098. D049 and D071 share a name; never key anything by defect name alone.
 8. **Open questions (PRD §10; open now: OQ-05, OQ-06, OQ-09, OQ-10):** if a task touches one, stop and ask. Never pick an answer silently.

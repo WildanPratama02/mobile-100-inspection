@@ -106,7 +106,7 @@ docs/
 | `outboxPhotos` | `[submissionUuid, defectId]` | the photo blobs of a sealed session |
 | `view` | `username` | the screen (Home or Defect), the selected PO and the Defect drill-down path, so a restart returns to the same place (doc 05 §4, §8.4, §11.5, AC-06.2); per user because tablets are shared (BR-09) |
 
-**A session is the result of reducing its event list** with the pure functions of `packages/shared`. Persisting events instead of counters makes the rules of persistence trivial: one tap = one IndexedDB write of one event, and the screen is updated from the stored result (NFR-05, AC-06.2). UNDO is an event that the reducer interprets by the cases of FR-08 (it never touches Qty Inspection). Qty Inspection is the `qty` of the session's last `SET_QTY_INSPECTION` event, empty when there is none (ADR-019). Totals, Top 5 and the findings list of FR-09 are derived, never stored. Sealing (§4.6) puts the session's Qty Inspection into `counts.qtyInspection` and never writes `noDefect`.
+**A session is the result of reducing its event list** with the pure functions of `packages/shared`. Persisting events instead of counters makes the rules of persistence trivial: one tap = one IndexedDB write of one event, and the screen is updated from the stored result (NFR-05, AC-06.2). UNDO is an event that the reducer interprets by the cases of FR-08 (it never touches Qty Inspection). Qty Inspection is the `qty` of the session's last `SET_QTY_INSPECTION` event, empty when there is none (ADR-019); a `SET_QTY_INSPECTION` changes nothing else, so the UNDO history of the findings survives it. Recording a finding is never refused because of Qty Inspection (ADR-019 decision 6). **Legacy events:** every event is persisted and replayed when a session is loaded, so a session open during the update can still hold `NO_DEFECT` events; the reducer ignores them (no figure, no UNDO state), which is the compatibility strategy of ADR-019 decision 9. Sealed ADR-008 sessions in the outbox are never replayed: their payload bytes are sent as stored. Totals, Top 5 and the findings list of FR-09 are derived, never stored. Sealing (§4.6) puts the session's Qty Inspection into `counts.qtyInspection` and never writes `noDefect`.
 
 ### 4.3 State and the persistence rule
 
@@ -268,8 +268,11 @@ The steps and their invariants are in doc 02 §6; this document adds only:
 
 | Function | Input → output |
 |---|---|
-| `computeTotals(counts, findings)` | doc 04 §4.1 table → Qty Inspection, A-Grade, Qty Defect, B-Grade, RFT, Defect Rate, and the counting rule (`ADR-019` when `counts.qtyInspection` is present, `ADR-008` for a `noDefect` payload) |
-| `qtyInspectionLimits(counts, partial, orderQty)` | BR-10 → `{ min: max(1, rework + bGrade), max: partial?.qty ?? orderQty }`; the same function feeds the tablet's number pad, the Submit PO check and the API's validation |
+| `computeTotals(counts, findings)` | doc 04 §4.1 table → Qty Inspection, A-Grade (`qtyInspection − Qty Defect`; ADR-008 payloads: `noDefect`), Qty Defect, B-Grade, RFT, Defect Rate. The submitted totals; the API's and the outbox's |
+| `countingRule(counts)` | `ADR-019` when `counts.qtyInspection` is present, `ADR-008` for a `noDefect` payload |
+| `qtyInspectionLimits(qtyDefect, partial, orderQty)` | BR-10 → `{ min: max(1, qtyDefect), max: partial?.qty ?? orderQty }`; the same function feeds the tablet's number pad, the Submit PO check and the API's validation |
+| `checkQtyInspection(qty, limits)` | `null` (valid) or `EMPTY`, `IMPOSSIBLE{min, max}` (min > max: no value is valid), `BELOW{min}`, `ABOVE{max}` |
+| `totals(state, po)` | the session's figures for Home and exports: Qty Defect and Qty B-Grade always; Qty A-Grade, Defect Rate and Pass Rate `null` while Qty Inspection is empty or not valid (the screen shows `0` / `0,0%`, ADR-019 decision 7), plus the `checkQtyInspection` result |
 | `top5(findings, defects)` | order by quantity, severity, first recorded (AC-05.1); the same function on tablet and server |
 | `photoKey(uuid, defectId, sealedAt)` | `submissions/<yyyy>/<MM>/<uuid>/<defectId>.jpg` (month from `sealedAt` in WIB) |
 | `partialText(...)` | `P1 1.200 OF 10.002` with `Intl.NumberFormat('id-ID')` (Node 22 ships full ICU) |
@@ -289,7 +292,7 @@ The steps and their invariants are in doc 02 §6; this document adds only:
 | Cannot connect, pool timeout | `DB` check fails, `submitEnabled=false` | `503 DB_UNAVAILABLE` (retryable) → Menunggu koneksi, resend |
 | Photo store unreachable or full | `PHOTO_STORE` check fails | `503 PHOTO_STORE_UNAVAILABLE` (retryable) |
 | Serialization failure / deadlock in the transaction | retry once inside the request | normal answer |
-| The request's counts disagree with its findings or break BR-10 (a finding of a type never started; Qty Inspection missing, below the REWORK + B-GRADE inspections or above the partial / order quantity) | rejected in validation (doc 04 §4.2); nothing written | `422 VALIDATION_FAILED` |
+| The request's counts disagree with its findings or break BR-10 (a finding of a type never started; Qty Inspection missing, below Qty Defect or above the partial / order quantity) | rejected in validation (doc 04 §4.2); nothing written | `422 VALIDATION_FAILED` |
 | The in-transaction re-check or a table constraint fails (a server bug) | roll back, log request id and body | `500 INTERNAL` |
 | Anything else | log request id; `INTERNAL` | `500`, retried with back-off; needs a developer |
 

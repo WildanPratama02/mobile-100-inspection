@@ -991,8 +991,9 @@ components:
             REWORK and B-GRADE inspections started, and the Qty Inspection entered by the PSI (ADR-019, doc 04
             section 4.1). Exactly one of `qtyInspection` and `noDefect`: `noDefect` (ADR-008) only appears in a
             session sealed by an app version from before ADR-019 and is computed with the ADR-008 rules.
-            `qtyInspection` must be at least 1, at least rework + bGrade, and at most `partial.qty` or the PO's
-            ORDER QTY (BR-10, doc 04 section 4.2 rule 3).
+            `qtyInspection` must be at least 1, at least Qty Defect (the sum of `findings[].qty`), and at most
+            `partial.qty` or the PO's ORDER QTY (BR-10, doc 04 section 4.2 rule 3). Qty A-Grade = qtyInspection -
+            Qty Defect; rework and bGrade enter no formula.
           required: [rework, bGrade]
           oneOf:
             - required: [qtyInspection]

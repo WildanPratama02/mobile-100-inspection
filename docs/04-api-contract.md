@@ -105,8 +105,8 @@ The tablet sends **what happened**, not totals: the Qty Inspection the PSI enter
 | Total | Computed as |
 |---|---|
 | Qty Inspection | `qtyInspection` (entered by the PSI, FR-15) |
-| Qty A-Grade | `qtyInspection − rework − bGrade` |
-| Qty Defect | sum of all `findings[].qty` |
+| Qty Defect | sum of all `findings[].qty` (defect findings, not defective pairs) |
+| Qty A-Grade | `qtyInspection − Qty Defect` |
 | Qty B-Grade | sum of `qty` of findings with `inspectionType` = `B-GRADE` |
 | RFT, Defect Rate | doc 02 §6.3 |
 
@@ -122,7 +122,8 @@ All failures are collected and returned together as one `422 VALIDATION_FAILED` 
 2. `po` exists in `pos` (`PO_NOT_FOUND`).
 3. `counts` (BR-10), each failure as `errors[].code` `INVALID` on path `counts.qtyInspection` (or `counts`):
    - exactly one of `qtyInspection` and `noDefect` is present ("Qty Inspection wajib diisi.");
-   - with `qtyInspection` (ADR-019): an integer ≥ 1 ("Qty Inspection minimal 1."); ≥ `rework + bGrade` ("Qty Inspection minimal {n}: jumlah pasang REWORK + B-GRADE."); ≤ `partial.qty` when `partial` is present, otherwise ≤ the PO's `ORDER QTY` ("Qty Inspection maksimal {n} pasang.");
+   - with `qtyInspection` (ADR-019): a positive integer ("Qty Inspection minimal 1."); ≥ Qty Defect, the sum of `findings[].qty` ("Qty Inspection minimal {n}: jumlah defect yang tercatat."); ≤ `partial.qty` when `partial` is present, otherwise ≤ the PO's `ORDER QTY` ("Qty Inspection maksimal {n} pasang."). When Qty Defect is itself above that maximum, both messages are returned;
+   - the API applies these rules itself, from the request and the PO in the database; it never relies on the tablet having checked them. The request carries no totals: the API computes them (§4.1) and the database checks them again in the same transaction (doc 02 §4.1, §6.3);
    - with `noDefect` (ADR-008, §4.1): `rework + bGrade + noDefect` ≥ 1, as before.
 4. Each finding: `qty` ≥ 1; `defectId` exists in `defects`; `subAreaId` belongs to `areaId`; if `inspectionType` is `REWORK` then `counts.rework` ≥ 1, and likewise for `B-GRADE`. The defect must be mapped to that sub-area in `area_map`, *or* have been mapped there when the session was recorded: a finding is not rejected because the map changed after the PSI tapped it (a deactivated map row is still accepted; a defect id that no longer exists in `defects` is not).
 5. No two findings share (`inspectionType`, `areaId`, `subAreaId`, `defectId`).
@@ -249,4 +250,4 @@ No admin endpoint changes a submission (AC-14.4): there is no route for it, and 
 | A14 | (23 Oct 2026, product owner, T3b.3) The CSV export: UTF-8 with a BOM, `,` between fields, CRLF, RFC 4180 quoting, one header row; the columns of `v_submissions` (`display_no` as `M100-000123`, `sealed_at` in WIB) and `top<n>_defect_id`, `top<n>_defect_name`, `top<n>_qty` for n = 1…5. Raw numbers: no thousands separator, a dot for decimals, `rft` and `defect_rate` as the stored fractions (`0.60000`). Text typed by people that starts with `=`, `+`, `-`, `@`, a tab or CR gets a leading `'` (CSV injection). The column list is in `04-openapi.yaml`. |
 | A15 | (23 Oct 2026, product owner, T3b.3) `PATCH /admin/admins/{id}` takes either `{ password }` (a reset, which also clears a lock) or `{ active }`, one change per request. A deactivated admin may be reactivated, audited like any change. Deactivating yourself or the last active admin is `422` with `errors[].code` `SELF` / `LAST_ACTIVE_ADMIN`; a taken username is `409 CONFLICT`; a password under 10 characters `422` (`PASSWORD_TOO_SHORT`). The list never carries a password hash. |
 | A16 | (23 Oct 2026, product owner, T3b.3) `GET /admin/audit-log`: `from` / `to` inclusive WIB days of `at`, `actor` exact (`admin:<name>`, `script:<name>`, `system`), newest first, 50 per page, `{ total, page, pageSize, items }`. The admin app renders the summary from `details`. |
-| A17 | (27 Oct 2026, product owner, ADR-019) `counts.qtyInspection` replaces `counts.noDefect`: the PSI enters Qty Inspection, the API derives Qty A-Grade as `qtyInspection − rework − bGrade` and checks BR-10 (§4.2 rule 3). A payload with `noDefect` (sealed before the update) is still accepted under ADR-008 and stored with `counting_rule = 'ADR-008'`; this stays in `/v1` because no client needs to change for it. The admin detail's `counts` and the summary carry `countingRule`; `counts.noDefect` is `null` for ADR-019 rows and `counts.qtyInspection` is the stored `qty_inspection`. |
+| A17 | (27 Oct 2026, product owner, ADR-019; revised 28 Oct 2026) `counts.qtyInspection` replaces `counts.noDefect`: the PSI enters Qty Inspection, the API derives Qty A-Grade as `qtyInspection − Qty Defect` (Qty Defect = sum of the findings' `qty`) and checks BR-10 itself (§4.2 rule 3). `rework` and `bGrade` stay in `counts` for the finding-type check and the admin detail; they are in no formula. A payload with `noDefect` (sealed before the update) is still accepted under ADR-008 and stored with `counting_rule = 'ADR-008'`; this stays in `/v1` because no client needs to change for it. The admin detail's `counts` and the summary carry `countingRule`; `counts.noDefect` is `null` for ADR-019 rows and `counts.qtyInspection` is the stored `qty_inspection`. |

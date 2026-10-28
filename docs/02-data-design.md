@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Version | 2.1 — 27 Oct 2026: Qty Inspection entered by the PSI (ADR-019): `counting_rule` column, `qty_no_defect` nullable, checks per rule (§4.1, §6.3, §9). v2.0 rewritten 20 Oct 2026 for ADR-018 (v1.0, the Google Sheets design, is superseded) |
+| Version | 2.1 — 27–28 Oct 2026: Qty Inspection entered by the PSI, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026): `counting_rule` column, `qty_no_defect` nullable, checks per rule (§4.1, §6.3, §9). v2.0 rewritten 20 Oct 2026 for ADR-018 (v1.0, the Google Sheets design, is superseded) |
 | Date | 27 Oct 2026 |
 | Database | PostgreSQL 16, database `m100`, schema `public`, time zone `Asia/Jakarta` for sessions, all timestamps stored as `timestamptz` |
 | Photos | An object store behind the `PhotoStore` interface (S3 API; MinIO or another S3-compatible store, or a plain folder), bucket `m100-photos` |
@@ -139,10 +139,10 @@ One row of `submissions` is one Submit PO (ADR-003).
 | `partial_no` | `smallint` null | 1–99; null when the PO is not partial (ADR-013) |
 | `partial_qty` | `integer` null | 1 … `order_qty`; null when not partial. Check: both null or both set |
 | `counting_rule` | `text` not null | `'ADR-019'` for every new submission; `'ADR-008'` for rows written before migration 0006 (check: one of the two) |
-| `qty_rework`, `qty_bgrade_inspections` | `integer` not null | REWORK and B-GRADE inspections started (the tablet's `counts`) |
+| `qty_rework`, `qty_bgrade_inspections` | `integer` not null | REWORK and B-GRADE inspections started (the tablet's `counts`); in ADR-019 rows informational only, in no formula |
 | `qty_no_defect` | `integer` null | ADR-008 rows: NO DEFECT taps (not null). ADR-019 rows: null (NO DEFECT no longer exists) |
 | `qty_inspection` | `integer` not null | ≥ 1 (check). ADR-019: entered by the PSI (`counts.qtyInspection`). ADR-008: `rework + bgrade_inspections + no_defect` |
-| `qty_a_grade` | `integer` not null | ADR-019: `qty_inspection − qty_rework − qty_bgrade_inspections` (BR-01). ADR-008: = `qty_no_defect` |
+| `qty_a_grade` | `integer` not null | ADR-019: `qty_inspection − qty_defect` (BR-01, findings-based). ADR-008: = `qty_no_defect` |
 | `qty_b_grade` | `integer` not null | Sum of `qty` of B-GRADE findings |
 | `qty_defect` | `integer` not null | Sum of `qty` of all findings |
 | `rft` | `numeric(8,5)` not null | `qty_a_grade / qty_inspection` (a fraction, 0.60000 = 60,0%) |
@@ -155,7 +155,7 @@ One row of `submissions` is one Submit PO (ADR-003).
 
 Constraints (database level, so a bug in the API cannot store inconsistent numbers):
 - every row: `qty_inspection >= 1`; `qty_b_grade <= qty_defect`; the check on `partial_*` above; `counting_rule IN ('ADR-008', 'ADR-019')`;
-- `counting_rule = 'ADR-019'`: `qty_no_defect IS NULL`; `qty_inspection >= qty_rework + qty_bgrade_inspections`; `qty_a_grade = qty_inspection - qty_rework - qty_bgrade_inspections`; `qty_inspection <= COALESCE(partial_qty, order_qty)` (BR-10);
+- `counting_rule = 'ADR-019'`: `qty_no_defect IS NULL`; `qty_inspection >= qty_defect`; `qty_a_grade = qty_inspection - qty_defect`; `qty_inspection <= COALESCE(partial_qty, order_qty)` (BR-10);
 - `counting_rule = 'ADR-008'`: `qty_no_defect IS NOT NULL`; `qty_inspection = qty_rework + qty_bgrade_inspections + qty_no_defect`; `qty_a_grade = qty_no_defect`.
 
 **Migration 0006 (ADR-019).** Adds `counting_rule` with default `'ADR-008'` (so every existing row is marked by the add itself, without an `UPDATE`, which the immutability trigger would refuse), then drops the default so the API must name the rule; drops `NOT NULL` on `qty_no_defect`; replaces `submissions_qty_inspection_sum_check` and `submissions_qty_a_grade_check` by the per-rule checks above; makes the views read `s.counting_rule` instead of the constant `'ADR-008'`. Existing rows are not changed. The API computes all totals itself from the tablet's counts and findings (doc 04 §4.1); the database re-checks `qty_defect` and `qty_b_grade` against the findings in the same transaction (§6.3).
@@ -278,7 +278,7 @@ Objects whose key has no `submission_photos` row and are older than 24 hours are
 
 ### 6.3 Totals
 
-Computed by the API from the tablet's `counts` and `findings` with the ADR-019 rules and **verified in the database** (§4.1). Formulas: Qty Inspection = `counts.qtyInspection` as entered by the PSI; Qty A-Grade = Qty Inspection − REWORK inspections − B-GRADE inspections; Qty Defect = Σ `qty`; Qty B-Grade = Σ `qty` of B-GRADE findings; `rft` = A-Grade ÷ Qty Inspection; `defect_rate` = Qty Defect ÷ Qty Inspection. Qty Inspection is at least 1 and at least the REWORK + B-GRADE inspections, and at most the partial quantity or `order_qty` (BR-10), so the rates always have a denominator and A-Grade is never negative. A payload sealed under ADR-008 (an older app version, `counts.noDefect` instead of `counts.qtyInspection`, doc 04 §4.1) is computed with the ADR-008 formulas (Qty Inspection = rework + B-GRADE inspections + NO DEFECT; Qty A-Grade = NO DEFECT) and stored with `counting_rule = 'ADR-008'`. Fractions are stored with 5 decimals; screens and exports show percentages with one decimal and an Indonesian decimal comma.
+Computed by the API from the tablet's `counts` and `findings` with the ADR-019 rules and **verified in the database** (§4.1). Formulas: Qty Inspection = `counts.qtyInspection` as entered by the PSI; Qty Defect = Σ `qty` (defect findings, not defective pairs); Qty B-Grade = Σ `qty` of B-GRADE findings; Qty A-Grade = Qty Inspection − Qty Defect; `rft` = A-Grade ÷ Qty Inspection; `defect_rate` = Qty Defect ÷ Qty Inspection (so `rft + defect_rate = 1`). Qty Inspection is at least 1 and at least Qty Defect, and at most the partial quantity or `order_qty` (BR-10), so the rates always have a denominator and A-Grade is never negative. The request carries no totals: the API computes them itself and the database checks them again in the same transaction, so neither the tablet nor a client can store totals that disagree. A payload sealed under ADR-008 (an older app version, `counts.noDefect` instead of `counts.qtyInspection`, doc 04 §4.1) is computed with the ADR-008 formulas (Qty Inspection = rework + B-GRADE inspections + NO DEFECT; Qty A-Grade = NO DEFECT) and stored with `counting_rule = 'ADR-008'`. Fractions are stored with 5 decimals; screens and exports show percentages with one decimal and an Indonesian decimal comma.
 
 ### 6.4 Time
 
@@ -311,7 +311,11 @@ Leader Quality no longer reads `DATA_INSPECTION` for this data (ADR-018). Three 
 
 ## 9. How the numbers differ from the old AppSheet rows
 
-Under ADR-019 (as under ADR-008) one pair can carry several defects, so Qty Inspection ≠ A-Grade + Qty Defect, and RFT + Defect Rate does not add to 100%. Example (ADR-019): the PSI enters Qty Inspection 30 and records 10 REWORK pairs with 8 defects and 2 B-GRADE pairs with 3 defects → A-Grade 30 − 10 − 2 = 18, B-Grade 3, Qty Defect 11, RFT 60,0%, Defect Rate 36,7%. (The same pairs under ADR-008 needed 18 NO DEFECT taps and gave the same figures.) A-Grade is subtracted per pair, not per defect: a report that expects the old AppSheet convention (A-Grade = Qty Inspection − Total Defect, here 19) will disagree with Mobile 100% Inspection data. Every view carries `counting_rule` (`ADR-008` or `ADR-019`, from the row) so a combined report can tell the sources apart; in ADR-019 rows `qty_no_defect` is empty.
+Under ADR-019 Qty Defect counts defect findings and Qty A-Grade = Qty Inspection − Qty Defect, so Qty Inspection = A-Grade + Qty Defect and RFT + Defect Rate = 100%. Example (ADR-019): the PSI enters Qty Inspection 30 and records 10 REWORK pairs with 8 findings and 2 B-GRADE pairs with 3 findings → Qty Defect 11, B-Grade 3, A-Grade 30 − 11 = 19, RFT 63,3%, Defect Rate 36,7%. This is the same convention as the old AppSheet rows (A-Grade = Qty Inspection − Total Defect).
+
+ADR-008 rows differ: A-Grade was the NO DEFECT taps, so the same pairs (with 18 NO DEFECT taps) gave A-Grade 18 and RFT 60,0%, and RFT + Defect Rate need not add to 100%. ADR-008 rows keep their stored figures and are never recalculated. Every view carries `counting_rule` (`ADR-008` or `ADR-019`, from the row) so a combined report can tell them apart; in ADR-019 rows `qty_no_defect` is empty.
+
+**Metric definition.** Pass Rate (RFT) in ADR-019 rows is a findings-based operational metric, (Qty Inspection − Qty Defect) ÷ Qty Inspection, not a pair-based first-time yield: a pair with three findings lowers A-Grade by 3 (ADR-019 decision 4).
 
 ## 10. Readiness checks (API)
 

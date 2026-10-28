@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Version | 0.7 — Qty Inspection entered by the PSI, NO DEFECT removed (ADR-019, FR-15, BR-01, BR-10). v0.6: backend moved to PostgreSQL + photo store; admin screens added (ADR-018) |
+| Version | 0.7 — Qty Inspection entered by the PSI, NO DEFECT removed, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026; FR-15, BR-01, BR-02, BR-10). v0.6: backend moved to PostgreSQL + photo store; admin screens added (ADR-018) |
 | Date | 27 Oct 2026 |
 | Owner | QIP Digital Team, PT Parkland World Indonesia |
 | Related | [00 Document Map](00-document-map.md), [07 Decision Log](07-decision-log.md), clickable prototype "Mobile 100% Inspection" v3 |
@@ -144,12 +144,14 @@ For the selected PO's **current session**, Home shows:
 | Field | Value |
 |---|---|
 | Qty PO Order | `order_qty` of the PO master |
-| Qty Inspection | Entered by the PSI (FR-15); "—" until entered |
-| Qty Defect | BR-01 |
-| Qty A-Grade | BR-01; "—" while Qty Inspection is empty or below the REWORK + B-GRADE pairs (BR-10) |
-| Qty B-Grade | BR-01 |
-| Defect Rate | BR-02, one decimal, "—" while Qty Inspection is empty |
-| Pass Rate (RFT) | BR-02, one decimal, "—" while Qty A-Grade is "—" |
+| Qty Inspection | Entered by the PSI (FR-15); "—" only while empty, otherwise the entered value (also when it is not valid) |
+| Qty Defect | BR-01, the recorded findings, always |
+| Qty A-Grade | BR-01; `0` while Qty Inspection is empty or not valid (BR-10) |
+| Qty B-Grade | BR-01, the recorded B-GRADE findings, always |
+| Defect Rate | BR-02, one decimal; `0,0%` while Qty Inspection is empty or not valid |
+| Pass Rate (RFT) | BR-02, one decimal; `0,0%` while Qty Inspection is empty or not valid |
+
+The `0` and `0,0%` shown while Qty Inspection is empty or not valid are display fallbacks (ADR-019 decision 7), not calculated results; they are never submitted.
 
 - AC-04.1 Values update immediately after every tap on the defect screen and every change of Qty Inspection; no network is needed.
 - AC-04.2 After a Submit PO is sealed (stored or waiting), all values return to 0 and Qty Inspection to empty for the next session.
@@ -163,8 +165,8 @@ The PSI enters how many pairs were inspected in the session; the app never count
 3. The number pad accepts only a whole number within the limits of BR-10 and says which limit is broken ("Minimal {n} pasang", "Maksimum {n} pasang").
 
 - AC-15.1 Qty Inspection is saved on the tablet before the dialog closes, survives a reload and belongs to the session of the selected PO only (NFR-05, BR-09).
-- AC-15.2 The lower limit shown by the number pad is the larger of 1 and the session's REWORK + B-GRADE pairs; the upper limit is the PO's partial quantity when PO PARTIAL is set, otherwise its Qty Order.
-- AC-15.3 If the limits change after the value was entered (more REWORK / B-GRADE pairs, a smaller partial), the value is kept, Home shows a warning, and SUBMIT PO refuses until it is corrected (FR-11).
+- AC-15.2 The lower limit shown by the number pad is the larger of 1 and the session's Qty Defect (recorded findings); the upper limit is the PO's partial quantity when PO PARTIAL is set, otherwise its Qty Order. When the lower limit is above the upper one, no value can be saved and the dialog says why (BR-10).
+- AC-15.3 Recording findings is never blocked by Qty Inspection. If the limits change after the value was entered (more findings, a smaller partial), the value is kept, never raised by the app, Home marks it as not valid, and SUBMIT PO refuses until the PSI corrects Qty Inspection or the findings (FR-11, ADR-019 decision 6).
 - AC-15.4 After SUBMIT PO the next session of the PO starts with Qty Inspection empty.
 
 ### FR-05 Top 5 Defect (M)
@@ -185,7 +187,7 @@ The defect screen has REWORK and B-GRADE buttons above the shoe diagram, and END
 
 - AC-06.1 Defects can be recorded only while a REWORK or B-GRADE inspection is active.
 - AC-06.2 An active inspection survives HOME, switching to another screen, reloading or closing the app; returning to the defect screen shows it still active.
-- AC-06.3 Ending a REWORK or B-GRADE inspection with no defects is allowed and counts as one REWORK or B-GRADE pair (not A-Grade).
+- AC-06.3 Ending a REWORK or B-GRADE inspection with no defects is allowed and counts as one REWORK or B-GRADE pair; it adds nothing to Qty Defect, so it changes no result (BR-01).
 
 ### FR-07 Recording a defect (M)
 
@@ -239,7 +241,8 @@ SUBMIT PO on Home sends the selected PO's session to the server, which stores it
 1. **Checks before confirming** (each failure says what to do):
    - an inspection is still active → "Selesaikan inspeksi dulu (END INSPECTION)";
    - Qty Inspection is empty → "Isi QTY INSPECTION dulu" (opens FR-15);
-   - Qty Inspection is below the REWORK + B-GRADE pairs or above the partial quantity / Qty Order (BR-10) → says which limit and opens FR-15;
+   - Qty Inspection is below Qty Defect or above the partial quantity / Qty Order (BR-10) → says which limit and opens FR-15;
+   - Qty Defect is above the partial quantity / Qty Order, so no Qty Inspection is valid → says so; the PSI corrects the findings (UNDO) or the partial. Findings are never deleted by the app;
    - PSI lv.2 and a Top 5 Defect has no photo → list the defects missing a photo (BR-04).
 2. **Confirmation** shows PO, Qty Inspection, Qty Defect, A-Grade, B-Grade, Defect Rate, Pass Rate, and the number of photos, with KIRIM and BATAL.
 3. **On KIRIM**, the session is sealed: it can't be changed any more, and the PO starts a new empty session.
@@ -289,8 +292,8 @@ A separate web app at `/admin/` for the administrators, on a laptop or tablet br
 
 | ID | Rule |
 |---|---|
-| BR-01 | Counting (ADR-019, which supersedes ADR-008). Qty Inspection is entered by the PSI (FR-15). Each REWORK or B-GRADE start: one REWORK or B-GRADE pair. Qty A-Grade = Qty Inspection − REWORK pairs − B-GRADE pairs. Each defect recorded in a REWORK inspection: Qty Defect +1. Each defect recorded in a B-GRADE inspection: Qty Defect +1 and Qty B-Grade +1. B-Grade is counted per defect finding. |
-| BR-02 | Defect Rate = Qty Defect ÷ Qty Inspection. Pass Rate (RFT) = Qty A-Grade ÷ Qty Inspection. Both are percentages; Defect Rate can exceed 100% because one pair can have several defects. Both show "—" while Qty Inspection is empty; Pass Rate also while Qty Inspection is below the REWORK + B-GRADE pairs. |
+| BR-01 | Counting (ADR-019, which supersedes ADR-008). Qty Inspection is entered by the PSI (FR-15). **Qty Defect counts defect findings, not defective pairs**: each defect recorded in a REWORK or B-GRADE inspection adds 1 (one pair with three REWORK findings adds 3). Qty B-Grade = the findings recorded in B-GRADE inspections. Qty A-Grade = Qty Inspection − Qty Defect. REWORK and B-GRADE starts are recorded as pairs but enter no formula. |
+| BR-02 | Defect Rate = Qty Defect ÷ Qty Inspection. Pass Rate (RFT) = Qty A-Grade ÷ Qty Inspection. Both are percentages with one decimal and add up to 100%. Pass Rate (RFT) is a **findings-based operational metric**, not a pair-based first-time yield (ADR-019 decision 4). While Qty Inspection is empty or not valid (BR-10), both show `0,0%` and Qty A-Grade shows `0` as display fallbacks. |
 | BR-03 | A defect's classification (MINOR, MAJOR, CRITICAL) is fixed by the defect list. The user never sets it. |
 | BR-04 | For PSI lv.2, every defect in the Top 5 at the moment of Submit PO must have a photo. |
 | BR-05 | Only one inspection can be active per PO at a time. REWORK and B-GRADE are disabled while one is active. |
@@ -298,7 +301,7 @@ A separate web app at `/admin/` for the administrators, on a laptop or tablet br
 | BR-07 | Submissions are immutable. Nobody edits, deletes or voids one through the app; the database rejects every UPDATE and DELETE. |
 | BR-08 | A level of the drill-down with exactly one option (sub-area or family) is selected automatically and skipped by BACK. |
 | BR-09 | Sessions and the PO list belong to one user on one tablet (AC-02.3). |
-| BR-10 | Qty Inspection limits (ADR-019): a whole number, at least 1, at least the session's REWORK + B-GRADE pairs, and at most the PO's partial quantity when PO PARTIAL is set, otherwise its Qty Order. A session is submitted only within these limits; the API checks them again (doc 04 §4.2). |
+| BR-10 | Valid Qty Inspection (ADR-019): a whole number, at least 1, at least the session's Qty Defect, and at most the PO's partial quantity when PO PARTIAL is set, otherwise its Qty Order. When Qty Defect is above that maximum, no value is valid. A session is submitted only with a valid Qty Inspection; the API checks the same rules on its own (doc 04 §4.2). |
 
 ## 8. Data stored (summary)
 
@@ -364,12 +367,13 @@ Master data (`psi_users`, `factories`, `cells`, `pos`, `defects`, `areas`, `sub_
 | Session | Everything recorded for one PO on one tablet between two Submit POs |
 | Inspection | One pair with a defect, from REWORK / B-GRADE until END INSPECTION |
 | Qty Inspection | Number of pairs inspected in the session, entered by the PSI (FR-15, ADR-019) |
-| REWORK / B-GRADE pairs | Number of REWORK / B-GRADE inspections started in the session |
+| REWORK / B-GRADE pairs | Number of REWORK / B-GRADE inspections started in the session (recorded, not used in a formula) |
+| Qty Defect | Number of defect findings (taps) in the session, not of defective pairs |
 | Finding | One defect tapped during an inspection |
-| A-Grade | Pair passed with no defect: Qty A-Grade = Qty Inspection − REWORK pairs − B-GRADE pairs |
+| A-Grade | Qty A-Grade = Qty Inspection − Qty Defect (findings-based, ADR-019) |
 | B-Grade | Inspection type for a pair downgraded to B-Grade; each finding counts toward Qty B-Grade |
 | Rework | Inspection type for a pair that goes back for repair |
-| RFT | Right First Time = Pass Rate = Qty A-Grade ÷ Qty Inspection |
+| RFT | Right First Time = Pass Rate = Qty A-Grade ÷ Qty Inspection; a findings-based operational metric, not a pair-based first-time yield |
 | Area / Sub-area / Family | The three levels of the shoe defect map (for example Quarter / Medial Quarter / Stitching) |
 | Outbox | Sealed sessions waiting on the tablet to be sent |
 | Admin | Person who maintains master data and reads submissions, through the admin web app |
