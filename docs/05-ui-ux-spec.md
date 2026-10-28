@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | Document | 05 — UI/UX Flow and Screen Spec |
-| Version | v0.2 Draft, 20 Oct 2026 (U1, U2, U10 confirmed; U13 compact shoe map; U14–U16 outbox and Submit PO; admin screens and U17–U19 added; synchronous submit, ADR-018) |
-| Inputs | PRD v0.6 (FR-01…FR-14, AC, BR, NFR), the clickable prototype (`reference/prototype/app.html`, layout and behavior only), Design System v45 (namespace `M100`), doc 03 §4 (tablet design), doc 04 §5–6, §8 (outbox, error codes, admin API) |
+| Version | v0.3 Draft, 27–28 Oct 2026 (ADR-019: QTY INSPECTION entered on Home in the new S5b dialog, NO DEFECT removed from S6, U1 superseded, U20–U22; revised 28 Oct 2026: limits and A-Grade from Qty Defect, `0` / `0,0%` while not valid). v0.2, 20 Oct 2026: U1, U2, U10 confirmed; U13 compact shoe map; U14–U16 outbox and Submit PO; admin screens and U17–U19 added; synchronous submit, ADR-018 |
+| Inputs | PRD v0.7 (FR-01…FR-15, AC, BR, NFR), the clickable prototype (`reference/prototype/app.html`, layout and behavior only), Design System v45 (namespace `M100`), doc 03 §4 (tablet design), doc 04 §5–6, §8 (outbox, error codes, admin API) |
 | Used by | The coding agent in Phase 1 (offline PWA). Doc 06 gives the parts; this document says where each part goes and what it does. |
 
 If this document and the prototype disagree, **this document wins**. The prototype predates Submit PO, the outbox, PO PARTIAL, device setup and the new design system; its black/grey styling is not to be copied.
@@ -14,7 +14,7 @@ If this document and the prototype disagree, **this document wins**. The prototy
 - Screens are named `S0 … S9`. Each has: purpose, what is on it, states, interactions, copy, and the requirements it satisfies.
 - Component names in `code` are from the Design System (`M100.*`). A component that is not listed in doc 06 is a layout container written in the app, using tokens only.
 - Screen text is Bahasa Indonesia; fixed shop-floor labels stay English and uppercase (doc 00). Quoted copy in this document is the exact text to use.
-- Decision IDs `U1…U19` (section 18) record the choices made here that the PRD left open. U1 (OQ-07), U2 (OQ-08) and U10 were confirmed by the owner on 20 Oct 2026.
+- Decision IDs `U1…U22` (section 18) record the choices made here that the PRD left open. U1 (OQ-07), U2 (OQ-08) and U10 were confirmed by the owner on 20 Oct 2026; U1 is superseded by ADR-019 (27 Oct 2026).
 
 ## 2. Screen map and navigation
 
@@ -27,6 +27,8 @@ flowchart TD
   S4 --> S3
   S3 -->|UBAH PARTIAL| S5[S5 Partial dialog]
   S5 --> S3
+  S3 -->|tap QTY INSPECTION| S5b[S5b Qty Inspection dialog]
+  S5b --> S3
   S3 -->|ADD DEFECT| S6[S6 Defect screen]
   S6 -->|HOME or BACK at top level| S3
   S3 -->|Foto| S7[S7 Photo: camera and viewer]
@@ -47,11 +49,11 @@ flowchart TD
 
 | ID | Rule |
 |---|---|
-| G1 | **Tap only.** No device keyboard anywhere except the PO search box in S4. NIK/name, factory, cell are pickers (`SelectField` opens a `Dialog`); the partial quantity uses `NumberPad`. |
+| G1 | **Tap only.** No device keyboard anywhere except the PO search box in S4. NIK/name, factory, cell are pickers (`SelectField` opens a `Dialog`); the partial quantity (S4, S5) and QTY INSPECTION (S5b) use `NumberPad`. |
 | G2 | **Touch sizes.** Every tappable thing ≥ 44 × 44 px; rows ≥ `row-min`; bars `bar-h`. No exceptions in Compact or Stacked layouts. |
 | G3 | **Taps never wait for the network.** Every tap on S3 and S6 changes state on the tablet first (NFR-03, NFR-05). Feedback within 100 ms. |
 | G4 | **Toast.** One `Toast` (floating) at a time, top centre, 1.4 s; errors 3.2 s with `tone="error"`. A new toast replaces the old. Toasts confirm; they never carry a decision. |
-| G5 | **Numbers** use id-ID (`2.400`, `18,8%`); rates have one decimal; a rate that can't be computed shows "—". Times are WIB `HH:mm`. |
+| G5 | **Numbers** use id-ID (`2.400`, `18,8%`); rates have one decimal; a rate that can't be computed shows "—", except the Home results, exports and the Submit PO summary, where Qty A-Grade shows `0` and both rates `0,0%` while Qty Inspection is empty or not valid (ADR-019 decision 7). Times are WIB `HH:mm`. |
 | G6 | **Messages say what happened, then what to do.** No apology, no exclamation mark, no emoji. |
 | G7 | **State is words plus colour.** Classification, inspection type and send status always carry a word (NFR-11). |
 | G8 | **Disabled looks grey** (`disabled` fill), and the reason is visible on the same screen (a hint line, a `Notice`, or the dialog's checks). |
@@ -167,7 +169,7 @@ Minimum size 32 px high with `space-3` clear space around it (doc 06). The login
 | Account area | text, `CountBadge`, `Icon gear` | PSI name and level `Chip`; the Offline chip (G11); a `CountBadge` with the number of waiting submissions beside the gear; the gear button (≥ 44 px, accessible label "Pengaturan") opens S9 |
 | PO List | `Pane`, `POListItem`, `Button` | Title "PO LIST". One `POListItem` per PO (number, "model · destinasi", defect count badge, accent line "Inspeksi berjalan · REWORK" when active). The selected row is `accent`. A round + `Button` (accessible label "Tambah PO") is fixed at the bottom of the column and opens S4. The list scrolls above it. |
 | Top 5 | `Pane`, `Top5Row`, `Notice` | Title "TOP 5 DEFECT". See 8.3 |
-| Results box | `Pane`, `StatRow` ×7 | Qty PO Order, Qty Inspection, Qty Defect, Qty A-Grade, Qty B-Grade, Defect Rate, Pass Rate (RFT). Labels exactly as in doc 00. Defect Rate uses `tone="bad"` above 5,0% (U3); Pass Rate has no tone. Rates show "—" when Qty Inspection is 0. |
+| Results box | `Pane`, `StatRow` ×7, `Notice` | Qty PO Order, Qty Inspection, Qty Defect, Qty A-Grade, Qty B-Grade, Defect Rate, Pass Rate (RFT). Labels exactly as in doc 00. Defect Rate uses `tone="bad"` above 5,0% (U3); Pass Rate has no tone. **QTY INSPECTION is entered by the PSI (FR-15, ADR-019):** its `StatRow` is tappable (`onClick`, U20) when a PO is selected and opens S5b; it shows "—" with the hint "Ketuk untuk isi" only while empty, otherwise the entered value (also when not valid, then with `tone="bad"`). Qty Defect and Qty B-Grade always show the recorded findings. While Qty Inspection is empty or not valid (BR-10), Qty A-Grade shows `0` and Defect Rate and Pass Rate show `0,0%` (display fallbacks, ADR-019 decision 7; Defect Rate then has no `bad` tone), a `Notice warning` under the rows says why (§15), and SUBMIT PO's check blocks (§13.1). |
 | Bottom row | `Button` | ADD DEFECT (`secondary size="lg"`, the widest), EXPORT PDF and EXPORT EXCEL (`secondary`, `download` icon), SUBMIT PO (`primary size="lg"`). SUBMIT PO is the single `primary` on the screen. |
 
 Stacked: the info strip wraps to two rows; the PO list becomes a horizontal strip of `POListItem`s (each ≥ 44 px high) with the + at the end; the results box becomes a 2-column grid; the bottom row becomes a fixed `BottomBar` with ADD DEFECT and SUBMIT PO, and the two export buttons move into a row above the results.
@@ -176,8 +178,11 @@ Stacked: the info strip wraps to two rows; the PO list becomes a horizontal stri
 
 | State | What shows |
 |---|---|
-| **No PO yet** | PO list empty. Top 5 pane: title "Belum ada PO", hint "Tekan tombol + di PO List untuk menambahkan PO." Results box: values "—"/0 greyed. ADD DEFECT, EXPORT PDF, EXPORT EXCEL, SUBMIT PO disabled (G8: the hint above explains). |
-| **PO selected, empty session** | Top 5: "Belum ada defect" and "Tekan ADD DEFECT untuk mulai input." (AC-05.2). Results all 0 with rates "—". Exports and SUBMIT PO are enabled (their checks explain, see 8.5 and 8.6). |
+| **No PO yet** | PO list empty. Top 5 pane: title "Belum ada PO", hint "Tekan tombol + di PO List untuk menambahkan PO." Results box: values "—"/0 greyed; the QTY INSPECTION row is not tappable. ADD DEFECT, EXPORT PDF, EXPORT EXCEL, SUBMIT PO disabled (G8: the hint above explains). |
+| **PO selected, empty session** | Top 5: "Belum ada defect" and "Tekan ADD DEFECT untuk mulai input." (AC-05.2). Qty Inspection "—" (tap to enter), Qty Defect and Qty B-Grade 0, Qty A-Grade 0, rates `0,0%`. Exports and SUBMIT PO are enabled (their checks explain, see 8.5 and 8.6). |
+| **Qty Inspection entered and valid (BR-10)** | All seven values calculated; Qty A-Grade = Qty Inspection − Qty Defect; Defect Rate + Pass Rate = 100%. A session with Qty Inspection and no defects is valid (Pass Rate 100,0%). |
+| **Qty Inspection not valid** | Happens when more findings are recorded, or a smaller partial is saved, after the value was entered (AC-15.3); recording is never blocked. The entered value stays (`tone="bad"`), the app never raises it; Qty Defect and Qty B-Grade show the findings; Qty A-Grade `0`, rates `0,0%`; the `Notice warning` names the limit. |
+| **No valid Qty Inspection possible** | Qty Defect is above the partial quantity / Qty Order. As the row above; the notice says the findings or the partial must be corrected. No finding is deleted by the app. |
 | **Session with data** | Values and Top 5 as in 8.3. |
 | **Inspection active on this PO** | The PO row shows "Inspeksi berjalan · REWORK" or "… · B-GRADE". A `Notice warning` above the bottom row: "Inspeksi berjalan. Lanjutkan di ADD DEFECT atau selesaikan dengan END INSPECTION." ADD DEFECT label is unchanged. SUBMIT PO stays enabled but its check blocks it (8.6). |
 | **Another PSI's data** | Never shown (BR-09, AC-02.3). Another user's POs and sessions are invisible. |
@@ -201,7 +206,7 @@ A photo belongs to a defect, not a rank. If a defect with a photo leaves the Top
 
 - **Select** a PO: tap its row. The info strip, Top 5, results and Defect screen all follow the selection (AC-03.3). The selection is remembered across restarts.
 - **Add**: + opens S4.
-- **Remove** (Should, AC-03.4): long press (600 ms) on a PO with no open session → `Dialog` "Hapus PO dari list?" with the PO number, buttons BATAL and HAPUS (`danger`). A PO with an open session (any recorded defect, any started inspection, a photo, or a partial set after data exists) does not respond to a long press; no dialog.
+- **Remove** (Should, AC-03.4): long press (600 ms) on a PO with no open session → `Dialog` "Hapus PO dari list?" with the PO number, buttons BATAL and HAPUS (`danger`). A PO with an open session (any recorded defect, any started inspection, a Qty Inspection entered, a photo, or a partial set after data exists) does not respond to a long press; no dialog.
 - After SUBMIT PO the PO stays in the list with an empty session (AC-04.2), so the PSI can keep inspecting it.
 
 ### 8.5 Export
@@ -268,6 +273,27 @@ In Regular layout the Stepper and NumberPad sit side by side (two columns) so th
 
 **Satisfies.** FR-03.6, AC-03.6, AC-03.7.
 
+## 10b. S5b — Qty Inspection dialog (added 27 Oct 2026, ADR-019)
+
+**Purpose.** Enter or change the number of pairs inspected in the selected PO's session (FR-15).
+
+Opened by tapping the QTY INSPECTION row of the Home results box (§8.1), or by the button of a Qty Inspection check in S8 (§13.1). `Dialog title="QTY INSPECTION"`, regular width; the dialog is closable.
+
+| Part | Content |
+|---|---|
+| Context line | "PO 0903359388" and, when set, the partial `P1 · 1.200 dari 10.002` |
+| Pad | `NumberPad label="Qty inspection" unit="PASANG" min={min} max={max}`, pre-filled with the current value (empty the first time). `min` = the larger of 1 and the session's Qty Defect (findings); `max` = the partial quantity when PO PARTIAL is set, otherwise Qty Order (BR-10; `qtyInspectionLimits`, doc 03 §5.5) |
+| Hint | "Jumlah pasang yang diinspeksi, {min} sampai {max}." With findings recorded, a second line "{n} defect sudah tercatat." When `min` > `max`, instead a `Notice danger` "Jumlah defect ({n}) melebihi {partial / Qty Order} {max} pasang. Perbaiki defect atau partial dulu." and SIMPAN stays disabled |
+| Buttons | BATAL (`secondary`) and SIMPAN (`primary`) |
+
+- SIMPAN is disabled while the value is empty or outside `min`…`max`; the NumberPad message says why ("Minimal {min} pasang" / "Maksimum {max} pasang", G8).
+- SIMPAN writes one `SET_QTY_INSPECTION` event (doc 03 §4.2) **before** the dialog closes (NFR-05), closes the dialog, updates the results box and shows the toast "Qty Inspection disimpan".
+- BATAL, the close button, the scrim or Escape close it and change nothing.
+- The value can be changed any number of times until SUBMIT PO, also while an inspection is active. There is no way to clear it back to empty; it is cleared only by SUBMIT PO (AC-15.4).
+- UNDO on the Defect screen never changes it (FR-08).
+
+**Satisfies.** FR-15, AC-15.1…15.4, BR-10, NFR-02, NFR-05.
+
 ## 11. S6 — Defect screen
 
 **Purpose.** Record defects tap by tap: start an inspection, choose area → sub-area → family → defect, undo, finish (FR-06…FR-09).
@@ -280,7 +306,7 @@ Regular/Compact:
 
 ```
 ┌ Shoe pane (≈56%) ──────────────────┬ Side (≈44%) ───────────────────────┐
-│ [REWORK] [B-GRADE] [NO DEFECT]     │ Context line: [REWORK]  PO … · Artikel · Model │
+│ [REWORK] [B-GRADE]                 │ Context line: [REWORK]  PO … · Artikel · Model │
 │  ┌ ShoeMap (12 AreaPills + photo) ┐│ Breadcrumb                           │
 │  │                                ││ Drill-down list (OptionRow)          │
 │  └────────────────────────────────┘│ History (HistoryRow, own header)     │
@@ -290,7 +316,7 @@ Regular/Compact:
 
 | Region | Components | Notes |
 |---|---|---|
-| Command row (above the shoe) | `CommandButton` mode `rework`, `bgrade`, `nodefect` | Always all three visible (doc 06). |
+| Command row (above the shoe) | `CommandButton` mode `rework`, `bgrade` | Both always visible; they share the row's width. NO DEFECT (`nodefect`) is not shown any more (ADR-019); the design-system mode stays unused. |
 | Shoe map | `ShoeMap` in a `Pane` | 12 area pills on the photo. Pill shows the count of defects recorded there in the active inspection (`CountBadge`, FR-07.6). The selected area is `accent`. |
 | END INSPECTION | `CommandButton mode="end"` | Full width under the shoe map. |
 | Context line | `Chip tone="rework"/"bgrade"`, text | Shows the active type chip, then "PO 0903359388 · Artikel · Model". |
@@ -303,14 +329,13 @@ Stacked: shoe map on top (own aspect ratio), then command row, END INSPECTION, c
 
 ### 11.2 Command states
 
-| Situation | REWORK | B-GRADE | NO DEFECT | END INSPECTION | Shoe map and list |
-|---|---|---|---|---|---|
-| **No active inspection** | idle | idle | idle | disabled | Pills and rows disabled; photo dimmed to half; right panel says "Mulai inspeksi" / "Pilih REWORK, B-GRADE, atau NO DEFECT untuk mengaktifkan area dan defect." |
-| **REWORK active** | active | disabled | disabled | enabled | Enabled |
-| **B-GRADE active** | disabled | active | disabled | enabled | Enabled |
-| **NO DEFECT tapped** | — | — | — | — | Records one pair at once (U1); the screen returns to the "no active inspection" state; toast "No Defect tercatat. A-Grade +1" |
+| Situation | REWORK | B-GRADE | END INSPECTION | Shoe map and list |
+|---|---|---|---|---|
+| **No active inspection** | idle | idle | disabled | Pills and rows disabled; photo dimmed to half; right panel says "Mulai inspeksi" / "Pilih REWORK atau B-GRADE untuk mengaktifkan area dan defect. Pasang tanpa defect tidak perlu ditekan; isi QTY INSPECTION di Home." |
+| **REWORK active** | active | disabled | enabled | Enabled |
+| **B-GRADE active** | disabled | active | enabled | Enabled |
 
-BR-05: only one inspection at a time per PO. Starting one: toast "Inspeksi REWORK dimulai" / "Inspeksi B-GRADE dimulai". END INSPECTION: toast "Inspeksi selesai. N defect tercatat" or "Inspeksi selesai tanpa defect" (AC-06.3). Counting follows BR-01 and the shared engine in `packages/shared`; the UI never counts by itself.
+BR-05: only one inspection at a time per PO. Starting one: toast "Inspeksi REWORK dimulai" / "Inspeksi B-GRADE dimulai". END INSPECTION: toast "Inspeksi selesai. N defect tercatat" or "Inspeksi selesai tanpa defect" (AC-06.3). Counting follows BR-01 and the shared engine in `packages/shared`; the UI never counts by itself. Starting an inspection or recording a defect never checks Qty Inspection (ADR-019 decision 6); if a new finding takes Qty Defect above it, Home shows the warning of §8.2.
 
 ### 11.3 Drill-down
 
@@ -334,7 +359,7 @@ Level 0 (no area chosen): the right panel shows the hint "Pilih area sepatu" and
 |---|---|---|
 | BACK | One level up (defects → families → sub-areas → no area). At level 0, returns to Home (FR-08). | — |
 | HOME | Returns to Home. An active inspection stays active (AC-06.2). | — |
-| UNDO | Per FR-08: removes the last defect of the active inspection; with none, cancels the just-started inspection; right after NO DEFECT, cancels it; otherwise disabled. | "Defect terakhir dibatalkan" / "Inspeksi dibatalkan" / "No Defect dibatalkan" (AC-08.1) |
+| UNDO | Per FR-08: removes the last defect of the active inspection; with none, cancels the just-started inspection; otherwise disabled. Never changes Qty Inspection. | "Defect terakhir dibatalkan" / "Inspeksi dibatalkan" (AC-08.1) |
 
 UNDO is disabled (grey) when it has nothing to undo; the history list makes the reason visible. UNDO never reaches an ended inspection.
 
@@ -374,7 +399,10 @@ Run on tap of SUBMIT PO, in this order; the first failure stops with a blocking 
 |---|---|---|---|
 | No PO selected | (button disabled on Home) | — | — |
 | An inspection is active | "Inspeksi masih berjalan" | "Selesaikan inspeksi dulu (END INSPECTION)." | `Ke ADD DEFECT` (goes to S6) |
-| Qty Inspection is 0 | "Belum ada inspeksi" | "Belum ada inspeksi untuk PO ini. Mulai dari ADD DEFECT." | `Mengerti` |
+| Qty Inspection is empty | "QTY INSPECTION belum diisi" | "Isi jumlah pasang yang diinspeksi sebelum SUBMIT PO." | `Isi QTY INSPECTION` (opens S5b) |
+| Qty Defect above the partial quantity / Qty Order (no valid Qty Inspection) | "Defect melebihi jumlah pasang" | "{n} defect tercatat, melebihi partial {max} pasang. Perbaiki defect (UNDO) atau partial." (or "… melebihi Qty Order {max} pasang. Perbaiki defect (UNDO).") | `Mengerti` |
+| Qty Inspection below Qty Defect | "QTY INSPECTION kurang" | "QTY INSPECTION {q} pasang, tetapi {n} defect sudah tercatat. Minimal {n} pasang." | `Ubah QTY INSPECTION` (opens S5b) |
+| Qty Inspection above the partial quantity / Qty Order | "QTY INSPECTION terlalu besar" | "QTY INSPECTION {q} pasang melebihi partial {max} pasang." (PO PARTIAL set) or "QTY INSPECTION {q} pasang melebihi Qty Order {max} pasang." | `Ubah QTY INSPECTION` (opens S5b) |
 | PSI lv.2 and Top 5 photos missing | "Foto belum lengkap" | "PSI lv.2 wajib menambahkan foto pada Top 5 Defect. Belum ada foto untuk:" + the list of defect names | `Lengkapi foto` |
 
 ### 13.2 Step 2 — confirmation
@@ -422,14 +450,21 @@ Exact texts beyond those quoted above, so that the coding agent does not invent 
 | Add PO — no result | PO tidak ditemukan |
 | Partial number readout | P1, P2 … |
 | Partial summary (Home, Submit) | P1 · 1.200 dari 10.002 |
-| Number pad errors | Minimal 1 pasang / Maksimum {n} pasang |
+| Number pad errors | Minimal {n} pasang / Maksimum {n} pasang |
+| QTY INSPECTION row, not entered | — with the hint "Ketuk untuk isi" |
+| QTY INSPECTION dialog hint (S5b) | Jumlah pasang yang diinspeksi, {min} sampai {max}. / {n} defect sudah tercatat. |
+| QTY INSPECTION dialog, no valid value (S5b) | Jumlah defect ({n}) melebihi partial {max} pasang. Perbaiki defect atau partial dulu. / Jumlah defect ({n}) melebihi Qty Order {max} pasang. Perbaiki defect dulu. |
+| QTY INSPECTION saved toast | Qty Inspection disimpan |
+| Home notice, Qty Inspection empty | Isi QTY INSPECTION untuk menghitung A-Grade, Defect Rate, dan Pass Rate. |
+| Home notice, below Qty Defect | QTY INSPECTION kurang dari {n} defect yang tercatat. Ubah sebelum SUBMIT PO. |
+| Home notice, no valid value | {n} defect tercatat, melebihi partial {max} pasang. Perbaiki defect atau partial sebelum SUBMIT PO. / {n} defect tercatat, melebihi Qty Order {max} pasang. Perbaiki defect sebelum SUBMIT PO. |
+| Home notice, above the limit | QTY INSPECTION melebihi partial {max} pasang. Ubah sebelum SUBMIT PO. / QTY INSPECTION melebihi Qty Order {max} pasang. Ubah sebelum SUBMIT PO. |
 | Empty Top 5 | Belum ada defect / Tekan ADD DEFECT untuk mulai input. |
 | Empty history | Belum ada defect tercatat untuk PO ini. |
 | Photo required | Foto wajib |
 | Defect toasts | +1 Defect / +1 Defect dan B-Grade |
 | Inspection toasts | Inspeksi REWORK dimulai / Inspeksi B-GRADE dimulai / Inspeksi selesai. N defect tercatat / Inspeksi selesai tanpa defect |
-| NO DEFECT toast | No Defect tercatat. A-Grade +1 |
-| UNDO toasts | Defect terakhir dibatalkan / Inspeksi dibatalkan / No Defect dibatalkan |
+| UNDO toasts | Defect terakhir dibatalkan / Inspeksi dibatalkan |
 | Submit toasts | PO terkirim {HH:mm} / Tersimpan. Menunggu koneksi. / Sedang dikirim. |
 | Outbox, last attempt of a Menunggu item (decided 22 Oct 2026) | Dicoba terakhir {HH:mm} |
 | Outbox, Gagal reason | the API's `detail`, then the messages of its `errors`, separated by " · " |
@@ -458,7 +493,8 @@ Error `detail` texts come from the API as is (doc 04 §6).
 | FR-12, AC-12.1…12.4 | S3 §8.5 |
 | FR-13, AC-13.1…13.4 | S1 §6, S4 §9, S9 §14 |
 | FR-14, AC-14.1…14.5 | Admin app §20 |
-| NFR-02 (tap only, 44 px) | G1, G2, S4 NumberPad |
+| FR-15, AC-15.1…15.4, BR-10 | S3 §8.1/§8.2, S5b §10b, S8 §13.1 |
+| NFR-02 (tap only, 44 px) | G1, G2, S4, S5b NumberPad |
 | NFR-03, NFR-05 | G3, §11.5 |
 | NFR-09 (language, numbers) | G5, §15 |
 | NFR-11 (words with colour) | G7 |
@@ -471,15 +507,15 @@ Error `detail` texts come from the API as is (doc 04 §6).
 | `CommandButton` | S6 |
 | `BottomBar` | S6 (BACK, HOME, UNDO), S3 Stacked |
 | `SelectField` | S2, S4 |
-| `Dialog` | pickers, S4, S5, S7b, S8, S9, blocking messages |
+| `Dialog` | pickers, S4, S5, S5b, S7b, S8, S9, blocking messages |
 | `CheckboxRow` (new) | S4, S5 |
 | `Stepper` (new) | S4, S5 |
-| `NumberPad` (new) | S4, S5 |
+| `NumberPad` (new) | S4, S5, S5b (S5b needs the new optional prop `min`, U21) |
 | `Chip` | level, classification, inspection type |
 | `CountBadge` | PO rows, shoe pills, outbox count |
 | `Toast`, `Notice` | G4, warnings and errors |
 | `OutboxItem` | S9 |
-| `POListItem`, `StatRow`, `Top5Row`, `PhotoButton` | S3 |
+| `POListItem`, `StatRow`, `Top5Row`, `PhotoButton` | S3 (the QTY INSPECTION `StatRow` uses the new optional prop `onClick`, U20); `StatRow` also in S8 |
 | `ShoeMap`, `AreaPill`, `Breadcrumb`, `OptionRow`, `HistoryRow` | S6 |
 | `Pane`, `List`, `Icon` | everywhere |
 
@@ -489,7 +525,7 @@ Layout containers written in the app (not in the design system): the Home grid, 
 
 | ID | Decision | Why |
 |---|---|---|
-| U1 | **Confirmed 20 Oct 2026 (OQ-07).** NO DEFECT records the pair at once and needs no END INSPECTION; UNDO right after it cancels it. | It is the prototype's behavior and one pair needs one tap. |
+| U1 | ~~**Confirmed 20 Oct 2026 (OQ-07).** NO DEFECT records the pair at once and needs no END INSPECTION; UNDO right after it cancels it.~~ **Superseded 27 Oct 2026 by ADR-019:** NO DEFECT is removed; pairs without a defect are counted through QTY INSPECTION (S5b). | It was the prototype's behavior and one pair needed one tap. |
 | U2 | **Confirmed 20 Oct 2026 (OQ-08).** Home shows only the current session, not what was already submitted today. | The tablet API has no read endpoint for past submissions (doc 04 §3); Leader Quality reads through the admin app or database views (OQ-13). A later release can add it. |
 | U3 | The Defect Rate figure turns `bad` (danger colour plus its number) above 5,0%. | The prototype did this; the threshold is a display aid only and is not a business rule. Change in one place if QIP wants another value. |
 | U4 | Login is disabled while offline; an already logged-in PSI is unaffected. | `POST /auth/login` issues the token (doc 04 §3.1). |
@@ -508,6 +544,9 @@ Layout containers written in the app (not in the design system): the Home grid, 
 | U17 | The admin app is a separate web app at `/admin/`, online only, with keyboard input allowed; it reuses tokens and the basic components but adds no new design-system component in release 1. | Administrators sit at a laptop; the tap-only rule exists for the line, not for the back office. |
 | U18 | Submissions are read-only in the admin app: no edit, delete or void. | BR-07; the owner chose to keep the admin app to master data, the inspection DataTable, admins and the audit log. |
 | U19 | Tablets are registered with server commands (`device:add`), not in the admin app; the audit log still records them. | Owner decision 20 Oct 2026; fewer screens in release 1. |
+| U20 | **Decided 27 Oct 2026 (ADR-019).** QTY INSPECTION is edited by tapping its row in the results box. `StatRow` gets an optional `onClick`: the row then renders as a button (≥ 44 px, `row-min`), shows an edit `Icon` after the value and has the accessible label "Ubah Qty Inspection". The other six rows stay read-only. | The number sits where the PSI reads it; no extra button in the crowded bottom row. The owner chose "Home, editable until SUBMIT PO". |
+| U21 | **Decided 27 Oct 2026 (ADR-019).** `NumberPad` gets an optional `min` (default 1); below it the readout turns `danger` with "Minimal {min} pasang". | The lower limit of Qty Inspection is Qty Defect (BR-10), not always 1. |
+| U22 | **Decided 27 Oct 2026, confirmed 28 Oct 2026 (ADR-019 decisions 6, 7).** A Qty Inspection that goes out of BR-10 after it was entered is kept and flagged (Home notice, SUBMIT PO check), never changed by the app; findings are never blocked or deleted because of it. While it is empty or not valid, Qty A-Grade shows `0` and both rates `0,0%`. | The PSI knows the real number; the app must not guess it, and a PSI must never be stuck between a number and a finding. |
 
 ## 20. Admin web app (FR-14)
 
@@ -531,7 +570,7 @@ Logo (64 px), username, password, `MASUK`. Errors: wrong credentials "Username a
 | Paging | 50 per page; total count shown |
 | Empty | "Tidak ada submission untuk filter ini." |
 
-**A1b — Detail.** Header with the same numbers as the table; the findings table (area, sub-area, family, defect, inspection type, classification text, quantity) sorted like the tablet history; Top 5 block; a photo strip (thumbnails; click opens a large view) loaded through `GET /admin/photos/{id}`; the audit trail of this submission.  The detail is read-only: no edit, delete or void (AC-14.4).
+**A1b — Detail.** Header with the same numbers as the table, plus the counts: REWORK pairs, B-GRADE pairs and the counting rule ("Qty Inspection diisi PSI" for `ADR-019`; "Hitung per tap (lama)" with the NO DEFECT count for `ADR-008`, doc 04 A17); the findings table (area, sub-area, family, defect, inspection type, classification text, quantity) sorted like the tablet history; Top 5 block; a photo strip (thumbnails; click opens a large view) loaded through `GET /admin/photos/{id}`; the audit trail of this submission.  The detail is read-only: no edit, delete or void (AC-14.4).
 
 ### 20.4 A2 — PSI users, A3 — Factories & cells
 

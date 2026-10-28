@@ -2,12 +2,12 @@
 
 | | |
 |---|---|
-| Version | 2.0 — rewritten 20 Oct 2026 for ADR-018 (v1.0, the Google Sheets design, is superseded) |
-| Date | 20 Oct 2026 |
+| Version | 2.1 — 27–28 Oct 2026: Qty Inspection entered by the PSI, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026): `counting_rule` column, `qty_no_defect` nullable, checks per rule (§4.1, §6.3, §9). v2.0 rewritten 20 Oct 2026 for ADR-018 (v1.0, the Google Sheets design, is superseded) |
+| Date | 27 Oct 2026 |
 | Database | PostgreSQL 16, database `m100`, schema `public`, time zone `Asia/Jakarta` for sessions, all timestamps stored as `timestamptz` |
 | Photos | An object store behind the `PhotoStore` interface (S3 API; MinIO or another S3-compatible store, or a plain folder), bucket `m100-photos` |
 | Based on | A full read of the old spreadsheet on 16 Oct 2026 (its findings are kept in §2 where they still matter) and ADR-018 |
-| Related | ADR-003, 006, 008, 009, 013, 018 in [07 Decision Log](07-decision-log.md); FR-01…FR-14 in [01 PRD](01-prd.md); [03 TDD](03-tdd.md) §5 |
+| Related | ADR-003, 006, 008, 009, 013, 018, 019 in [07 Decision Log](07-decision-log.md); FR-01…FR-14 in [01 PRD](01-prd.md); [03 TDD](03-tdd.md) §5 |
 
 This document says what is stored, where, and how a submission is written. Mobile 100% Inspection no longer reads or writes the "100%INLINE IMPACTIVA" spreadsheet or any Google service (ADR-018). Historical AppSheet data stays in that spreadsheet and is not migrated.
 
@@ -44,7 +44,7 @@ These findings from the old spreadsheet still shape the rules below.
 | # | Finding | Rule here |
 |---|---|---|
 | D1 | A PSI session has 0–24 distinct defects (median 10); one pair can carry several defects. | No slot limit any more: findings are rows (§4). |
-| D2 | `QTY INSPECTION` ≠ `A-GRADE` + `TOTAL DEFECT` under ADR-008, so RFT + Defect Rate ≠ 100%. | Stored as computed by ADR-008 (§6.3, §9). |
+| D2 | `QTY INSPECTION` ≠ `A-GRADE` + `TOTAL DEFECT` under ADR-008, so RFT + Defect Rate ≠ 100%. | Stored as computed by the row's `counting_rule` (ADR-008 or ADR-019; §6.3, §9). |
 | D3 | PO fields (`MODEL`, `DESTINATION`) carried non-breaking spaces copied from the PO master. | Master text is stored **as imported**, never trimmed or normalised by the import; the search ignores them (§3.3). |
 | D4 | 132 historical slots held hand-typed defect names outside `DEFECT_LIST`. | Mobile 100% Inspection writes only defects that exist in `defects`. |
 | D5 | `PARTIAL OF QTY PO` was free text (`1`, `1200`, `P1 1200`). | Two structured numbers (§4.1); the text form `P1 1.200 OF 10.002` is a derived display value (§4.1). |
@@ -138,9 +138,11 @@ One row of `submissions` is one Submit PO (ADR-003).
 | `podd`, `crd` | `date` null | Snapshot |
 | `partial_no` | `smallint` null | 1–99; null when the PO is not partial (ADR-013) |
 | `partial_qty` | `integer` null | 1 … `order_qty`; null when not partial. Check: both null or both set |
-| `qty_rework`, `qty_bgrade_inspections`, `qty_no_defect` | `integer` not null | Inspections started per type (the tablet's `counts`) |
-| `qty_inspection` | `integer` not null | `rework + bgrade_inspections + no_defect`, ≥ 1 (check) |
-| `qty_a_grade` | `integer` not null | = `qty_no_defect` (BR-01) |
+| `counting_rule` | `text` not null | `'ADR-019'` for every new submission; `'ADR-008'` for rows written before migration 0006 (check: one of the two) |
+| `qty_rework`, `qty_bgrade_inspections` | `integer` not null | REWORK and B-GRADE inspections started (the tablet's `counts`); in ADR-019 rows informational only, in no formula |
+| `qty_no_defect` | `integer` null | ADR-008 rows: NO DEFECT taps (not null). ADR-019 rows: null (NO DEFECT no longer exists) |
+| `qty_inspection` | `integer` not null | ≥ 1 (check). ADR-019: entered by the PSI (`counts.qtyInspection`). ADR-008: `rework + bgrade_inspections + no_defect` |
+| `qty_a_grade` | `integer` not null | ADR-019: `qty_inspection − qty_defect` (BR-01, findings-based). ADR-008: = `qty_no_defect` |
 | `qty_b_grade` | `integer` not null | Sum of `qty` of B-GRADE findings |
 | `qty_defect` | `integer` not null | Sum of `qty` of all findings |
 | `rft` | `numeric(8,5)` not null | `qty_a_grade / qty_inspection` (a fraction, 0.60000 = 60,0%) |
@@ -151,7 +153,12 @@ One row of `submissions` is one Submit PO (ADR-003).
 
 **Immutability.** A trigger rejects every `UPDATE` and `DELETE` on `submissions`, `submission_findings` and `submission_photos`; role `m100_app` also has no DELETE grant. There is no void in release 1.
 
-Constraints (database level, so a bug in the API cannot store inconsistent numbers): `qty_inspection = qty_rework + qty_bgrade_inspections + qty_no_defect`; `qty_a_grade = qty_no_defect`; `qty_b_grade <= qty_defect`; the check on `partial_*` above. The API computes all totals itself from the tablet's counts and findings (doc 04 §4.1); the database re-checks `qty_defect` and `qty_b_grade` against the findings in the same transaction (§6.3).
+Constraints (database level, so a bug in the API cannot store inconsistent numbers):
+- every row: `qty_inspection >= 1`; `qty_b_grade <= qty_defect`; the check on `partial_*` above; `counting_rule IN ('ADR-008', 'ADR-019')`;
+- `counting_rule = 'ADR-019'`: `qty_no_defect IS NULL`; `qty_inspection >= qty_defect`; `qty_a_grade = qty_inspection - qty_defect`; `qty_inspection <= COALESCE(partial_qty, order_qty)` (BR-10);
+- `counting_rule = 'ADR-008'`: `qty_no_defect IS NOT NULL`; `qty_inspection = qty_rework + qty_bgrade_inspections + qty_no_defect`; `qty_a_grade = qty_no_defect`.
+
+**Migration 0006 (ADR-019).** Adds `counting_rule` with default `'ADR-008'` (so every existing row is marked by the add itself, without an `UPDATE`, which the immutability trigger would refuse), then drops the default so the API must name the rule; drops `NOT NULL` on `qty_no_defect`; replaces `submissions_qty_inspection_sum_check` and `submissions_qty_a_grade_check` by the per-rule checks above; makes the views read `s.counting_rule` instead of the constant `'ADR-008'`. Existing rows are not changed. The API computes all totals itself from the tablet's counts and findings (doc 04 §4.1); the database re-checks `qty_defect` and `qty_b_grade` against the findings in the same transaction (§6.3).
 
 ### 4.2 `submission_findings`
 
@@ -271,7 +278,7 @@ Objects whose key has no `submission_photos` row and are older than 24 hours are
 
 ### 6.3 Totals
 
-Computed by the API from the tablet's `counts` and `findings` with the ADR-008 rules and **verified in the database** (§4.1). Formulas: Qty Inspection = rework + B-GRADE inspections + NO DEFECT; Qty A-Grade = NO DEFECT; Qty Defect = Σ `qty`; Qty B-Grade = Σ `qty` of B-GRADE findings; `rft` = A-Grade ÷ Qty Inspection; `defect_rate` = Qty Defect ÷ Qty Inspection. Submit PO is refused when Qty Inspection is 0 (FR-11), so the rates always have a denominator. Fractions are stored with 5 decimals; screens and exports show percentages with one decimal and an Indonesian decimal comma.
+Computed by the API from the tablet's `counts` and `findings` with the ADR-019 rules and **verified in the database** (§4.1). Formulas: Qty Inspection = `counts.qtyInspection` as entered by the PSI; Qty Defect = Σ `qty` (defect findings, not defective pairs); Qty B-Grade = Σ `qty` of B-GRADE findings; Qty A-Grade = Qty Inspection − Qty Defect; `rft` = A-Grade ÷ Qty Inspection; `defect_rate` = Qty Defect ÷ Qty Inspection (so `rft + defect_rate = 1`). Qty Inspection is at least 1 and at least Qty Defect, and at most the partial quantity or `order_qty` (BR-10), so the rates always have a denominator and A-Grade is never negative. The request carries no totals: the API computes them itself and the database checks them again in the same transaction, so neither the tablet nor a client can store totals that disagree. A payload sealed under ADR-008 (an older app version, `counts.noDefect` instead of `counts.qtyInspection`, doc 04 §4.1) is computed with the ADR-008 formulas (Qty Inspection = rework + B-GRADE inspections + NO DEFECT; Qty A-Grade = NO DEFECT) and stored with `counting_rule = 'ADR-008'`. Fractions are stored with 5 decimals; screens and exports show percentages with one decimal and an Indonesian decimal comma.
 
 ### 6.4 Time
 
@@ -295,7 +302,7 @@ Leader Quality no longer reads `DATA_INSPECTION` for this data (ADR-018). Three 
 
 | View | One row per | Content |
 |---|---|---|
-| `v_submissions` | submission | `display_no`, `inspection_date`, `sealed_at` (WIB), `username`, `level`, `factory`, `cell`, PO fields, `partial_text`, all `qty_*`, `rft`, `defect_rate`, `photo_count` |
+| `v_submissions` | submission | `display_no`, `inspection_date`, `sealed_at` (WIB), `username`, `level`, `factory`, `cell`, PO fields, `partial_text`, all `qty_*`, `rft`, `defect_rate`, `photo_count`, `counting_rule` |
 | `v_findings` | finding | submission keys plus area, sub-area, family, defect, severity, `inspection_type`, `qty` |
 | `v_defect_totals` | submission + defect | total `qty` over areas and types, `rank_in_submission` by the Top 5 order (quantity, then severity, then first recorded), `has_photo` |
 | `v_top5` | submission + rank ≤ 5 | `v_defect_totals` filtered |
@@ -304,7 +311,11 @@ Leader Quality no longer reads `DATA_INSPECTION` for this data (ADR-018). Three 
 
 ## 9. How the numbers differ from the old AppSheet rows
 
-Unchanged from the old design: under ADR-008 one pair can carry several defects, so Qty Inspection ≠ A-Grade + Qty Defect, and RFT + Defect Rate does not add to 100%. Example: 10 REWORK pairs with 8 defects, 2 B-GRADE pairs with 3 defects, 18 NO DEFECT pairs → Qty Inspection 30, A-Grade 18, B-Grade 3, Qty Defect 11, RFT 60,0%, Defect Rate 36,7%. A report that expects the old AppSheet convention (A-Grade = Qty Inspection − Total Defect) will disagree with Mobile 100% Inspection data; the views carry a column `counting_rule = 'ADR-008'` so a combined report can tell the two sources apart.
+Under ADR-019 Qty Defect counts defect findings and Qty A-Grade = Qty Inspection − Qty Defect, so Qty Inspection = A-Grade + Qty Defect and RFT + Defect Rate = 100%. Example (ADR-019): the PSI enters Qty Inspection 30 and records 10 REWORK pairs with 8 findings and 2 B-GRADE pairs with 3 findings → Qty Defect 11, B-Grade 3, A-Grade 30 − 11 = 19, RFT 63,3%, Defect Rate 36,7%. This is the same convention as the old AppSheet rows (A-Grade = Qty Inspection − Total Defect).
+
+ADR-008 rows differ: A-Grade was the NO DEFECT taps, so the same pairs (with 18 NO DEFECT taps) gave A-Grade 18 and RFT 60,0%, and RFT + Defect Rate need not add to 100%. ADR-008 rows keep their stored figures and are never recalculated. Every view carries `counting_rule` (`ADR-008` or `ADR-019`, from the row) so a combined report can tell them apart; in ADR-019 rows `qty_no_defect` is empty.
+
+**Metric definition.** Pass Rate (RFT) in ADR-019 rows is a findings-based operational metric, (Qty Inspection − Qty Defect) ÷ Qty Inspection, not a pair-based first-time yield: a pair with three findings lowers A-Grade by 3 (ADR-019 decision 4).
 
 ## 10. Readiness checks (API)
 

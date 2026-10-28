@@ -20,7 +20,7 @@ Read the doc a task needs before writing code. Do not invent behaviour that a do
 | Look, tokens, components | `design-system/README.md`, `design-system/tokens.json`, `design-system/components/*/README.md`, reference implementation in `design-system/components/bundle.js` + `bundle.css` |
 | Area → sub-area → family → defect mapping | `reference/mapping/mapping.json` (generated from `Footwear_Defect_Mapping_Database_v2.xlsx`) |
 
-Doc 02 (Data Design, v2.0) and doc 04 (API Contract, v2.0) are final; doc 03 (TDD) is a draft (v0.3) and is the spec for how things are built. ADR-018 (PostgreSQL + photo store) supersedes ADR-001, 002, 007, 011, 012 and 017; never build anything from those. Doc 05 (UI/UX spec, draft v0.2) defines every screen S0–S9 and the admin screens A0–A7; where it disagrees with the prototype, doc 05 wins. U1, U2 and U10 in doc 05 §18 are confirmed (20 Oct 2026). Phase 4 starts with the server pre-checks of doc 03 §7.3. The server is **Windows**, operated by the QIP Digital Team: no bash scripts in `deploy/` or `scripts/` (use Node/TypeScript or PowerShell) and always build paths with `node:path`. HTTPS is decided: `https://m100.qdms.web.id` (ADR-016). If a task depends on something not decided in the docs, stop and say so instead of guessing.
+Doc 02 (Data Design, v2.1) and doc 04 (API Contract, v2.1) are final; doc 03 (TDD) is a draft (v0.4) and is the spec for how things are built. ADR-018 (PostgreSQL + photo store) supersedes ADR-001, 002, 007, 011, 012 and 017; ADR-019 (Qty Inspection entered by the PSI, 27 Oct 2026) supersedes ADR-008; never build anything from those, except that the API still accepts and stores ADR-008 payloads sealed before the update (doc 04 §4.1). Doc 05 (UI/UX spec, draft v0.3) defines every screen S0–S9 (plus the S5b Qty Inspection dialog) and the admin screens A0–A7; where it disagrees with the prototype, doc 05 wins (the prototype still has NO DEFECT; it is gone). U2 and U10 in doc 05 §18 are confirmed (20 Oct 2026); U1 is superseded by ADR-019. Phase 4 starts with the server pre-checks of doc 03 §7.3. The server is **Windows**, operated by the QIP Digital Team: no bash scripts in `deploy/` or `scripts/` (use Node/TypeScript or PowerShell) and always build paths with `node:path`. HTTPS is decided: `https://m100.qdms.web.id` (ADR-016). If a task depends on something not decided in the docs, stop and say so instead of guessing.
 
 ## Stack (ADR-004, ADR-005, ADR-018; React + Vite confirmed)
 
@@ -41,20 +41,23 @@ Tests: Vitest (unit), Playwright (web end-to-end), Jest (NestJS default; reposit
 2. **Submissions are immutable (BR-07, ADR-018).** No UPDATE or DELETE on `submissions`, `submission_findings`, `submission_photos`; a trigger and the grants enforce it, and there is no void. Master data is deactivated, never deleted.
 3. **One Submit PO = photos into the photo store first, then one database transaction** (`submissions` row with `INSERT … ON CONFLICT (id) DO NOTHING`, its findings and photo rows, SQL re-check of the sums), keyed by the tablet's UUID plus `payload_sha256`. The answer is synchronous (`201`, or `200` for a repeat; `409` for the same UUID with other bytes); no queue, no `202`. Every step is safe to repeat, so a retry never duplicates (doc 02 §6, doc 03 §5.4, ADR-003, ADR-018, BR-06).
 4. **Taps never hit the network.** Every tap is saved to IndexedDB before the UI confirms it (NFR-03, NFR-05).
-5. **Counting rules (BR-01, ADR-008)** live in one pure function in `packages/shared` with unit tests that reproduce the ADR-008 table exactly:
-   - REWORK / B-GRADE / NO DEFECT tap: Qty Inspection +1; NO DEFECT also Qty A-Grade +1.
-   - Defect during REWORK: Qty Defect +1. Defect during B-GRADE: Qty Defect +1 and Qty B-Grade +1 (per finding).
-   - Defect Rate = Qty Defect ÷ Qty Inspection; Pass Rate (RFT) = Qty A-Grade ÷ Qty Inspection; show "—" when Qty Inspection is 0.
+5. **Counting rules (BR-01, BR-10, ADR-019)** live in one pure function in `packages/shared` with unit tests that reproduce the ADR-019 table exactly:
+   - Qty Inspection is entered by the PSI on Home with the app's number pad (FR-15); it is never counted from taps. There is no NO DEFECT.
+   - Qty Defect counts defect findings, not defective pairs: defect during REWORK: Qty Defect +1; during B-GRADE: Qty Defect +1 and Qty B-Grade +1 (one pair with three findings adds 3).
+   - Qty A-Grade = Qty Inspection − Qty Defect. REWORK / B-GRADE starts are recorded as pairs but enter no formula.
+   - Defect Rate = Qty Defect ÷ Qty Inspection; Pass Rate (RFT) = Qty A-Grade ÷ Qty Inspection (a findings-based metric, not a pair yield). While Qty Inspection is empty or not valid the engine returns `null` for A-Grade and both rates; screens show `0` and `0,0%` (display fallback, never submitted).
+   - Limits (BR-10): Qty Inspection ≥ 1, ≥ Qty Defect, ≤ the partial quantity when set, else Qty Order; when Qty Defect is above that maximum no value is valid. Recording a finding is never blocked by it, and the app never raises Qty Inspection or deletes findings. Tablet, API and database check the limits independently.
+   - ADR-008 submissions (and payloads sealed before the update) keep the ADR-008 calculation; never recalculate them.
 6. **Photos (FR-10, BR-04, doc 02 §4.3, §7):** PSI lv.2 takes exactly one photo per Top 5 defect (more only for a defect photographed while in the Top 5 that later left it, AC-10.4); PSI lv.1 takes no photos at all. One `submission_photos` row per defect, key `submissions/<yyyy>/<MM>/<uuid>/<defectId>.jpg`. JPEG ≤ 1 MB, never re-encoded on the server.
 7. **Defect identity (ADR-009):** use `DEFECT_ID` D001–D098. D049 and D071 share a name; never key anything by defect name alone.
 8. **Open questions (PRD §10; open now: OQ-05, OQ-06, OQ-09, OQ-10):** if a task touches one, stop and ask. Never pick an answer silently.
 
 ## UI rules
 
-- Screen text in Bahasa Indonesia. These labels stay English and uppercase: ADD DEFECT, REWORK, B-GRADE, NO DEFECT, END INSPECTION, BACK, HOME, UNDO, SUBMIT PO, LOGIN, EXPORT PDF, EXPORT EXCEL, TOP 5 DEFECT, QTY INSPECTION, DEFECT RATE, PASS RATE (RFT).
+- Screen text in Bahasa Indonesia. These labels stay English and uppercase: ADD DEFECT, REWORK, B-GRADE, END INSPECTION, BACK, HOME, UNDO, SUBMIT PO, LOGIN, EXPORT PDF, EXPORT EXCEL, TOP 5 DEFECT, QTY INSPECTION, DEFECT RATE, PASS RATE (RFT).
 - Defect names exactly as in the mapping (case and brackets kept).
 - Numbers `id-ID` (2.400; 18,8%), times WIB (Asia/Jakarta).
-- No device keyboard on the tablet app except the PO search box (the admin app at `/admin/` may use the keyboard, doc 05 U17); numbers (the PO partial quantity, ADR-013) use the app's own number pad. Every tappable element ≥ 44 × 44 px (`--tap-min`).
+- No device keyboard on the tablet app except the PO search box (the admin app at `/admin/` may use the keyboard, doc 05 U17); numbers (the PO partial quantity, ADR-013; QTY INSPECTION, ADR-019) use the app's own number pad. Every tappable element ≥ 44 × 44 px (`--tap-min`).
 - Colours, radius, spacing, type only through the CSS variables in `design-system/tokens.css`. No hex values in components. Accent is `#1D4ED8` (`--accent`); black (`--ink`) is text only; grey (`--disabled`) means disabled.
 - Port design-system components to React components in `apps/web/src/ui/` with the same names and props as `design-system/components/index.d.ts`. `ShoeMap` must keep the anchor coordinates and image box from `bundle.js`; only the pill docks change on a short map (doc 05 U13, `SHOE_AREAS_COMPACT`).
 - Fonts must work offline: self-host Barlow Condensed, Barlow Semi Condensed and IBM Plex Mono (e.g. `@fontsource/*`), not the Google Fonts `@import`.
