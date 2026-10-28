@@ -23,10 +23,10 @@ function summary(report: ExportReport): SheetData {
   for (const r of report.results) {
     rows.push([
       bold(r.label),
-      r.kind === 'count'
-        ? { value: r.value, type: Number, format: '#,##0' }
-        : r.value === null
-          ? NO_VALUE
+      r.value === null
+        ? NO_VALUE
+        : r.kind === 'count'
+          ? { value: r.value, type: Number, format: '#,##0' }
           : { value: r.value, type: Number, format: '0.0%' },
     ]);
   }

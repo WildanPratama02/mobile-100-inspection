@@ -15,12 +15,12 @@ const DATE = new Intl.DateTimeFormat('id-ID', {
   timeZone: 'UTC',
 });
 
-/** Shown for a rate that can't be computed (Qty Inspection is 0). */
+/** Shown for a value that is not there (a Qty Inspection not entered yet, a rate that can't be computed). */
 export const NO_VALUE = '—';
 
-/** `2400` → `2.400`. */
-export function formatCount(n: number): string {
-  return COUNT.format(n);
+/** `2400` → `2.400`; `null` → `—` (a Qty Inspection not entered yet, FR-04). */
+export function formatCount(n: number | null): string {
+  return n === null ? NO_VALUE : COUNT.format(n);
 }
 
 /** `0.1875` → `18,8%`; `null` → `—` (BR-02, FR-04). */

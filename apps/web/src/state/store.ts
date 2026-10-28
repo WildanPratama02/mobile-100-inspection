@@ -16,7 +16,6 @@ import {
   EMPTY_SESSION,
   endInspection,
   findings,
-  noDefect,
   recordDefect,
   replay,
   startInspection,
@@ -207,7 +206,8 @@ function toPayload(state: SessionState, command: TapCommand): SessionEventPayloa
     case 'START':
       return startInspection(state, command.inspection);
     case 'NO_DEFECT':
-      return noDefect(state);
+      // NO DEFECT is removed (ADR-019); the button and this command go with T5.3.
+      return null;
     case 'DEFECT':
       return recordDefect(state, command.entry);
     case 'END':

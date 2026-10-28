@@ -1,5 +1,5 @@
 /**
- * Counting engine (BR-01, BR-02, BR-05, FR-08; ADR-008).
+ * Counting engine (BR-01, BR-02, BR-05, BR-10, FR-08, FR-15; ADR-019).
  *
  * A session is the reduction of its event log (doc 03 §4.2). Commands check whether a tap is allowed and
  * return the event to persist; `applyEvent` folds a stored event into the state; totals, findings and the
@@ -9,11 +9,14 @@ import type {
   AreaId,
   AreaMapEntry,
   Classification,
+  CountingRule,
   DefectId,
   Finding,
   InspectionCounts,
   InspectionType,
+  PoPartial,
   SessionEvent,
+  SubmissionCounts,
 } from './domain';
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -35,10 +38,12 @@ export interface ActiveInspection {
 }
 
 /** What UNDO would do now (FR-08); each kind has its own toast (doc 05 §11.4). */
-export type UndoKind = 'DEFECT' | 'INSPECTION' | 'NO_DEFECT';
+export type UndoKind = 'DEFECT' | 'INSPECTION';
 
 export interface SessionState {
   counts: InspectionCounts;
+  /** Entered by the PSI (FR-15); `null` until the first SET_QTY_INSPECTION. */
+  qtyInspection: number | null;
   active: ActiveInspection | null;
   /** Every defect tap that has not been undone, in tap order. */
   recorded: readonly RecordedDefect[];
@@ -47,11 +52,53 @@ export interface SessionState {
 }
 
 export const EMPTY_SESSION: SessionState = {
-  counts: { rework: 0, bGrade: 0, noDefect: 0 },
+  counts: { rework: 0, bGrade: 0 },
+  qtyInspection: null,
   active: null,
   recorded: [],
   undo: null,
 };
+
+/** The PO quantities that bound Qty Inspection (BR-10). */
+export interface PoQuantities {
+  orderQty: number;
+  partial: PoPartial | null;
+}
+
+/** Valid Qty Inspection is a whole number from `min` to `max` (BR-10). */
+export interface QtyInspectionLimits {
+  min: number;
+  max: number;
+}
+
+/** Why a Qty Inspection is not valid (BR-10); each has its own message (doc 05 §8.2, §13.1, §15). */
+export type QtyInspectionIssue =
+  | { kind: 'EMPTY' }
+  /** Qty Defect is above the partial quantity or Qty Order: no value is valid. */
+  | { kind: 'IMPOSSIBLE'; min: number; max: number }
+  | { kind: 'BELOW'; min: number }
+  | { kind: 'ABOVE'; max: number };
+
+/** BR-10: at least 1 and at least Qty Defect; at most the partial quantity, otherwise Qty Order. */
+export function qtyInspectionLimits(
+  qtyDefect: number,
+  partial: PoPartial | null,
+  orderQty: number,
+): QtyInspectionLimits {
+  return { min: Math.max(1, qtyDefect), max: partial?.qty ?? orderQty };
+}
+
+/** `null` when `qty` is a valid Qty Inspection for these limits. */
+export function checkQtyInspection(
+  qty: number | null,
+  { min, max }: QtyInspectionLimits,
+): QtyInspectionIssue | null {
+  if (qty === null) return { kind: 'EMPTY' };
+  if (min > max) return { kind: 'IMPOSSIBLE', min, max };
+  if (qty < min) return { kind: 'BELOW', min };
+  if (qty > max) return { kind: 'ABOVE', max };
+  return null;
+}
 
 // ---- Commands: the event to persist, or `null` when the tap is not allowed ----
 
@@ -64,13 +111,10 @@ export function startInspection(
   return { type: type === 'REWORK' ? 'START_REWORK' : 'START_BGRADE' };
 }
 
-/** NO DEFECT records an A-Grade pair at once (FR-06.3, doc 05 U1). Not while an inspection is active (BR-05). */
-export function noDefect(state: SessionState): SessionEventPayload | null {
-  if (state.active) return null;
-  return { type: 'NO_DEFECT' };
-}
-
-/** One finding for the active inspection (AC-06.1). */
+/**
+ * One finding for the active inspection (AC-06.1). Never refused because of Qty Inspection, even when the
+ * finding makes it not valid (ADR-019 decision 6).
+ */
 export function recordDefect(state: SessionState, entry: AreaMapEntry): SessionEventPayload | null {
   if (!state.active) return null;
   const { areaId, subAreaId, familyId, defectId } = entry;
@@ -85,6 +129,19 @@ export function endInspection(state: SessionState): SessionEventPayload | null {
 export function undo(state: SessionState): SessionEventPayload | null {
   if (!state.undo) return null;
   return { type: 'UNDO' };
+}
+
+/** SIMPAN in the QTY INSPECTION dialog (FR-15): only a whole number valid for the session now (BR-10). */
+export function setQtyInspection(
+  state: SessionState,
+  qty: number,
+  po: PoQuantities,
+): SessionEventPayload | null {
+  if (!Number.isInteger(qty)) return null;
+  const { qtyDefect } = defectTotals(findings(state));
+  const limits = qtyInspectionLimits(qtyDefect, po.partial, po.orderQty);
+  if (checkQtyInspection(qty, limits)) return null;
+  return { type: 'SET_QTY_INSPECTION', qty };
 }
 
 // ---- Reducer ----
@@ -108,8 +165,9 @@ export function applyEvent(state: SessionState, event: SessionEvent): SessionSta
       };
     }
     case 'NO_DEFECT':
-      if (active) return state;
-      return { ...state, counts: { ...counts, noDefect: counts.noDefect + 1 }, undo: 'NO_DEFECT' };
+      // Left by an app version from before ADR-019 in a session that was open during the update: it changes
+      // no figure and no UNDO state (ADR-019 decision 9).
+      return state;
     case 'DEFECT': {
       if (!active) return state;
       const { areaId, subAreaId, familyId, defectId } = event;
@@ -133,13 +191,16 @@ export function applyEvent(state: SessionState, event: SessionEvent): SessionSta
       return { ...state, active: null, undo: null };
     case 'UNDO':
       return applyUndo(state);
+    case 'SET_QTY_INSPECTION':
+      // Leaves `undo` alone: changing Qty Inspection never touches the UNDO history (FR-08).
+      if (!Number.isInteger(event.qty) || event.qty < 1) return state;
+      return { ...state, qtyInspection: event.qty };
   }
 }
 
 /**
- * FR-08: the last defect of the active inspection; with none, the inspection itself; right after
- * NO DEFECT, that NO DEFECT. A cancelled inspection or NO DEFECT leaves UNDO disabled, so it never
- * reaches an ended inspection or an earlier NO DEFECT.
+ * FR-08: the last defect of the active inspection; with none, the inspection itself. A cancelled inspection
+ * leaves UNDO disabled, so it never reaches an ended inspection. Qty Inspection is never changed.
  */
 function applyUndo(state: SessionState): SessionState {
   const { counts, active } = state;
@@ -157,8 +218,6 @@ function applyUndo(state: SessionState): SessionState {
     case 'INSPECTION':
       if (!active) return state;
       return { ...state, counts: addStarted(counts, active.type, -1), active: null, undo: null };
-    case 'NO_DEFECT':
-      return { ...state, counts: { ...counts, noDefect: counts.noDefect - 1 }, undo: null };
     case null:
       return state;
   }
@@ -202,26 +261,49 @@ export function findings(state: SessionState): Finding[] {
   return [...byKey.values()];
 }
 
-export interface Totals {
-  qtyInspection: number;
-  qtyAGrade: number;
-  qtyDefect: number;
-  qtyBGrade: number;
-  /** Qty Defect ÷ Qty Inspection (BR-02); can exceed 1. `null` when Qty Inspection is 0. */
-  defectRate: number | null;
-  /** Pass Rate (RFT) = Qty A-Grade ÷ Qty Inspection (BR-02). `null` when Qty Inspection is 0. */
-  passRate: number | null;
-}
-
-/** ADR-008 totals from what happened (doc 04 §4.1). The API computes the same from the submission. */
-export function computeTotals(counts: InspectionCounts, list: readonly Finding[]): Totals {
-  const qtyInspection = counts.rework + counts.bGrade + counts.noDefect;
-  const qtyAGrade = counts.noDefect;
+/** Qty Defect counts defect findings, not defective pairs; Qty B-Grade the B-GRADE ones (BR-01). */
+function defectTotals(list: readonly Finding[]): { qtyDefect: number; qtyBGrade: number } {
   let qtyDefect = 0;
   let qtyBGrade = 0;
   for (const f of list) {
     qtyDefect += f.qty;
     if (f.inspectionType === 'B-GRADE') qtyBGrade += f.qty;
+  }
+  return { qtyDefect, qtyBGrade };
+}
+
+/** The totals of a submission (doc 04 §4.1): what the API stores and returns. */
+export interface Totals {
+  qtyInspection: number;
+  qtyAGrade: number;
+  qtyDefect: number;
+  qtyBGrade: number;
+  /** Qty Defect ÷ Qty Inspection (BR-02). `null` when Qty Inspection is 0. */
+  defectRate: number | null;
+  /** Pass Rate (RFT) = Qty A-Grade ÷ Qty Inspection (BR-02). `null` when Qty Inspection is 0. */
+  passRate: number | null;
+}
+
+/** `ADR-019` for a Qty Inspection entered by the PSI, `ADR-008` for a payload sealed before the update. */
+export function countingRule(counts: SubmissionCounts): CountingRule {
+  return counts.noDefect === undefined ? 'ADR-019' : 'ADR-008';
+}
+
+/**
+ * Totals from what happened (doc 04 §4.1). ADR-019: Qty A-Grade = Qty Inspection − Qty Defect. A payload
+ * sealed under ADR-008 keeps the ADR-008 rules: Qty Inspection = all inspections started, Qty A-Grade =
+ * NO DEFECT. The API computes these from the submission; the outbox compares them with the API's answer.
+ */
+export function computeTotals(counts: SubmissionCounts, list: readonly Finding[]): Totals {
+  const { qtyDefect, qtyBGrade } = defectTotals(list);
+  let qtyInspection: number;
+  let qtyAGrade: number;
+  if (counts.noDefect === undefined) {
+    qtyInspection = counts.qtyInspection;
+    qtyAGrade = qtyInspection - qtyDefect;
+  } else {
+    qtyInspection = counts.rework + counts.bGrade + counts.noDefect;
+    qtyAGrade = counts.noDefect;
   }
   const rate = (n: number) => (qtyInspection === 0 ? null : n / qtyInspection);
   return {
@@ -234,8 +316,54 @@ export function computeTotals(counts: InspectionCounts, list: readonly Finding[]
   };
 }
 
-export function totals(state: SessionState): Totals {
-  return computeTotals(state.counts, findings(state));
+/** The session's figures on Home and in the exports (FR-04). */
+export interface SessionTotals {
+  /** Entered by the PSI; `null` until entered (shown "—"). */
+  qtyInspection: number | null;
+  qtyDefect: number;
+  qtyBGrade: number;
+  /**
+   * Qty Inspection − Qty Defect, and the rates of BR-02. `null` while Qty Inspection is empty or not valid;
+   * the screen then shows `0` and `0,0%` (ADR-019 decision 7). Never submitted.
+   */
+  qtyAGrade: number | null;
+  defectRate: number | null;
+  passRate: number | null;
+  /** Why Qty Inspection is not valid (BR-10); `null` when it is. */
+  qtyInspectionIssue: QtyInspectionIssue | null;
+}
+
+/** Without `po` the upper limit of BR-10 is not checked. */
+export function totals(state: SessionState, po?: PoQuantities): SessionTotals {
+  const { qtyDefect, qtyBGrade } = defectTotals(findings(state));
+  const { qtyInspection } = state;
+  const limits = qtyInspectionLimits(
+    qtyDefect,
+    po?.partial ?? null,
+    po?.orderQty ?? Number.POSITIVE_INFINITY,
+  );
+  const qtyInspectionIssue = checkQtyInspection(qtyInspection, limits);
+  if (qtyInspection === null || qtyInspectionIssue) {
+    return {
+      qtyInspection,
+      qtyDefect,
+      qtyBGrade,
+      qtyAGrade: null,
+      defectRate: null,
+      passRate: null,
+      qtyInspectionIssue,
+    };
+  }
+  const qtyAGrade = qtyInspection - qtyDefect;
+  return {
+    qtyInspection,
+    qtyDefect,
+    qtyBGrade,
+    qtyAGrade,
+    defectRate: qtyDefect / qtyInspection,
+    passRate: qtyAGrade / qtyInspection,
+    qtyInspectionIssue: null,
+  };
 }
 
 /** One defect with its quantity summed across areas, sub-areas and inspection types (doc 02 §6.1). */

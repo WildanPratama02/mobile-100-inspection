@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { computeTotals, type DefectId, type InspectionCounts } from '@m100/shared';
+import { computeTotals, type DefectId, type SubmissionCounts } from '@m100/shared';
 import { Database } from '../db/database';
 import { createTestDatabase, type TestDatabase } from '../testing/database';
 import { DEVICE_ID, FINDINGS, seedMasterData } from '../testing/schema-fixtures';
@@ -20,7 +20,7 @@ const TOP5: DefectId[] = ['D001', 'D002', 'D007', 'D004', 'D003'];
 /** The doc 02 §9 example: 10 REWORK pairs with 8 defects, 2 B-GRADE pairs with 3, 18 NO DEFECT. */
 function newSubmission(overrides: Partial<NewSubmission> = {}): NewSubmission {
   const id = overrides.id ?? randomUUID();
-  const counts: InspectionCounts = overrides.counts ?? { rework: 10, bGrade: 2, noDefect: 18 };
+  const counts: SubmissionCounts = overrides.counts ?? { rework: 10, bGrade: 2, noDefect: 18 };
   const findings = overrides.findings ?? FINDINGS;
   return {
     id,

@@ -13,6 +13,7 @@ import { missingPhotos, takesPhotos } from './photos';
 /** Why SUBMIT PO stops before the confirmation; each has its own dialog (doc 05 §13.1). */
 export type SubmitBlock =
   | { kind: 'ACTIVE' }
+  /** Qty Inspection not entered (FR-15). The BR-10 limit checks join here with their dialogs (T5.3). */
   | { kind: 'EMPTY' }
   /** PSI lv.2: the Top 5 defects without a photo, in rank order (BR-04). */
   | { kind: 'PHOTOS_MISSING'; defects: RankedDefect[] };
@@ -34,8 +35,7 @@ export function checkSubmit({
   photographed,
 }: SubmitCheckInput): SubmitBlock | null {
   if (state.active) return { kind: 'ACTIVE' };
-  const { rework, bGrade, noDefect } = state.counts;
-  if (rework + bGrade + noDefect === 0) return { kind: 'EMPTY' };
+  if (state.qtyInspection === null) return { kind: 'EMPTY' };
   if (takesPhotos(level)) {
     const defects = missingPhotos(top, photographed);
     if (defects.length > 0) return { kind: 'PHOTOS_MISSING', defects };
@@ -80,9 +80,14 @@ export interface SubmissionInput {
   photos: readonly PhotoRef[];
 }
 
-/** The `submission` part of `POST /submissions` (doc 04 §4.1). Times are sent in WIB. */
+/**
+ * The `submission` part of `POST /submissions` (doc 04 §4.1). Times are sent in WIB. Run `checkSubmit` first:
+ * a session without Qty Inspection can't be built.
+ */
 export function buildSubmission(input: SubmissionInput): SubmissionRequest {
   const { state, user } = input;
+  const { qtyInspection } = state;
+  if (qtyInspection === null) throw new Error('Qty Inspection is not entered');
   return {
     submissionUuid: input.submissionUuid,
     sealedAt: toWibIso(input.sealedAt),
@@ -92,7 +97,7 @@ export function buildSubmission(input: SubmissionInput): SubmissionRequest {
     cell: input.cell.cell,
     po: input.po,
     partial: input.partial ? { number: input.partial.number, qty: input.partial.qty } : null,
-    counts: { ...state.counts },
+    counts: { rework: state.counts.rework, bGrade: state.counts.bGrade, qtyInspection },
     findings: findings(state).map((f) => ({
       ...f,
       firstRecordedAt: toWibIso(f.firstRecordedAt),

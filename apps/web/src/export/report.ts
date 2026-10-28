@@ -30,8 +30,9 @@ export const EXPORT_TITLE = APP_NAME.toUpperCase();
 export const NO_DEFECT_TEXT = 'Belum ada defect.';
 
 export type ResultValue =
-  | { label: string; kind: 'count'; value: number }
-  /** `null` when Qty Inspection is 0 (BR-02). */
+  /** `null` for a Qty Inspection not entered yet, or Qty A-Grade while it is not valid (BR-02). */
+  | { label: string; kind: 'count'; value: number | null }
+  /** `null` while Qty Inspection is empty or not valid (BR-02). */
   | { label: string; kind: 'rate'; value: number | null };
 
 export interface Top5Line {

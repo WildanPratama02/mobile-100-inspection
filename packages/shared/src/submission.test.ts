@@ -14,7 +14,7 @@ function entry(defectId: string): AreaMapEntry {
 
 const REWORK: SessionEventPayload = { type: 'START_REWORK' };
 const BGRADE: SessionEventPayload = { type: 'START_BGRADE' };
-const NO_DEFECT: SessionEventPayload = { type: 'NO_DEFECT' };
+const QTY = (qty: number): SessionEventPayload => ({ type: 'SET_QTY_INSPECTION', qty });
 const END: SessionEventPayload = { type: 'END' };
 const UNDO: SessionEventPayload = { type: 'UNDO' };
 const defect = (id: string): SessionEventPayload => ({ type: 'DEFECT', ...entry(id) });
@@ -42,18 +42,23 @@ function check(state: SessionState, level: PsiLevel, photographed: DefectId[] = 
 describe('checkSubmit (FR-11.1, doc 05 §13.1)', () => {
   it('stops while an inspection is active, before any other check', () => {
     expect(check(session(REWORK), 'PSI lv.2')).toEqual({ kind: 'ACTIVE' });
-    expect(check(session(NO_DEFECT, BGRADE, defect('D035')), 'PSI lv.2')).toEqual({
+    expect(check(session(QTY(5), BGRADE, defect('D035')), 'PSI lv.2')).toEqual({
       kind: 'ACTIVE',
     });
   });
 
-  it('stops when Qty Inspection is 0', () => {
+  it('stops while Qty Inspection is not entered (FR-15), also with findings recorded', () => {
     expect(check(session(), 'PSI lv.1')).toEqual({ kind: 'EMPTY' });
-    expect(check(session(NO_DEFECT, UNDO), 'PSI lv.2')).toEqual({ kind: 'EMPTY' });
+    expect(check(session(REWORK, defect('D035'), END), 'PSI lv.1')).toEqual({ kind: 'EMPTY' });
+    expect(check(session(REWORK, defect('D035'), END), 'PSI lv.2')).toEqual({ kind: 'EMPTY' });
+  });
+
+  it('ignores a legacy NO_DEFECT: it does not count as an inspection', () => {
+    expect(check(session({ type: 'NO_DEFECT' }), 'PSI lv.1')).toEqual({ kind: 'EMPTY' });
   });
 
   it('lists the Top 5 defects without a photo for PSI lv.2, in rank order (BR-04)', () => {
-    const state = session(REWORK, defect('D035'), defect('D082'), defect('D082'), END);
+    const state = session(QTY(10), REWORK, defect('D035'), defect('D082'), defect('D082'), END);
     const block = check(state, 'PSI lv.2', ['D082']);
     expect(block?.kind).toBe('PHOTOS_MISSING');
     expect(block?.kind === 'PHOTOS_MISSING' && block.defects.map((d) => d.defectId)).toEqual([
@@ -63,11 +68,11 @@ describe('checkSubmit (FR-11.1, doc 05 §13.1)', () => {
   });
 
   it('never asks PSI lv.1 for photos (AC-10.6)', () => {
-    expect(check(session(REWORK, defect('D035'), END), 'PSI lv.1')).toBeNull();
+    expect(check(session(QTY(10), REWORK, defect('D035'), END), 'PSI lv.1')).toBeNull();
   });
 
   it('lets an inspected session without defects through', () => {
-    expect(check(session(NO_DEFECT), 'PSI lv.2')).toBeNull();
+    expect(check(session(QTY(12)), 'PSI lv.2')).toBeNull();
   });
 });
 
@@ -95,7 +100,7 @@ describe('buildSubmission (doc 04 §4.1)', () => {
     BGRADE,
     defect('D082'),
     END,
-    NO_DEFECT,
+    QTY(30),
   );
 
   it('sends what happened, not totals, with times in WIB', () => {
@@ -114,7 +119,7 @@ describe('buildSubmission (doc 04 §4.1)', () => {
       cell: 'F3-10',
       po: '0903359388',
       partial: { number: 1, qty: 1200 },
-      counts: { rework: 1, bGrade: 1, noDefect: 1 },
+      counts: { rework: 1, bGrade: 1, qtyInspection: 30 },
       findings: [
         {
           inspectionType: 'REWORK',
@@ -134,6 +139,11 @@ describe('buildSubmission (doc 04 §4.1)', () => {
         { defectId: 'D082', part: 'photo_D082', sha256: 'b'.repeat(64) },
       ],
     });
+  });
+
+  it('can not be built without Qty Inspection (checkSubmit stops it first)', () => {
+    const without = session(REWORK, defect('D035'), END);
+    expect(() => buildSubmission(input(without))).toThrow('Qty Inspection is not entered');
   });
 
   it('sends a null partial when the PO is not partial', () => {
@@ -177,6 +187,7 @@ describe('top5 on the API equals top5 on the tablet (doc 03 §5.5)', () => {
       defect('D005'),
       defect('D020'),
       END,
+      QTY(50),
     );
     const onTablet = top5(findings(state), mapping);
 

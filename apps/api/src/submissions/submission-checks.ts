@@ -51,7 +51,8 @@ export function checkSubmission(
  */
 export function checkCounts({ counts, findings }: SubmissionRequest): Failure[] {
   const failures: Failure[] = [];
-  if (counts.rework + counts.bGrade + counts.noDefect < 1) {
+  // The schema admits only ADR-008 `noDefect` payloads until rule 3 of ADR-019 lands (T5.2).
+  if (counts.rework + counts.bGrade + (counts.noDefect ?? 0) < 1) {
     failures.push({
       path: 'counts',
       code: 'INVALID',

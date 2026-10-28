@@ -6,9 +6,9 @@
 import type {
   DefectId,
   Finding,
-  InspectionCounts,
   PoPartial,
   PsiLevel,
+  SubmissionCounts,
   Totals,
 } from '@m100/shared';
 import type { Database, Queryable } from '../db/database';
@@ -42,7 +42,7 @@ export interface NewSubmission {
   /** Article, model, destination, order quantity and dates are copied from `pos` inside the transaction. */
   po: string;
   partial: PoPartial | null;
-  counts: InspectionCounts;
+  counts: SubmissionCounts;
   /** From `computeTotals`; Qty Inspection ≥ 1, so both rates are numbers. */
   totals: Totals;
   /** Defect name and severity are copied from `defects` inside the transaction. */
@@ -190,7 +190,8 @@ export class PgSubmissionRepository implements SubmissionRepository {
           s.partial?.qty ?? null,
           s.counts.rework,
           s.counts.bGrade,
-          s.counts.noDefect,
+          // Only ADR-008 payloads pass validation until migration 0006 and `counting_rule` (T5.2).
+          s.counts.noDefect ?? null,
           totals.qtyInspection,
           totals.qtyAGrade,
           totals.qtyBGrade,
