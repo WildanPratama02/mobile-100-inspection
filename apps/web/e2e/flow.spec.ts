@@ -43,7 +43,13 @@ for (const qty of [null, 2]) {
     await expect(page.getByText(/3 defect tercatat, melebihi partial 2 pasang/)).toBeVisible();
     await page.getByRole('button', { name: 'SUBMIT PO' }).click();
     await expect(page.getByRole('dialog', { name: 'Submit PO', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('alertdialog')).toBeVisible();
+    // IMPOSSIBLE before EMPTY (doc 05 §13.1), with or without a Qty Inspection entered.
+    await expect(
+      page.getByRole('alertdialog', { name: 'Defect melebihi jumlah pasang' }),
+    ).toBeVisible();
+    await expect(page.getByRole('alertdialog', { name: 'QTY INSPECTION belum diisi' })).toHaveCount(
+      0,
+    );
     expect(await outbox(page)).toEqual([]);
     expect(
       (

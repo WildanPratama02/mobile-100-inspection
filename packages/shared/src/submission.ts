@@ -20,9 +20,8 @@ import { missingPhotos, takesPhotos } from './photos';
 /** Why SUBMIT PO stops before the confirmation; each has its own dialog (doc 05 §13.1). */
 export type SubmitBlock =
   | { kind: 'ACTIVE' }
-  /** Qty Inspection not entered (FR-15). */
-  | { kind: 'EMPTY' }
-  | Exclude<QtyInspectionIssue, { kind: 'EMPTY' }>
+  /** BR-10, in the order of `checkQtyInspection`: IMPOSSIBLE, EMPTY, BELOW, ABOVE. */
+  | QtyInspectionIssue
   /** PSI lv.2: the Top 5 defects without a photo, in rank order (BR-04). */
   | { kind: 'PHOTOS_MISSING'; defects: RankedDefect[] };
 
@@ -45,7 +44,7 @@ export function checkSubmit({
   po,
 }: SubmitCheckInput): SubmitBlock | null {
   if (state.active) return { kind: 'ACTIVE' };
-  if (state.qtyInspection === null) return { kind: 'EMPTY' };
+  // One priority rule for Home, S5b and SUBMIT PO: impossible limits before an empty value.
   const issue = totals(state, po).qtyInspectionIssue;
   if (issue) return issue;
   if (takesPhotos(level)) {

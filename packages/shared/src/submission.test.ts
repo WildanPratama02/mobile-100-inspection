@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { findings, replay, top5, type SessionEventPayload, type SessionState } from './counting';
+import {
+  findings,
+  replay,
+  top5,
+  type PoQuantities,
+  type SessionEventPayload,
+  type SessionState,
+} from './counting';
 import type { AreaMapEntry, Defect, DefectId, PsiLevel, SessionEvent } from './domain';
 import { defaultMapping } from './mapping';
 import { buildSubmission, checkSubmit, submissionPhotos, type SubmissionInput } from './submission';
@@ -74,6 +81,79 @@ describe('checkSubmit (FR-11.1, doc 05 §13.1)', () => {
 
   it('lets an inspected session without defects through', () => {
     expect(check(session(QTY(12)), 'PSI lv.2')).toBeNull();
+  });
+});
+
+describe('checkSubmit: Qty Inspection priority (BR-10, IMPOSSIBLE before EMPTY)', () => {
+  const blockFor = (state: SessionState, po: PoQuantities) =>
+    checkSubmit({ po, state, level: 'PSI lv.1', top: [], photographed: new Set() });
+  const threeFindings = [REWORK, defect('D035'), defect('D035'), defect('D005'), END];
+  const smallOrder: PoQuantities = { orderQty: 2, partial: null };
+  const smallPartial: PoQuantities = { orderQty: 100, partial: { number: 1, qty: 2 } };
+  const roomy: PoQuantities = { orderQty: 100, partial: { number: 1, qty: 40 } };
+
+  it('empty Qty Inspection with impossible PO limits → IMPOSSIBLE', () => {
+    expect(blockFor(session(...threeFindings), smallOrder)).toEqual({
+      kind: 'IMPOSSIBLE',
+      min: 3,
+      max: 2,
+    });
+  });
+
+  it('empty Qty Inspection with impossible partial limits → IMPOSSIBLE', () => {
+    expect(blockFor(session(...threeFindings), smallPartial)).toEqual({
+      kind: 'IMPOSSIBLE',
+      min: 3,
+      max: 2,
+    });
+  });
+
+  it('entered Qty Inspection with impossible limits → IMPOSSIBLE', () => {
+    for (const qty of [1, 2]) {
+      expect(blockFor(session(QTY(qty), ...threeFindings), smallOrder)).toEqual({
+        kind: 'IMPOSSIBLE',
+        min: 3,
+        max: 2,
+      });
+      expect(blockFor(session(QTY(qty), ...threeFindings), smallPartial)?.kind).toBe('IMPOSSIBLE');
+    }
+  });
+
+  it('empty Qty Inspection with feasible limits → EMPTY', () => {
+    expect(blockFor(session(...threeFindings), roomy)).toEqual({ kind: 'EMPTY' });
+    expect(blockFor(session(), roomy)).toEqual({ kind: 'EMPTY' });
+  });
+
+  it('feasible limits: BELOW under Qty Defect, ABOVE over the partial, null within', () => {
+    expect(blockFor(session(QTY(2), ...threeFindings), roomy)).toEqual({ kind: 'BELOW', min: 3 });
+    expect(blockFor(session(QTY(41), ...threeFindings), roomy)).toEqual({
+      kind: 'ABOVE',
+      max: 40,
+    });
+    expect(
+      blockFor(session(QTY(41), ...threeFindings), { orderQty: 100, partial: null }),
+    ).toBeNull();
+    expect(blockFor(session(QTY(3), ...threeFindings), roomy)).toBeNull();
+    expect(blockFor(session(QTY(40), ...threeFindings), roomy)).toBeNull();
+  });
+
+  it('an active inspection still comes first', () => {
+    expect(
+      blockFor(session(REWORK, defect('D035'), defect('D035'), defect('D005')), smallOrder),
+    ).toEqual({ kind: 'ACTIVE' });
+  });
+
+  it('blocks without touching the findings, and the session can not be built', () => {
+    const state = session(QTY(2), ...threeFindings);
+    const before = findings(state);
+    expect(blockFor(state, smallOrder)?.kind).toBe('IMPOSSIBLE');
+    expect(findings(state)).toEqual(before);
+    expect(before.map((f) => [f.defectId, f.qty])).toEqual([
+      ['D035', 2],
+      ['D005', 1],
+    ]);
+    expect(blockFor(session(...threeFindings), smallOrder)).not.toBeNull();
+    expect(() => buildSubmission(input(session(...threeFindings)))).toThrow();
   });
 });
 

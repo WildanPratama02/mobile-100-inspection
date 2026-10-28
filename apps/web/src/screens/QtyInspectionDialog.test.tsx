@@ -183,16 +183,12 @@ it.each([null, 2])(
     home();
     expect(screen.getByText(/3 defect tercatat, melebihi partial 2 pasang/)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'SUBMIT PO' }));
-    if (qty !== null) {
-      expect(
-        screen.getByRole('alertdialog', { name: 'Defect melebihi jumlah pasang' }),
-      ).toBeVisible();
-      fireEvent.click(screen.getByRole('button', { name: 'Mengerti' }));
-    } else {
-      expect(screen.getByRole('alertdialog', { name: 'QTY INSPECTION belum diisi' })).toBeVisible();
-      fireEvent.click(screen.getByRole('button', { name: 'Isi QTY INSPECTION' }));
-      fireEvent.click(within(dialog()).getByRole('button', { name: 'BATAL' }));
-    }
+    // IMPOSSIBLE before EMPTY (doc 05 §13.1): no value could be valid, so entering one would not help.
+    expect(
+      screen.getByRole('alertdialog', { name: 'Defect melebihi jumlah pasang' }),
+    ).toBeVisible();
+    expect(screen.queryByRole('alertdialog', { name: 'QTY INSPECTION belum diisi' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Mengerti' }));
     await expect(store.getState().submitPo(PO.po, defaultMapping())).rejects.toThrow();
     expect(await db.outbox.count()).toBe(0);
     edit();

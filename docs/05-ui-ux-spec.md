@@ -399,11 +399,13 @@ Run on tap of SUBMIT PO, in this order; the first failure stops with a blocking 
 |---|---|---|---|
 | No PO selected | (button disabled on Home) | — | — |
 | An inspection is active | "Inspeksi masih berjalan" | "Selesaikan inspeksi dulu (END INSPECTION)." | `Ke ADD DEFECT` (goes to S6) |
-| Qty Inspection is empty | "QTY INSPECTION belum diisi" | "Isi jumlah pasang yang diinspeksi sebelum SUBMIT PO." | `Isi QTY INSPECTION` (opens S5b) |
-| Qty Defect above the partial quantity / Qty Order (no valid Qty Inspection) | "Defect melebihi jumlah pasang" | "{n} defect tercatat, melebihi partial {max} pasang. Perbaiki defect (UNDO) atau partial." (or "… melebihi Qty Order {max} pasang. Perbaiki defect (UNDO).") | `Mengerti` |
+| Qty Defect above the partial quantity / Qty Order (no valid Qty Inspection), whether Qty Inspection is empty or entered | "Defect melebihi jumlah pasang" | "{n} defect tercatat, melebihi partial {max} pasang. Perbaiki defect (UNDO) atau partial." (or "… melebihi Qty Order {max} pasang. Perbaiki defect (UNDO).") | `Mengerti` |
+| Qty Inspection is empty (limits feasible) | "QTY INSPECTION belum diisi" | "Isi jumlah pasang yang diinspeksi sebelum SUBMIT PO." | `Isi QTY INSPECTION` (opens S5b) |
 | Qty Inspection below Qty Defect | "QTY INSPECTION kurang" | "QTY INSPECTION {q} pasang, tetapi {n} defect sudah tercatat. Minimal {n} pasang." | `Ubah QTY INSPECTION` (opens S5b) |
 | Qty Inspection above the partial quantity / Qty Order | "QTY INSPECTION terlalu besar" | "QTY INSPECTION {q} pasang melebihi partial {max} pasang." (PO PARTIAL set) or "QTY INSPECTION {q} pasang melebihi Qty Order {max} pasang." | `Ubah QTY INSPECTION` (opens S5b) |
 | PSI lv.2 and Top 5 photos missing | "Foto belum lengkap" | "PSI lv.2 wajib menambahkan foto pada Top 5 Defect. Belum ada foto untuk:" + the list of defect names | `Lengkapi foto` |
+
+The four Qty Inspection rows follow one shared rule, `checkQtyInspection` (doc 03 §5.5), in the order IMPOSSIBLE → EMPTY → BELOW → ABOVE (decided 28 Oct 2026): when no value can be valid, asking the PSI to enter one would not help, so the impossible limits are reported first. The Home notice (§8.2) and S5b (§10b) use the same order. A blocked SUBMIT PO seals nothing, and no finding is deleted or changed by the app.
 
 ### 13.2 Step 2 — confirmation
 
