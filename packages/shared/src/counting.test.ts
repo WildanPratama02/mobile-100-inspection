@@ -329,13 +329,15 @@ describe('qtyInspectionLimits and checkQtyInspection (BR-10)', () => {
     expect(checkQtyInspection(qty, limits)).toEqual(issue);
   });
 
-  it('reports an empty value before impossible limits', () => {
-    expect(checkQtyInspection(null, { min: 4, max: 3 })).toEqual({ kind: 'EMPTY' });
-    expect(checkQtyInspection(3, { min: 4, max: 3 })).toEqual({
-      kind: 'IMPOSSIBLE',
-      min: 4,
-      max: 3,
-    });
+  it.each([null, 1, 3, 4])('reports impossible limits before inspecting qty %s', (qty) => {
+    for (const partial of [null, { number: 1, qty: 3 }]) {
+      const limits = qtyInspectionLimits(4, partial, partial ? 100 : 3);
+      expect(checkQtyInspection(qty, limits)).toEqual({
+        kind: 'IMPOSSIBLE',
+        min: 4,
+        max: 3,
+      });
+    }
   });
 });
 

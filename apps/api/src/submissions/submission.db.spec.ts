@@ -352,6 +352,11 @@ describe('POST /v1/submissions (doc 02 §6.1, doc 03 §5.4)', () => {
     ['fraction', { rework: 10, bGrade: 2, qtyInspection: 30.5 }, null],
     ['string', { rework: 10, bGrade: 2, qtyInspection: '30' }, null],
     ['null', { rework: 10, bGrade: 2, qtyInspection: null }, null],
+    [
+      'empty with impossible partial',
+      { rework: 10, bGrade: 2, qtyInspection: null },
+      { number: 1, qty: 10 },
+    ],
     ['below findings', { rework: 10, bGrade: 2, qtyInspection: 10 }, null],
     ['above partial', { rework: 10, bGrade: 2, qtyInspection: 31 }, { number: 1, qty: 30 }],
     ['above order', { rework: 10, bGrade: 2, qtyInspection: 1201 }, null],

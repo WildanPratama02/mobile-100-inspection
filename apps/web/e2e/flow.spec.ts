@@ -1,10 +1,60 @@
 import { expect, test } from './fixtures';
-import { addPo, bar, choice, expectResults, login, openFamily, setQtyInspection } from './helpers';
+import {
+  addPo,
+  bar,
+  choice,
+  expectResults,
+  login,
+  openFamily,
+  outbox,
+  setQtyInspection,
+} from './helpers';
 import { undersized } from './tap';
 
 const PO = '0903359388';
 const BROKEN = 'BROKEN STITCHING/LOOSE STITCHING/SKIPPED STITCHING/OPEN SEAM';
 const THREAD = 'THREAD ENDS (>2mm)';
+
+for (const qty of [null, 2]) {
+  test(`impossible partial with quantity ${qty} cannot seal or synchronize`, async ({
+    page,
+    sql,
+    tablet,
+  }) => {
+    await page.goto('/');
+    await login(page, 'ANDI CONTOH');
+    await addPo(page, PO);
+    if (qty !== null) await setQtyInspection(page, qty);
+    await page.getByRole('button', { name: 'PO PARTIAL', exact: true }).click();
+    const partial = page.getByRole('dialog', { name: 'PO Partial' });
+    await partial.getByRole('checkbox', { name: /PO PARTIAL/ }).check();
+    await partial
+      .getByRole('group', { name: 'Qty partial' })
+      .getByRole('button', { name: '2', exact: true })
+      .click();
+    await partial.getByRole('button', { name: 'SIMPAN' }).click();
+    await expect(partial).toHaveCount(0);
+    await page.getByRole('button', { name: 'ADD DEFECT' }).click();
+    await page.getByRole('button', { name: 'REWORK', exact: true }).click();
+    await openFamily(page, 'QUARTER', 'Medial Quarter', 'Stitching');
+    for (let i = 0; i < 3; i++) await choice(page, BROKEN).click();
+    await page.getByRole('button', { name: 'END INSPECTION' }).click();
+    await bar(page, 'HOME').click();
+    await expect(page.getByText(/3 defect tercatat, melebihi partial 2 pasang/)).toBeVisible();
+    await page.getByRole('button', { name: 'SUBMIT PO' }).click();
+    await expect(page.getByRole('dialog', { name: 'Submit PO', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    expect(await outbox(page)).toEqual([]);
+    expect(
+      (
+        await sql(
+          'SELECT count(*)::int AS n FROM submissions s JOIN devices d ON d.id=s.device_id WHERE d.label=$1',
+          [tablet.label],
+        )
+      ).rows,
+    ).toEqual([{ n: 0 }]);
+  });
+}
 
 for (const viewport of [
   { width: 1280, height: 800 },

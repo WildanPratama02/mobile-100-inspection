@@ -174,18 +174,33 @@ it('detects a quantity above a newly reduced partial and offers correction', asy
   expect(dialog()).toBeVisible();
 });
 
-it('handles impossible limits without deleting findings or accepting a value', async () => {
-  await setQty(2);
-  await defects(3);
-  await store.getState().setPartial(PO.po, { number: 1, qty: 2 });
-  home();
-  expect(screen.getByText(/3 defect tercatat, melebihi partial 2 pasang/)).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: 'SUBMIT PO' }));
-  expect(screen.getByRole('alertdialog', { name: 'Defect melebihi jumlah pasang' })).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: 'Mengerti' }));
-  edit();
-  enter(3);
-  expect(save()).toBeDisabled();
-  expect(within(dialog()).getByText(/Jumlah defect \(3\) melebihi partial 2 pasang/)).toBeVisible();
-  expect(store.getState().sessions[PO.po]!.state.recorded).toHaveLength(3);
-});
+it.each([null, 2])(
+  'blocks impossible partial limits with quantity %s before sealing an outbox',
+  async (qty) => {
+    if (qty !== null) await setQty(qty);
+    await defects(3);
+    await store.getState().setPartial(PO.po, { number: 1, qty: 2 });
+    home();
+    expect(screen.getByText(/3 defect tercatat, melebihi partial 2 pasang/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'SUBMIT PO' }));
+    if (qty !== null) {
+      expect(
+        screen.getByRole('alertdialog', { name: 'Defect melebihi jumlah pasang' }),
+      ).toBeVisible();
+      fireEvent.click(screen.getByRole('button', { name: 'Mengerti' }));
+    } else {
+      expect(screen.getByRole('alertdialog', { name: 'QTY INSPECTION belum diisi' })).toBeVisible();
+      fireEvent.click(screen.getByRole('button', { name: 'Isi QTY INSPECTION' }));
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'BATAL' }));
+    }
+    await expect(store.getState().submitPo(PO.po, defaultMapping())).rejects.toThrow();
+    expect(await db.outbox.count()).toBe(0);
+    edit();
+    enter(3);
+    expect(save()).toBeDisabled();
+    expect(
+      within(dialog()).getByText(/Jumlah defect \(3\) melebihi partial 2 pasang/),
+    ).toBeVisible();
+    expect(store.getState().sessions[PO.po]!.state.recorded).toHaveLength(3);
+  },
+);

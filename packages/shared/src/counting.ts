@@ -93,8 +93,8 @@ export function checkQtyInspection(
   qty: number | null,
   { min, max }: QtyInspectionLimits,
 ): QtyInspectionIssue | null {
-  if (qty === null) return { kind: 'EMPTY' };
   if (min > max) return { kind: 'IMPOSSIBLE', min, max };
+  if (qty === null) return { kind: 'EMPTY' };
   if (qty < min) return { kind: 'BELOW', min };
   if (qty > max) return { kind: 'ABOVE', max };
   return null;
