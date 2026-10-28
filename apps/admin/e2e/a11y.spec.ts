@@ -38,7 +38,7 @@ for (const size of SIZES) {
     account,
     sql,
   }) => {
-    const sent = await sendSubmission(sql);
+    const sent = await sendSubmission(sql, size.width === 915 ? 'ADR-019' : 'ADR-008');
     await page.setViewportSize(size);
     await signIn(page, account);
 

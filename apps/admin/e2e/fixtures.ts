@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test as base, type Page } from '@playwright/test';
 import pg from 'pg';
+import type { CountingRule } from '@m100/shared';
 import { DATABASE_ENV, REPO_ROOT, apiPort } from '../../web/e2e/api/testApi';
 import { addTablet, type Sql } from '../../web/e2e/fixtures';
 
@@ -126,7 +127,7 @@ function wib(secondsAgo = 0): string {
  * One PSI lv.2 submission of DEWI CONTOH on F 3 / F3-10, PO 0903359388, sealed now (today's default filter), with
  * two defects and their two photos, sent through the tablet API like the outbox does.
  */
-export async function sendSubmission(sql: Sql): Promise<Sent> {
+export async function sendSubmission(sql: Sql, rule: CountingRule = 'ADR-008'): Promise<Sent> {
   const tablet = await addTablet(sql);
   const login = await fetch(`${api()}/auth/login`, {
     method: 'POST',
@@ -154,7 +155,10 @@ export async function sendSubmission(sql: Sql): Promise<Sent> {
     cell: 'F3-10',
     po: '0903359388',
     partial: null,
-    counts: { rework: 2, bGrade: 1, noDefect: 3 },
+    counts:
+      rule === 'ADR-019'
+        ? { rework: 2, bGrade: 1, qtyInspection: 30 }
+        : { rework: 2, bGrade: 1, noDefect: 3 },
     findings: [
       {
         inspectionType: 'REWORK',

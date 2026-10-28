@@ -249,5 +249,5 @@ Home: QTY INSPECTION row tappable (`StatRow onClick`, U20), dialog S5b with `Num
 
 ### T5.4 Admin app
 A1 list and A1b detail show the counting rule and the counts (doc 05 §20.3).
-- [ ] The detail of an ADR-019 submission shows Qty Inspection, REWORK and B-GRADE pairs and "Qty Inspection diisi PSI"; an ADR-008 one shows its NO DEFECT count and "Hitung per tap (lama)".
-- [ ] The admin Playwright tests pass with both kinds of submission in the database.
+- [x] The detail of an ADR-019 submission shows Qty Inspection, REWORK and B-GRADE pairs and "Qty Inspection diisi PSI"; an ADR-008 one shows its NO DEFECT count and "Hitung per tap (lama)".
+- [x] The admin Playwright tests pass with both kinds of submission in the database.

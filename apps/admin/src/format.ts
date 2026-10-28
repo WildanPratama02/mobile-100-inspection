@@ -1,7 +1,17 @@
 /** Screen formats of the admin app: the shared id-ID and WIB formatters (CLAUDE.md UI rules). */
-import { NO_VALUE, formatDateTime, formatRate, inspectionDate } from '@m100/shared';
+import {
+  NO_VALUE,
+  formatDateTime,
+  formatRate,
+  inspectionDate,
+  type CountingRule,
+} from '@m100/shared';
 
 export { NO_VALUE, formatCount, formatDate } from '@m100/shared';
+
+export function countingRuleLabel(rule: CountingRule): string {
+  return rule === 'ADR-019' ? 'Qty Inspection diisi PSI' : 'Hitung per tap (lama)';
+}
 
 /** A rate of a submission; "—" when Qty Inspection is 0 (BR-02). */
 export function rate(value: number, qtyInspection: number): string {
