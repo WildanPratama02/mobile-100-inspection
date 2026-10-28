@@ -1,4 +1,5 @@
 import { createHmac, randomBytes } from 'node:crypto';
+import { tamperSignature } from '../testing/tamper';
 import { TokenSigner } from './jwt';
 import {
   bearerToken,
@@ -91,8 +92,7 @@ describe('tablet token (doc 04 §2, ADR-014)', () => {
       'base64url',
     );
     expect(tokens.verify(`${h}.${other}.${s}`, { now }).ok).toBe(false);
-    const flipped = `${s.slice(0, -2)}${s.endsWith('AA') ? 'BB' : 'AA'}`;
-    expect(tokens.verify(`${h}.${p}.${flipped}`, { now }).ok).toBe(false);
+    expect(tokens.verify(tamperSignature(`${h}.${p}.${s}`), { now }).ok).toBe(false);
   });
 
   it('accepts a forged-looking token only when it is really signed with the key', () => {
