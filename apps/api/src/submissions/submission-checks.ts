@@ -37,7 +37,7 @@ export function checkSubmission(
   context: CheckContext,
 ): Failure[] {
   return [
-    ...checkCounts(request),
+    ...checkCounts(request, context.orderQty),
     ...checkDuplicateFindings(request),
     ...checkPartial(request, context.orderQty),
     ...checkPhotos(request, photos, context.defects),
@@ -47,12 +47,32 @@ export function checkSubmission(
 
 /**
  * Rules 3 and 4: at least one inspection, and every finding belongs to an inspection type that was started. The
- * request carries no totals; these are what makes the totals agree with the findings (ADR-008).
+ * request carries no totals. ADR-019 quantities are checked against findings and the PO's own limits.
  */
-export function checkCounts({ counts, findings }: SubmissionRequest): Failure[] {
+export function checkCounts(
+  { counts, findings, partial }: SubmissionRequest,
+  orderQty: number | null = null,
+): Failure[] {
   const failures: Failure[] = [];
-  // The schema admits only ADR-008 `noDefect` payloads until rule 3 of ADR-019 lands (T5.2).
-  if (counts.rework + counts.bGrade + (counts.noDefect ?? 0) < 1) {
+  if (counts.noDefect === undefined) {
+    const qtyDefect = findings.reduce((sum, f) => sum + f.qty, 0);
+    const maximum = partial?.qty ?? orderQty;
+    const impossible = maximum !== null && qtyDefect > maximum;
+    if (counts.qtyInspection < qtyDefect || impossible) {
+      failures.push({
+        path: 'counts.qtyInspection',
+        code: 'INVALID',
+        message: `Qty Inspection minimal ${qtyDefect}: jumlah defect yang tercatat.`,
+      });
+    }
+    if (maximum !== null && (counts.qtyInspection > maximum || impossible)) {
+      failures.push({
+        path: 'counts.qtyInspection',
+        code: 'INVALID',
+        message: `Qty Inspection maksimal ${maximum} pasang.`,
+      });
+    }
+  } else if (counts.rework + counts.bGrade + counts.noDefect < 1) {
     failures.push({
       path: 'counts',
       code: 'INVALID',

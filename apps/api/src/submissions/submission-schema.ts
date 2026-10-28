@@ -2,7 +2,7 @@
  * The `submission` part of `POST /submissions` (doc 04 §4.1, `SubmissionRequest` in `04-openapi.yaml`). The
  * tablet sends what happened, not totals: an unknown field, `totals` included, is refused (doc 03 §6).
  */
-import type { AreaId, DefectId } from '@m100/shared';
+import type { AreaId, DefectId, SubmissionCounts } from '@m100/shared';
 import { z } from 'zod';
 
 /** Findings per submission (doc 04 §7). */
@@ -46,7 +46,30 @@ export const submissionSchema = z.strictObject({
     .strictObject({ number: z.int().min(1).max(99), qty: z.int().min(1) })
     .nullable()
     .default(null),
-  counts: z.strictObject({ rework: count, bGrade: count, noDefect: count }),
+  counts: z
+    .strictObject({
+      rework: count,
+      bGrade: count,
+      noDefect: count.optional(),
+      qtyInspection: z
+        .int('Qty Inspection minimal 1.')
+        .min(1, 'Qty Inspection minimal 1.')
+        .optional(),
+    })
+    .superRefine((counts, ctx) => {
+      if ((counts.qtyInspection === undefined) === (counts.noDefect === undefined)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['qtyInspection'],
+          message: 'Qty Inspection wajib diisi.',
+        });
+      }
+    })
+    .transform((counts): SubmissionCounts =>
+      counts.noDefect === undefined
+        ? { rework: counts.rework, bGrade: counts.bGrade, qtyInspection: counts.qtyInspection! }
+        : { rework: counts.rework, bGrade: counts.bGrade, noDefect: counts.noDefect },
+    ),
   findings: z.array(finding).max(MAX_FINDINGS),
   photos: z
     .array(

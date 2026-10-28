@@ -3,6 +3,7 @@
  * (BR-07; the trigger and the grants enforce it). The caller validates, computes the totals (doc 04 §4.1) and puts
  * the photos into the store before calling `write` (T3.3).
  */
+import { countingRule } from '@m100/shared';
 import type {
   DefectId,
   Finding,
@@ -165,12 +166,13 @@ export class PgSubmissionRepository implements SubmissionRepository {
            username, level, factory, cell,
            po, article, model, destination, order_qty, podd, crd, partial_no, partial_qty,
            qty_rework, qty_bgrade_inspections, qty_no_defect,
-           qty_inspection, qty_a_grade, qty_b_grade, qty_defect, rft, defect_rate, photo_count)
+           qty_inspection, qty_a_grade, qty_b_grade, qty_defect, rft, defect_rate, photo_count, counting_rule)
          SELECT $1::uuid, $2::bytea, $3::timestamptz, $4::date, $5::text, $6::uuid,
                 $7::text, $8::text, $9::text, $10::text,
                 p.po, p.article, p.model, p.destination, p.order_qty, p.podd, p.crd, $12::smallint, $13::integer,
                 $14::integer, $15::integer, $16::integer,
-                $17::integer, $18::integer, $19::integer, $20::integer, $21::numeric, $22::numeric, $23::smallint
+                $17::integer, $18::integer, $19::integer, $20::integer, $21::numeric, $22::numeric, $23::smallint,
+                $24::text
            FROM pos p WHERE p.po = $11
          ON CONFLICT (id) DO NOTHING
          RETURNING ${STORED}`,
@@ -190,7 +192,6 @@ export class PgSubmissionRepository implements SubmissionRepository {
           s.partial?.qty ?? null,
           s.counts.rework,
           s.counts.bGrade,
-          // Only ADR-008 payloads pass validation until migration 0006 and `counting_rule` (T5.2).
           s.counts.noDefect ?? null,
           totals.qtyInspection,
           totals.qtyAGrade,
@@ -199,6 +200,7 @@ export class PgSubmissionRepository implements SubmissionRepository {
           passRate,
           defectRate,
           s.photos.length,
+          countingRule(s.counts),
         ],
       );
       const row = inserted.rows[0];

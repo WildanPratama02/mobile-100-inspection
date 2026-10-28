@@ -314,6 +314,90 @@ const result = (res: Response) => res.body as SubmissionResult;
 type Row = Record<string, unknown>;
 
 describe('POST /v1/submissions (doc 02 §6.1, doc 03 §5.4)', () => {
+  it('stores the manual quantity example with server-derived ADR-019 totals and replays unchanged', async () => {
+    const t = await tablet();
+    const b = body({
+      po: 'CX-0902368685',
+      counts: { rework: 10, bGrade: 2, qtyInspection: 30 },
+      partial: { number: 1, qty: 30 },
+    });
+    const sent = prepare(b, TOP);
+    const res = await post(sent, t);
+    expectWritten(res, 201, b.submissionUuid);
+    expect(result(res).totals).toEqual({
+      qtyInspection: 30,
+      qtyAGrade: 19,
+      qtyBGrade: 3,
+      qtyDefect: 11,
+      rft: 0.63333,
+      defectRate: 0.36667,
+    });
+    const row = (
+      await testDb.client.query<Row>(
+        'SELECT counting_rule, qty_no_defect, qty_a_grade FROM submissions WHERE id = $1',
+        [b.submissionUuid],
+      )
+    ).rows[0];
+    expect(row).toEqual({ counting_rule: 'ADR-019', qty_no_defect: null, qty_a_grade: 19 });
+    const repeat = await post(sent, t);
+    expectWritten(repeat, 200, b.submissionUuid);
+    expect(result(repeat).totals).toEqual(result(res).totals);
+  });
+
+  it.each([
+    ['both count shapes', { rework: 10, bGrade: 2, qtyInspection: 30, noDefect: 18 }, null],
+    ['neither count shape', { rework: 10, bGrade: 2 }, null],
+    ['zero', { rework: 10, bGrade: 2, qtyInspection: 0 }, null],
+    ['negative', { rework: 10, bGrade: 2, qtyInspection: -1 }, null],
+    ['fraction', { rework: 10, bGrade: 2, qtyInspection: 30.5 }, null],
+    ['string', { rework: 10, bGrade: 2, qtyInspection: '30' }, null],
+    ['null', { rework: 10, bGrade: 2, qtyInspection: null }, null],
+    ['below findings', { rework: 10, bGrade: 2, qtyInspection: 10 }, null],
+    ['above partial', { rework: 10, bGrade: 2, qtyInspection: 31 }, { number: 1, qty: 30 }],
+    ['above order', { rework: 10, bGrade: 2, qtyInspection: 1201 }, null],
+    [
+      'findings above maximum',
+      { rework: 10, bGrade: 2, qtyInspection: 10 },
+      { number: 1, qty: 10 },
+    ],
+  ])('rejects ADR-019 %s with 422 and no writes', async (_label, counts, partial) => {
+    const t = await tablet();
+    const b = body({ partial, po: 'CX-0902368685' });
+    // Deliberately malformed wire input: do not constrain it to the domain type.
+    const sent = prepare(b, TOP);
+    sent.json = JSON.stringify({ ...JSON.parse(sent.json), counts });
+    const res = await post(sent, t);
+    const problem = expectProblem(res, 422, 'VALIDATION_FAILED');
+    expect(problem.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'counts.qtyInspection', code: 'INVALID' }),
+      ]),
+    );
+    if (_label === 'findings above maximum') {
+      expect(problem.errors!.filter((e) => e.path === 'counts.qtyInspection')).toHaveLength(2);
+    }
+    expect(await submissionRows(b.submissionUuid)).toBe(0);
+    expect(filesOf(b.submissionUuid)).toEqual([]);
+  });
+
+  it('accepts a manual all-good inspection without REWORK or B-GRADE taps', async () => {
+    const t = await tablet(ANDI);
+    const b = body({
+      user: ANDI,
+      counts: { rework: 0, bGrade: 0, qtyInspection: 5 },
+      findings: [],
+      partial: null,
+    });
+    const res = await post(prepare(b), t);
+    expectWritten(res, 201, b.submissionUuid);
+    expect(result(res).totals).toMatchObject({
+      qtyInspection: 5,
+      qtyDefect: 0,
+      qtyAGrade: 5,
+      rft: 1,
+    });
+  });
+
   it('writes the doc 02 §9 example from PSI lv.2 with its Top 5 photos: 201, totals, files', async () => {
     const t = await tablet();
     const b = body();
@@ -331,7 +415,8 @@ describe('POST /v1/submissions (doc 02 §6.1, doc 03 §5.4)', () => {
 
     const { rows } = await testDb.client.query(
       `SELECT device_id AS "deviceId", inspection_date::text AS "inspectionDate", photo_count AS "photoCount",
-              encode(payload_sha256, 'hex') AS "payloadSha256", partial_no AS "partialNo", partial_qty AS "partialQty"
+              encode(payload_sha256, 'hex') AS "payloadSha256", partial_no AS "partialNo", partial_qty AS "partialQty",
+              counting_rule AS "countingRule", qty_no_defect AS "noDefect"
          FROM submissions WHERE id = $1`,
       [b.submissionUuid],
     );
@@ -342,6 +427,8 @@ describe('POST /v1/submissions (doc 02 §6.1, doc 03 §5.4)', () => {
       payloadSha256: sha256Hex(Buffer.from(sent.json)),
       partialNo: 1,
       partialQty: 12,
+      countingRule: 'ADR-008',
+      noDefect: 18,
     });
     expect(await findingRows(b.submissionUuid)).toBe(3);
     for (const [id, bytes] of sent.photos) {

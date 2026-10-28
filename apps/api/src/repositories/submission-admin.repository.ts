@@ -4,7 +4,13 @@
  * the trigger and the grants refuse any change anyway (BR-07). Rows come from `v_submissions` (doc 02 §8), so the
  * admin app and the reporting tools see the same values.
  */
-import type { Classification, DefectId, InspectionType, PsiLevel } from '@m100/shared';
+import type {
+  Classification,
+  CountingRule,
+  DefectId,
+  InspectionType,
+  PsiLevel,
+} from '@m100/shared';
 import type { Database, Queryable } from '../db/database';
 
 export const SUBMISSION_ADMIN_REPOSITORY = Symbol('SubmissionAdminRepository');
@@ -48,7 +54,7 @@ export interface SubmissionRow {
   partialText: string | null;
   qtyRework: number;
   qtyBGradeInspections: number;
-  qtyNoDefect: number;
+  qtyNoDefect: number | null;
   qtyInspection: number;
   qtyAGrade: number;
   qtyBGrade: number;
@@ -57,7 +63,7 @@ export interface SubmissionRow {
   rft: string;
   defectRate: string;
   photoCount: number;
-  countingRule: string;
+  countingRule: CountingRule;
 }
 
 export interface SubmissionFindingRow {
