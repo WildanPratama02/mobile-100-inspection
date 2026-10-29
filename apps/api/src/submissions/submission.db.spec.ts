@@ -200,7 +200,10 @@ type Body = Omit<SubmissionRequest, 'findings' | 'photos'> & {
 
 const SEALED_AT = '2026-10-16T14:32:05.123+07:00';
 
-/** The doc 02 §9 example from PSI lv.2: 30 inspections, 11 defects, 3 of them on B-GRADE pairs. */
+/**
+ * The doc 02 §9 example from PSI lv.2: 30 inspections, 11 defects, 3 of them on B-GRADE pairs. On a PO of 1.200
+ * with a partial of 30, so the 30 tapped pairs are within the maximum (ADR-021).
+ */
 function body(overrides: Partial<Body> = {}): Body {
   return {
     submissionUuid: randomUUID(),
@@ -209,8 +212,8 @@ function body(overrides: Partial<Body> = {}): Body {
     user: BUDI,
     factory: 'F 1',
     cell: 'F1-1',
-    po: '0902028839',
-    partial: { number: 1, qty: 12 },
+    po: 'CX-0902368685',
+    partial: { number: 1, qty: 30 },
     counts: { rework: 10, bGrade: 2, noDefect: 18 },
     findings: [
       finding('D035', 5),
@@ -431,7 +434,7 @@ describe('POST /v1/submissions (doc 02 §6.1, doc 03 §5.4)', () => {
       photoCount: 3,
       payloadSha256: sha256Hex(Buffer.from(sent.json)),
       partialNo: 1,
-      partialQty: 12,
+      partialQty: 30,
       countingRule: 'ADR-008',
       noDefect: 18,
     });
@@ -746,7 +749,7 @@ describe('POST /v1/submissions (doc 02 §6.1, doc 03 §5.4)', () => {
       expect(line).toMatchObject({
         submissionUuid: b.submissionUuid,
         username: 'TEST BUDI',
-        po: '0902028839',
+        po: 'CX-0902368685',
         photoCount: 3,
         durationMs: expect.any(Number) as number,
       });

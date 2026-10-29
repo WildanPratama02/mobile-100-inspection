@@ -106,6 +106,20 @@ describe('rules 3 and 4: counts against findings (doc 04 §4.2; the request carr
     ]);
   });
 
+  it('refuses tapped counts above Qty Order and accepts Qty Order itself (ADR-021)', () => {
+    const counts = { rework: 3, bGrade: 1, noDefect: 2 };
+    expect(checkCounts(request({ counts }), 5)).toEqual([
+      { path: 'counts', code: 'INVALID', message: 'Qty Inspection maksimal 5 pasang.' },
+    ]);
+    expect(checkCounts(request({ counts }), 6)).toEqual([]);
+  });
+
+  it('refuses tapped counts above the partial quantity (ADR-021)', () => {
+    const r = request({ partial: { number: 1, qty: 4 } });
+    expect(codes(checkCounts(r, 100))).toEqual([['counts', 'INVALID']]);
+    expect(checkCounts({ ...r, partial: { number: 1, qty: 6 } }, 100)).toEqual([]);
+  });
+
   it('refuses a B-GRADE finding without a B-GRADE inspection', () => {
     const r = request({
       counts: { rework: 1, bGrade: 0, noDefect: 0 },

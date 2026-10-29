@@ -10,7 +10,7 @@ for (const rule of ['ADR-008', 'ADR-019'] as const) {
   }) => {
     const sent = await sendSubmission(sql, rule);
     const manual = rule === 'ADR-019';
-    const ruleLabel = manual ? 'Qty Inspection diisi PSI' : 'Hitung per tap (lama)';
+    const ruleLabel = manual ? 'Qty Inspection diisi PSI' : 'Hitung per tap (NO DEFECT)';
     await signIn(page, account);
 
     // Default filter: today (WIB). Narrow to the PO so other tests' rows don't matter.
@@ -105,7 +105,7 @@ test('the same list distinguishes manual quantities from legacy tap counts', asy
   await page.getByLabel('PO', { exact: true }).fill(manual.po);
   await page.getByRole('button', { name: 'TAMPILKAN' }).click();
   await expect(page.getByRole('row').filter({ hasText: legacy.displayNo })).toContainText(
-    'Hitung per tap (lama)',
+    'Hitung per tap (NO DEFECT)',
   );
   await expect(page.getByRole('row').filter({ hasText: manual.displayNo })).toContainText(
     'Qty Inspection diisi PSI',

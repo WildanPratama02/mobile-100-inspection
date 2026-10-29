@@ -77,7 +77,10 @@ const jpeg = (seed: string) =>
 
 type Body = Omit<SubmissionRequest, 'findings'> & { findings: Omit<Finding, 'familyId'>[] };
 
-/** The doc 02 §9 example: 10 REWORK pairs with 8 defects, 2 B-GRADE pairs with 3, 18 NO DEFECT. */
+/**
+ * The doc 02 §9 example: 10 REWORK pairs with 8 defects, 2 B-GRADE pairs with 3, 18 NO DEFECT. On a PO of 1.200
+ * with a partial of 30, so the 30 tapped pairs are within the maximum (ADR-021).
+ */
 function body(overrides: Partial<Body> = {}): Body {
   return {
     submissionUuid: '0f6b6c1e-6a52-4c9f-9a3e-5d7a2b0c41f2',
@@ -86,8 +89,8 @@ function body(overrides: Partial<Body> = {}): Body {
     user: { username: 'TEST BUDI', level: 'PSI lv.2' },
     factory: 'F 1',
     cell: 'F1-1',
-    po: '0902028839',
-    partial: { number: 1, qty: 12 },
+    po: 'CX-0902368685',
+    partial: { number: 1, qty: 30 },
     counts: { rework: 10, bGrade: 2, noDefect: 18 },
     findings: [
       finding('D035', 5),
@@ -226,9 +229,24 @@ describe('SubmissionValidator (doc 04 §4.2)', () => {
 
   it('rule 6: refuses a partial quantity above the PO’s ORDER QTY (17)', async () => {
     const problem = await refusal(
-      validator.validate(parts(body({ partial: { number: 1, qty: 18 } }), TOP), BUDI, NOW),
+      validator.validate(
+        parts(body({ po: '0902028839', partial: { number: 1, qty: 18 } }), TOP),
+        BUDI,
+        NOW,
+      ),
     );
-    expect(paths(problem)).toEqual([['partial.qty', 'INVALID']]);
+    // The 30 tapped pairs are also above the maximum (ADR-021).
+    expect(paths(problem)).toEqual([
+      ['counts', 'INVALID'],
+      ['partial.qty', 'INVALID'],
+    ]);
+  });
+
+  it('refuses tapped pairs above the partial quantity (ADR-021)', async () => {
+    const problem = await refusal(
+      validator.validate(parts(body({ partial: { number: 1, qty: 29 } }), TOP), BUDI, NOW),
+    );
+    expect(paths(problem)).toEqual([['counts', 'INVALID']]);
   });
 
   describe('rule 4: findings against the master data', () => {

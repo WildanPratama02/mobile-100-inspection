@@ -47,7 +47,8 @@ export function checkSubmission(
 
 /**
  * Rules 3 and 4: at least one inspection, and every finding belongs to an inspection type that was started. The
- * request carries no totals. ADR-019 quantities are checked against findings and the PO's own limits.
+ * request carries no totals. ADR-019 quantities are checked against findings and the PO's own limits; tapped
+ * counts (ADR-021) against the PO's maximum.
  */
 export function checkCounts(
   { counts, findings, partial }: SubmissionRequest,
@@ -72,12 +73,23 @@ export function checkCounts(
         message: `Qty Inspection maksimal ${maximum} pasang.`,
       });
     }
-  } else if (counts.rework + counts.bGrade + counts.noDefect < 1) {
-    failures.push({
-      path: 'counts',
-      code: 'INVALID',
-      message: 'Qty Inspection 0: belum ada inspeksi.',
-    });
+  } else {
+    // Tapped counts (PSI lv.2, ADR-021): at least one pair, at most the partial quantity or Qty Order.
+    const pairs = counts.rework + counts.bGrade + counts.noDefect;
+    const maximum = partial?.qty ?? orderQty;
+    if (pairs < 1) {
+      failures.push({
+        path: 'counts',
+        code: 'INVALID',
+        message: 'Qty Inspection 0: belum ada inspeksi.',
+      });
+    } else if (maximum !== null && pairs > maximum) {
+      failures.push({
+        path: 'counts',
+        code: 'INVALID',
+        message: `Qty Inspection maksimal ${maximum} pasang.`,
+      });
+    }
   }
   findings.forEach((f, i) => {
     const started = f.inspectionType === 'REWORK' ? counts.rework : counts.bGrade;
