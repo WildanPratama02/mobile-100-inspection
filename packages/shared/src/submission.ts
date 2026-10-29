@@ -13,14 +13,24 @@ import {
   type RankedDefect,
   type SessionState,
 } from './counting';
-import type { Cell, DefectId, PoPartial, PsiLevel, SubmissionRequest, User } from './domain';
+import type {
+  Cell,
+  DefectId,
+  PoPartial,
+  PsiLevel,
+  SubmissionCounts,
+  SubmissionRequest,
+  User,
+} from './domain';
 import { toWibIso } from './format';
 import { missingPhotos, takesPhotos } from './photos';
 
 /** Why SUBMIT PO stops before the confirmation; each has its own dialog (doc 05 §13.1). */
 export type SubmitBlock =
   | { kind: 'ACTIVE' }
-  /** BR-10, in the order of `checkQtyInspection`: IMPOSSIBLE, EMPTY, BELOW, ABOVE. */
+  /** PSI lv.2 (`TAPPED`): no pair tapped yet (ADR-021). */
+  | { kind: 'NO_PAIRS' }
+  /** BR-10, in the order of `checkQtyInspection`: IMPOSSIBLE, EMPTY, BELOW, ABOVE; `TAPPED`: ABOVE only. */
   | QtyInspectionIssue
   /** PSI lv.2: the Top 5 defects without a photo, in rank order (BR-04). */
   | { kind: 'PHOTOS_MISSING'; defects: RankedDefect[] };
@@ -44,6 +54,7 @@ export function checkSubmit({
   po,
 }: SubmitCheckInput): SubmitBlock | null {
   if (state.active) return { kind: 'ACTIVE' };
+  if (state.mode === 'TAPPED' && totals(state, po).qtyInspection === 0) return { kind: 'NO_PAIRS' };
   // One priority rule for Home, S5b and SUBMIT PO: impossible limits before an empty value.
   const issue = totals(state, po).qtyInspectionIssue;
   if (issue) return issue;
@@ -93,12 +104,19 @@ export interface SubmissionInput {
 
 /**
  * The `submission` part of `POST /submissions` (doc 04 §4.1). Times are sent in WIB. Run `checkSubmit` first:
- * a session without Qty Inspection can't be built.
+ * a session without Qty Inspection can't be built. PSI lv.2 (`TAPPED`) sends its NO DEFECT taps, PSI lv.1
+ * (`ENTERED`) the Qty Inspection entered (ADR-021).
  */
 export function buildSubmission(input: SubmissionInput): SubmissionRequest {
   const { state, user } = input;
-  const { qtyInspection } = state;
-  if (qtyInspection === null) throw new Error('Qty Inspection is not entered');
+  const { rework, bGrade } = state.counts;
+  let counts: SubmissionCounts;
+  if (state.mode === 'TAPPED') {
+    counts = { rework, bGrade, noDefect: state.noDefect };
+  } else {
+    if (state.qtyInspection === null) throw new Error('Qty Inspection is not entered');
+    counts = { rework, bGrade, qtyInspection: state.qtyInspection };
+  }
   return {
     submissionUuid: input.submissionUuid,
     sealedAt: toWibIso(input.sealedAt),
@@ -108,7 +126,7 @@ export function buildSubmission(input: SubmissionInput): SubmissionRequest {
     cell: input.cell.cell,
     po: input.po,
     partial: input.partial ? { number: input.partial.number, qty: input.partial.qty } : null,
-    counts: { rework: state.counts.rework, bGrade: state.counts.bGrade, qtyInspection },
+    counts,
     findings: findings(state).map((f) => ({
       ...f,
       firstRecordedAt: toWibIso(f.firstRecordedAt),

@@ -26,15 +26,24 @@ const END: SessionEventPayload = { type: 'END' };
 const UNDO: SessionEventPayload = { type: 'UNDO' };
 const defect = (id: string): SessionEventPayload => ({ type: 'DEFECT', ...entry(id) });
 
-/** A session from its taps, one second apart from 13:00:01.250 WIB. */
-function session(...payloads: SessionEventPayload[]): SessionState {
-  const events = payloads.map((p, i): SessionEvent => ({
+/** Stored taps, one second apart from 13:00:01.250 WIB. */
+function events(payloads: SessionEventPayload[]): SessionEvent[] {
+  return payloads.map((p, i): SessionEvent => ({
     ...p,
     sessionId: 's1',
     seq: i + 1,
     at: new Date(Date.UTC(2026, 9, 16, 6, 0, i + 1, 250)).toISOString(),
   }));
-  return replay(events);
+}
+
+/** A PSI lv.1 session (`ENTERED`) from its taps. */
+function session(...payloads: SessionEventPayload[]): SessionState {
+  return replay(events(payloads));
+}
+
+/** A PSI lv.2 session (`TAPPED`, ADR-021) from its taps. */
+function tapped(...payloads: SessionEventPayload[]): SessionState {
+  return replay(events(payloads), 'TAPPED');
 }
 
 function check(state: SessionState, level: PsiLevel, photographed: DefectId[] = []) {
@@ -243,6 +252,44 @@ describe('buildSubmission (doc 04 §4.1)', () => {
     expect(JSON.stringify(buildSubmission(input(state)))).toBe(
       JSON.stringify(buildSubmission(input(state))),
     );
+  });
+});
+
+describe('PSI lv.2 with tapped counts (ADR-021)', () => {
+  const NO_DEFECT: SessionEventPayload = { type: 'NO_DEFECT' };
+  const po = (orderQty: number, partialQty?: number): PoQuantities => ({
+    orderQty,
+    partial: partialQty === undefined ? null : { number: 1, qty: partialQty },
+  });
+  const blockFor = (state: SessionState, quantities: PoQuantities = po(10002)) =>
+    checkSubmit({ po: quantities, state, level: 'PSI lv.2', top: [], photographed: new Set() });
+
+  it('stops while no pair is counted, also with a defect in an active inspection', () => {
+    expect(blockFor(tapped())).toEqual({ kind: 'NO_PAIRS' });
+    expect(blockFor(tapped(REWORK, defect('D035')))).toEqual({ kind: 'ACTIVE' });
+  });
+
+  it('needs no entered Qty Inspection: NO DEFECT or an ended inspection is enough', () => {
+    expect(blockFor(tapped(NO_DEFECT))).toBeNull();
+    expect(blockFor(tapped(REWORK, END))).toBeNull();
+  });
+
+  it('stops above a partial quantity lowered after the taps', () => {
+    expect(blockFor(tapped(NO_DEFECT, NO_DEFECT, NO_DEFECT), po(100, 2))).toEqual({
+      kind: 'ABOVE',
+      max: 2,
+    });
+  });
+
+  it('still asks for every Top 5 photo (BR-04)', () => {
+    const state = tapped(REWORK, defect('D035'), END);
+    expect(check(state, 'PSI lv.2')?.kind).toBe('PHOTOS_MISSING');
+    expect(check(state, 'PSI lv.2', ['D035'])).toBeNull();
+  });
+
+  it('sends the NO DEFECT taps, not a Qty Inspection (ADR-008 calculation on the API)', () => {
+    const state = tapped(NO_DEFECT, NO_DEFECT, REWORK, defect('D035'), END, BGRADE, END, QTY(40));
+    expect(buildSubmission(input(state)).counts).toEqual({ rework: 1, bGrade: 1, noDefect: 2 });
   });
 });
 

@@ -1,6 +1,7 @@
 // Login and logout (T1.2: FR-01, FR-02), against the API and the web fixtures imported into its test database.
 import { type Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { addPo, logout, stat, tapNoDefect } from './helpers';
 import { undersized } from './tap';
 
 const VIEWPORTS = [
@@ -18,13 +19,35 @@ async function pick(page: Page, field: 'Nama' | 'Factory' | 'Cell', option: stri
   await expect(page.getByRole('dialog')).toHaveCount(0);
 }
 
-async function login(page: Page) {
+async function login(page: Page, cell = 'F3-10') {
   await pick(page, 'Nama', 'DEWI CONTOH');
   await pick(page, 'Factory', 'F 3');
-  await pick(page, 'Cell', 'F3-10');
+  await pick(page, 'Cell', cell);
   await page.getByRole('button', { name: 'LOGIN' }).click();
   await expect(page.getByRole('button', { name: 'Pengaturan' })).toBeVisible();
 }
+
+test('another factory or cell starts with an empty PO list; the first comes back (ADR-021)', async ({
+  page,
+}) => {
+  await login(page);
+  await addPo(page, '0903359388');
+  await tapNoDefect(page, 2);
+  await expect(stat(page, 'Qty Inspection')).toHaveText('2');
+  await logout(page);
+
+  await login(page, 'F3-11');
+  await expect(page.getByLabel('Info PO')).toContainText('F3-11');
+  await expect(page.getByRole('region', { name: 'PO LIST' })).not.toContainText('0903359388');
+  await expect(page.getByText('Belum ada PO')).toBeVisible();
+  await addPo(page, '0903359388');
+  await expect(stat(page, 'Qty Inspection')).toHaveText('0');
+  await logout(page);
+
+  await login(page);
+  await expect(page.getByRole('region', { name: 'PO LIST' })).toContainText('0903359388');
+  await expect(stat(page, 'Qty Inspection')).toHaveText('2');
+});
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');

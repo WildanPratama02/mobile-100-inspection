@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Version | 2.1 — 27–28 Oct 2026: Qty Inspection entered by the PSI, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026): `counting_rule` column, `qty_no_defect` nullable, checks per rule (§4.1, §6.3, §9). v2.0 rewritten 20 Oct 2026 for ADR-018 (v1.0, the Google Sheets design, is superseded) |
+| Version | 2.2 — 29 Oct 2026: PSI lv.2 rows are `counting_rule = 'ADR-008'` again (ADR-021, §4.1); no schema change. 2.1 — 27–28 Oct 2026: Qty Inspection entered by the PSI, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026): `counting_rule` column, `qty_no_defect` nullable, checks per rule (§4.1, §6.3, §9). v2.0 rewritten 20 Oct 2026 for ADR-018 (v1.0, the Google Sheets design, is superseded) |
 | Date | 27 Oct 2026 |
 | Database | PostgreSQL 16, database `m100`, schema `public`, time zone `Asia/Jakarta` for sessions, all timestamps stored as `timestamptz` |
 | Photos | An object store behind the `PhotoStore` interface (S3 API; MinIO or another S3-compatible store, or a plain folder), bucket `m100-photos` |
@@ -158,6 +158,8 @@ Constraints (database level, so a bug in the API cannot store inconsistent numbe
 - `counting_rule = 'ADR-019'`: `qty_no_defect IS NULL`; `qty_inspection >= qty_defect`; `qty_a_grade = qty_inspection - qty_defect`; `qty_inspection <= COALESCE(partial_qty, order_qty)` (BR-10);
 - `counting_rule = 'ADR-008'`: `qty_no_defect IS NOT NULL`; `qty_inspection = qty_rework + qty_bgrade_inspections + qty_no_defect`; `qty_a_grade = qty_no_defect`.
 
+**ADR-021 (29 Oct 2026).** PSI lv.2 submissions count their pairs with taps again and are stored as `counting_rule = 'ADR-008'` (`level = 'PSI lv.2'`), with the ADR-008 calculation; no migration. The upper limit (pairs ≤ `COALESCE(partial_qty, order_qty)`) is checked by the tablet and the API (doc 04 §4.2 rule 3), not by a database check: older `ADR-008` rows were written without it.
+
 **Migration 0006 (ADR-019).** Adds `counting_rule` with default `'ADR-008'` (so every existing row is marked by the add itself, without an `UPDATE`, which the immutability trigger would refuse), then drops the default so the API must name the rule; drops `NOT NULL` on `qty_no_defect`; replaces `submissions_qty_inspection_sum_check` and `submissions_qty_a_grade_check` by the per-rule checks above; makes the views read `s.counting_rule` instead of the constant `'ADR-008'`. Existing rows are not changed. The API computes all totals itself from the tablet's counts and findings (doc 04 §4.1); the database re-checks `qty_defect` and `qty_b_grade` against the findings in the same transaction (§6.3).
 
 ### 4.2 `submission_findings`
@@ -278,7 +280,7 @@ Objects whose key has no `submission_photos` row and are older than 24 hours are
 
 ### 6.3 Totals
 
-Computed by the API from the tablet's `counts` and `findings` with the ADR-019 rules and **verified in the database** (§4.1). Formulas: Qty Inspection = `counts.qtyInspection` as entered by the PSI; Qty Defect = Σ `qty` (defect findings, not defective pairs); Qty B-Grade = Σ `qty` of B-GRADE findings; Qty A-Grade = Qty Inspection − Qty Defect; `rft` = A-Grade ÷ Qty Inspection; `defect_rate` = Qty Defect ÷ Qty Inspection (so `rft + defect_rate = 1`). Qty Inspection is at least 1 and at least Qty Defect, and at most the partial quantity or `order_qty` (BR-10), so the rates always have a denominator and A-Grade is never negative. The request carries no totals: the API computes them itself and the database checks them again in the same transaction, so neither the tablet nor a client can store totals that disagree. A payload sealed under ADR-008 (an older app version, `counts.noDefect` instead of `counts.qtyInspection`, doc 04 §4.1) is computed with the ADR-008 formulas (Qty Inspection = rework + B-GRADE inspections + NO DEFECT; Qty A-Grade = NO DEFECT) and stored with `counting_rule = 'ADR-008'`. Fractions are stored with 5 decimals; screens and exports show percentages with one decimal and an Indonesian decimal comma.
+Computed by the API from the tablet's `counts` and `findings` with the ADR-019 rules and **verified in the database** (§4.1). Formulas: Qty Inspection = `counts.qtyInspection` as entered by the PSI; Qty Defect = Σ `qty` (defect findings, not defective pairs); Qty B-Grade = Σ `qty` of B-GRADE findings; Qty A-Grade = Qty Inspection − Qty Defect; `rft` = A-Grade ÷ Qty Inspection; `defect_rate` = Qty Defect ÷ Qty Inspection (so `rft + defect_rate = 1`). Qty Inspection is at least 1 and at least Qty Defect, and at most the partial quantity or `order_qty` (BR-10), so the rates always have a denominator and A-Grade is never negative. The request carries no totals: the API computes them itself and the database checks them again in the same transaction, so neither the tablet nor a client can store totals that disagree. A payload with tapped counts (PSI lv.2 since ADR-021, or an older app version; `counts.noDefect` instead of `counts.qtyInspection`, doc 04 §4.1) is computed with the ADR-008 formulas (Qty Inspection = rework + B-GRADE inspections + NO DEFECT; Qty A-Grade = NO DEFECT) and stored with `counting_rule = 'ADR-008'`. Fractions are stored with 5 decimals; screens and exports show percentages with one decimal and an Indonesian decimal comma.
 
 ### 6.4 Time
 

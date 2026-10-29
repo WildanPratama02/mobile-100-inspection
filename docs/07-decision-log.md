@@ -114,7 +114,7 @@ Each entry records one decision: the situation, what was decided, and what it co
 
 ## ADR-008 — Inspection counting rules
 
-**Status: Superseded by ADR-019** (27 Oct 2026): Qty Inspection is entered by the PSI and NO DEFECT is removed; the two defect rows below still apply. Kept for history and for submissions marked `counting_rule = 'ADR-008'`.
+**Status: Superseded by ADR-019** (27 Oct 2026): Qty Inspection is entered by the PSI and NO DEFECT is removed; the two defect rows below still apply. Kept for history and for submissions marked `counting_rule = 'ADR-008'`. **Its calculation is used again for PSI lv.2 by ADR-021** (29 Oct 2026), with a pair counted at END INSPECTION and an upper limit.
 
 **Decision.** Confirmed by the product owner on 15 Oct 2026:
 
@@ -277,7 +277,7 @@ Defect Rate = Qty Defect ÷ Qty Inspection. Pass Rate (RFT) = Qty A-Grade ÷ Qty
 
 ## ADR-019 — Qty Inspection is entered by the PSI
 
-**Status: Accepted** by the product owner on 27 Oct 2026, **revised 28 Oct 2026**: Qty Defect counts defect findings, not defective pairs, and Qty A-Grade = Qty Inspection − Qty Defect. The pair-based calculation of the 27 Oct version (Qty A-Grade = Qty Inspection − REWORK pairs − B-GRADE pairs) is superseded and was never built. Supersedes ADR-008; its defect and B-Grade rules are carried over unchanged.
+**Status: Accepted** by the product owner on 27 Oct 2026, **revised 28 Oct 2026**, **amended by ADR-021 on 29 Oct 2026**: it now applies to **PSI lv.1 only**; PSI lv.2 counts Qty Inspection with taps again (ADR-021). The 28 Oct revision: Qty Defect counts defect findings, not defective pairs, and Qty A-Grade = Qty Inspection − Qty Defect. The pair-based calculation of the 27 Oct version (Qty A-Grade = Qty Inspection − REWORK pairs − B-GRADE pairs) is superseded and was never built. Supersedes ADR-008; its defect and B-Grade rules are carried over unchanged.
 
 **Situation.** Under ADR-008, Qty Inspection is counted one tap per pair: every pair needs a REWORK, B-GRADE or NO DEFECT tap, so each pair that passes costs one NO DEFECT tap and the results are only right if every pair is tapped. The product owner asked to replace the automatic count with a QTY INSPECTION that the PSI enters, and to calculate every result (Qty A-Grade, Defect Rate, Pass Rate) from that number and the defect findings.
 
@@ -327,3 +327,40 @@ Defect Rate = Qty Defect ÷ Qty Inspection. Pass Rate (RFT) = Qty A-Grade ÷ Qty
 - No data move; existing PG18 backups stay usable.
 - Work before release (not done yet): switch `install.ps1`'s default service and installer name, the `restore.ps1` help, the recovery runbook's `PG_BIN` example, doc 03 §1 and §7 and the deployment test fixtures to 18; obtain PostgreSQL 18 binaries for restore machines.
 - The running production database is not changed by this ADR.
+
+## ADR-021 — PSI lv.2 counts Qty Inspection with taps; data per factory and cell; slimmer exports
+
+**Status: Accepted** by the product owner on 29 Oct 2026. Amends ADR-019 (it now applies to PSI lv.1 only) and uses the ADR-008 calculation again for PSI lv.2.
+
+**Situation.** After ADR-019 every PSI enters QTY INSPECTION by hand. The product owner asked (29 Oct 2026) for:
+1. PSI lv.1: Qty Inspection entered by hand, without NO DEFECT (unchanged, ADR-019).
+2. PSI lv.2: Qty Inspection counted automatically from the NO DEFECT and END INSPECTION taps, Qty A-Grade = NO DEFECT, and Defect Rate and Pass Rate calculated directly.
+3. A login with another factory and cell starts with no inspection data and an empty PO list.
+4. EXPORT PDF and EXPORT EXCEL without the Foto column of TOP 5 DEFECT and without the Daftar Defect table.
+5. The admin app keeps working after a browser reload: it must not land on the tablet app.
+
+**Decision.**
+1. **Counting per PSI level.** PSI lv.1 keeps ADR-019 (`ENTERED`). PSI lv.2 counts with taps (`TAPPED`):
+
+| Figure | PSI lv.2 rule |
+|---|---|
+| Qty Inspection | NO DEFECT taps + ended REWORK and B-GRADE inspections (a pair counts at END INSPECTION; the active one not yet) |
+| Qty A-Grade | NO DEFECT taps |
+| Qty Defect | REWORK findings + B-GRADE findings (+1 per defect tapped, as ADR-019) |
+| Qty B-Grade | B-GRADE findings (as ADR-019) |
+
+Defect Rate = Qty Defect ÷ Qty Inspection; Pass Rate (RFT) = Qty A-Grade ÷ Qty Inspection; both shown live, `0,0%` while Qty Inspection is 0. Defect Rate + Pass Rate need not be 100% (a pair with several findings), as under ADR-008.
+
+2. **NO DEFECT** is back on the Defect screen (S6), for PSI lv.2 only, next to REWORK and B-GRADE: it records one A-Grade pair at once (no END INSPECTION), is disabled during an inspection, and UNDO right after it cancels that pair ("No Defect dibatalkan"). The QTY INSPECTION row on Home is not a button for PSI lv.2.
+3. **Upper limit (product owner's choice).** NO DEFECT, REWORK and B-GRADE are disabled once the pairs tapped (the active one included) reach the PO's partial quantity, otherwise its Qty Order; a notice says why. A defect tap inside an open inspection is never refused. SUBMIT PO is refused with no pair counted ("Belum ada pasang diinspeksi") and above the maximum (only possible after the partial was lowered). The API refuses tapped counts above the maximum on its own (`counts`, `INVALID`, doc 04 §4.2).
+4. **Payload and storage.** A PSI lv.2 session submits `counts: { rework, bGrade, noDefect }`, which the API already calculates and stores with the ADR-008 rules (`counting_rule = 'ADR-008'`, `qty_no_defect` set). No database migration. The admin app labels these rows "Hitung per tap (NO DEFECT)"; `level` tells PSI lv.2 rows from rows sealed before ADR-019.
+5. **Events of the other mode.** A PSI lv.2 session replays `NO_DEFECT` events and ignores `SET_QTY_INSPECTION` (a value entered under ADR-019 before the update; the PSI taps NO DEFECT for the pairs that passed). A PSI lv.1 session keeps ignoring `NO_DEFECT` (ADR-019 decision 9).
+6. **Data per factory and cell (product owner's choice: keep, not delete).** The tablet keeps POs, sessions and the screen state per username + factory + cell. A login with another factory or cell starts with an empty PO list; the data of the first comes back on a later login there. Each session is submitted with the factory and cell it was recorded in. Nothing is deleted. Rows from before this change have no factory and cell; the PSI's next login takes them over (doc 03 §4.4). The outbox stays per author, as before.
+7. **Exports.** TOP 5 DEFECT has no Foto column; the PDF table and the Excel sheet "Daftar Defect" are removed. The PDF keeps its photo section, and exporting still needs every Top 5 photo for PSI lv.2 (BR-04).
+8. **Admin reload.** The tablet's service worker never answers navigations under `/admin` (Workbox `navigateFallbackDenylist`), so a reload in a browser that once opened the tablet app reaches the admin app that Caddy serves. The floating toast lets taps through, so NO DEFECT can be tapped in a row.
+
+**Consequences.**
+- One tap per passed pair again for PSI lv.2; PSI lv.1 enters one number. Reports read `level` and `counting_rule` as before.
+- Risk accepted: a payload sealed before ADR-019 whose pairs exceed the partial quantity or Qty Order is now refused by the API (`422`) and stays Gagal on its tablet. None is expected.
+- The tablet's IndexedDB goes to version 3 (tables `poList` and `views` replace `pos` and `view`); an older app version can't read the new tables, so the app is not downgraded after the update.
+- Work: doc 08 Phase 6 (T6.1–T6.5).

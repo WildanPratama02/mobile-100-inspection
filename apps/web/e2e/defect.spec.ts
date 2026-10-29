@@ -103,16 +103,26 @@ test('records a REWORK with two defects, survives a reload and updates Home (AC-
   await page.getByRole('button', { name: 'END INSPECTION' }).click();
   await expect(toast(page)).toHaveText('Inspeksi selesai tanpa defect');
 
+  // PSI lv.2 (ADR-021): each ended pair counts, NO DEFECT adds an A-Grade pair.
+  await page.getByRole('button', { name: 'NO DEFECT' }).click();
+  await expect(toast(page)).toHaveText('No Defect tercatat. A-Grade +1');
+
   await bar(page, 'HOME').click();
-  await expect(stat(page, 'Qty Inspection')).toHaveText('\u2014');
+  await expect(stat(page, 'Qty Inspection')).toHaveText('3');
   await expect(stat(page, 'Qty Defect')).toHaveText('2');
+  await expect(stat(page, 'Qty A-Grade')).toHaveText('1');
   await expect(stat(page, 'Qty B-Grade')).toHaveText('0');
-  await expect(stat(page, 'Defect Rate')).toHaveText('0,0%');
+  await expect(stat(page, 'Defect Rate')).toHaveText('66,7%');
+  await expect(stat(page, 'Pass Rate (RFT)')).toHaveText('33,3%');
 });
 
 test('UNDO, BACK and the back gesture (FR-08)', async ({ page }) => {
   await openDefectScreen(page);
-  await expect(page.getByRole('button', { name: 'NO DEFECT' })).toHaveCount(0);
+  await expect(bar(page, 'UNDO')).toBeDisabled();
+  // PSI lv.2: UNDO right after NO DEFECT cancels that pair (ADR-021).
+  await page.getByRole('button', { name: 'NO DEFECT' }).click();
+  await bar(page, 'UNDO').click();
+  await expect(toast(page)).toHaveText('No Defect dibatalkan');
   await expect(bar(page, 'UNDO')).toBeDisabled();
 
   await page.getByRole('button', { name: 'REWORK' }).click();

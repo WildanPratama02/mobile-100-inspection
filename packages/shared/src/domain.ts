@@ -150,7 +150,10 @@ export type SessionEvent = SessionEventBase &
   (
     | { type: 'START_REWORK' }
     | { type: 'START_BGRADE' }
-    /** Legacy (ADR-008): no longer written; one left in a session open during the update is ignored (ADR-019). */
+    /**
+     * NO DEFECT of PSI lv.2: one A-Grade pair (ADR-021). In a PSI lv.1 session it can only be one left from
+     * before ADR-019, and is ignored (ADR-019 decision 9).
+     */
     | { type: 'NO_DEFECT' }
     | ({ type: 'DEFECT' } & AreaMapEntry)
     | { type: 'END' }
@@ -183,8 +186,8 @@ export interface InspectionCounts {
 }
 
 /**
- * `counts` of `POST /submissions` (doc 04 §4.1): exactly one of `qtyInspection` (ADR-019, entered by the PSI)
- * and `noDefect` (ADR-008, only in a session sealed by an app version from before ADR-019).
+ * `counts` of `POST /submissions` (doc 04 §4.1): exactly one of `qtyInspection` (ADR-019, entered by PSI lv.1)
+ * and `noDefect` (tapped, ADR-008 calculation: PSI lv.2 under ADR-021, or a session sealed before ADR-019).
  */
 export type SubmissionCounts = InspectionCounts &
   ({ qtyInspection: number; noDefect?: never } | { noDefect: number; qtyInspection?: never });

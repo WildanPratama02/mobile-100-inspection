@@ -1,4 +1,3 @@
-import { setQtyInspection } from './helpers';
 // The built app as a PWA: installable, and the whole Phase 1 flow with the network off after the first load
 // (T1.8; NFR-04, doc 03 §4.1, doc 05 §18). Runs against `vite preview` (project "pwa" in playwright.config.ts).
 import { type Page } from '@playwright/test';
@@ -49,6 +48,23 @@ test('is installable: manifest, icons and an active service worker', async ({ pa
     orientation: 'landscape',
     start_url: '/',
   });
+});
+
+test('leaves /admin/ to the server, so a reload of the admin app never shows the tablet app', async ({
+  page,
+}) => {
+  await firstLaunch(page);
+  await page.goto('/');
+  await expect
+    .poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null))
+    .toBe(true);
+  // A route of the tablet app is answered by the service worker's fallback ...
+  expect((await page.goto('/home'))?.fromServiceWorker()).toBe(true);
+  // ... an admin route never is (doc 05 §20: the admin app has no service worker).
+  for (const path of ['/admin', '/admin/', '/admin/submissions']) {
+    const answer = await page.goto(path);
+    expect(answer?.fromServiceWorker(), path).toBe(false);
+  }
 });
 
 test('runs under the production headers of deploy/Caddyfile without a CSP violation (T4.1)', async ({
@@ -144,18 +160,20 @@ test('after the first load, inspection, photos, results, export and SUBMIT PO wo
   await choice(page, DEFECT).click();
   await expect(choice(page, DEFECT)).toContainText('2');
   await page.getByRole('button', { name: 'END INSPECTION' }).click();
+  // PSI lv.2 counts the other 29 pairs with NO DEFECT (ADR-021).
+  for (let i = 0; i < 29; i++) await page.getByRole('button', { name: 'NO DEFECT' }).click();
   await bar(page, 'HOME').click();
 
-  await setQtyInspection(page, 30);
   // Home (S3): results and Top 5.
   await expectResults(page, {
     po: '10.002',
     inspection: '30',
     defect: '2',
-    aGrade: '28',
+    // ADR-021: A-Grade is the NO DEFECT taps.
+    aGrade: '29',
     bGrade: '0',
     defectRate: '6,7%',
-    passRate: '93,3%',
+    passRate: '96,7%',
   });
   await expectTop5(page, [[DEFECT, 'MAJOR', 2]]);
 

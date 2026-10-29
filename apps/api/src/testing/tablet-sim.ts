@@ -237,7 +237,8 @@ export function fiveDefectSubmission(photoBytes: number): SealedSubmission {
     user: { username: 'TEST BUDI', level: 'PSI lv.2' },
     factory: 'F 1',
     cell: 'F1-1',
-    po: '0902028839',
+    // Qty Order 1.200: the 30 tapped pairs are within the maximum (ADR-021).
+    po: 'CX-0902368685',
     partial: null,
     // 15 defects: 12 during REWORK, 3 during B-GRADE (one pair); 30 inspected.
     counts: { rework: 10, bGrade: 1, noDefect: 19 },

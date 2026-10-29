@@ -27,19 +27,24 @@ export function QtySubmitDialog({
       : issue === 'BELOW'
         ? 'QTY INSPECTION kurang'
         : 'QTY INSPECTION terlalu besar';
+  // PSI lv.2 taps Qty Inspection: it can only be too large after the partial was lowered (ADR-021).
+  const tapped = session.state.mode === 'TAPPED';
   const message =
     issue === 'IMPOSSIBLE'
       ? `${n} defect tercatat, melebihi ${limit}. Perbaiki defect (UNDO)${po.partial ? ' atau partial' : ''}.`
       : issue === 'BELOW'
         ? `QTY INSPECTION ${q} pasang, tetapi ${n} defect sudah tercatat. Minimal ${n} pasang.`
-        : `QTY INSPECTION ${q} pasang melebihi ${limit}.`;
+        : tapped
+          ? `QTY INSPECTION ${q} pasang melebihi ${limit}. Ubah partial.`
+          : `QTY INSPECTION ${q} pasang melebihi ${limit}.`;
+  const edits = issue !== 'IMPOSSIBLE' && !tapped;
   return (
     <Overlay>
       <Dialog title={title} role="alertdialog" onClose={false}>
         <p className="dialog__text">{message}</p>
         <div className="dialog__actions">
-          <Button variant="primary" onClick={issue === 'IMPOSSIBLE' ? onClose : onEdit}>
-            {issue === 'IMPOSSIBLE' ? 'Mengerti' : 'Ubah QTY INSPECTION'}
+          <Button variant="primary" onClick={edits ? onEdit : onClose}>
+            {edits ? 'Ubah QTY INSPECTION' : 'Mengerti'}
           </Button>
         </div>
       </Dialog>

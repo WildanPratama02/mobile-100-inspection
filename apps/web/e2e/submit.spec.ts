@@ -73,7 +73,8 @@ async function homeWithEndedInspection(page: Page, name: string) {
   await reworkWithDefect(page);
   await page.getByRole('button', { name: 'END INSPECTION' }).click();
   await goHome(page);
-  await setQtyInspection(page, 1);
+  // PSI lv.2 counted the ended pair (ADR-021); PSI lv.1 enters it (ADR-019).
+  if (name !== 'DEWI CONTOH') await setQtyInspection(page, 1);
 }
 
 /** A camera photo as the system camera hands it over. */
@@ -177,18 +178,13 @@ test('PSI lv.2: checks in order, confirmation, KIRIM into the outbox, kept after
 }) => {
   await homeWithPo(page, 'DEWI CONTOH');
 
-  // Qty Inspection is 0.
+  // No pair tapped yet (ADR-021): Ke ADD DEFECT opens S6.
   await submitPo(page);
-  const empty = page.getByRole('alertdialog', { name: 'QTY INSPECTION belum diisi' });
-  await expect(empty).toContainText('Isi jumlah pasang yang diinspeksi sebelum SUBMIT PO.');
-  await empty.getByRole('button', { name: 'Isi QTY INSPECTION' }).click();
-  await page
-    .getByRole('dialog', { name: 'QTY INSPECTION' })
-    .getByRole('button', { name: 'BATAL' })
-    .click();
+  const empty = page.getByRole('alertdialog', { name: 'Belum ada pasang diinspeksi' });
+  await expect(empty).toContainText('Tekan NO DEFECT untuk pasang tanpa defect');
+  await empty.getByRole('button', { name: 'Ke ADD DEFECT' }).click();
 
   // An inspection is active: checked before the missing photo; Ke ADD DEFECT opens S6.
-  await page.getByRole('button', { name: 'ADD DEFECT' }).click();
   await reworkWithDefect(page);
   await goHome(page);
   await submitPo(page);
@@ -198,7 +194,6 @@ test('PSI lv.2: checks in order, confirmation, KIRIM into the outbox, kept after
   await page.getByRole('button', { name: 'END INSPECTION' }).click();
   await goHome(page);
 
-  await setQtyInspection(page, 1);
   // BR-04: the Top 5 defect has no photo.
   await submitPo(page);
   const photos = page.getByRole('alertdialog', { name: 'Foto belum lengkap' });
@@ -222,7 +217,7 @@ test('PSI lv.2: checks in order, confirmation, KIRIM into the outbox, kept after
   await confirm(page).getByRole('button', { name: 'KIRIM' }).click();
   await expect(page.getByText('Tersimpan. Menunggu koneksi.')).toBeVisible();
   await expect(badge(page)).toHaveText('1');
-  await expect(results(page)).toContainText(/Qty Inspection\s*\u2014/);
+  await expect(results(page)).toContainText(/Qty Inspection\s*0/);
   await expect(top5(page)).toContainText('Belum ada defect');
 
   const sealed = await stored(page);
@@ -238,7 +233,8 @@ test('PSI lv.2: checks in order, confirmation, KIRIM into the outbox, kept after
     photos: Array<{ defectId: string; part: string }>;
   };
   expect(payload.sealedAt).toMatch(/\+07:00$/);
-  expect(payload.counts).toEqual({ rework: 1, bGrade: 0, qtyInspection: 1 });
+  // PSI lv.2 sends tapped counts (ADR-021).
+  expect(payload.counts).toEqual({ rework: 1, bGrade: 0, noDefect: 0 });
   expect(payload.findings).toHaveLength(1);
   expect(payload.photos.map((p) => p.part)).toEqual([`photo_${payload.findings[0]!.defectId}`]);
   expect(sealed.outboxPhotos).toEqual([payload.findings[0]!.defectId]);
@@ -254,7 +250,7 @@ test('PSI lv.2: checks in order, confirmation, KIRIM into the outbox, kept after
   // Everything survives closing and reopening the app (AC-11.2).
   await page.reload();
   await expect(badge(page)).toHaveText('1');
-  await expect(results(page)).toContainText(/Qty Inspection\s*\u2014/);
+  await expect(results(page)).toContainText(/Qty Inspection\s*0/);
   await expect((await openOutbox(page)).getByRole('listitem')).toContainText('Menunggu');
   // The reopened app tries the item at once and finds no connection: Menunggu again.
   await expect.poll(() => stored(page)).toEqual(sealed);

@@ -13,9 +13,11 @@ import {
   applyEvent,
   buildSubmission,
   checkSubmit,
-  EMPTY_SESSION,
+  countingMode,
+  emptySession,
   endInspection,
   findings,
+  noDefect,
   recordDefect,
   setQtyInspection,
   replay,
@@ -58,6 +60,8 @@ import {
 /** A tap on Home or the Defect screen (FR-06, FR-07, FR-08). */
 export type TapCommand =
   | { type: 'START'; inspection: InspectionType }
+  /** PSI lv.2 only (ADR-021). */
+  | { type: 'NO_DEFECT' }
   | { type: 'SET_QTY_INSPECTION'; qty: number }
   | { type: 'DEFECT'; entry: AreaMapEntry }
   | { type: 'END' }
@@ -164,7 +168,7 @@ export function submitBlock(
   mapping: Pick<MappingIndex, 'defect'>,
   po: Pick<PoRow, 'partial' | 'orderQty'>,
 ): SubmitBlock | null {
-  const state = session?.state ?? EMPTY_SESSION;
+  const state = session?.state ?? emptySession(countingMode(level));
   return checkSubmit({
     po,
     state,
@@ -211,7 +215,9 @@ function toPayload(
 ): SessionEventPayload | null {
   switch (command.type) {
     case 'START':
-      return startInspection(state, command.inspection);
+      return startInspection(state, command.inspection, po);
+    case 'NO_DEFECT':
+      return noDefect(state, po);
     case 'SET_QTY_INSPECTION':
       return setQtyInspection(state, command.qty, po);
     case 'DEFECT':
@@ -223,14 +229,19 @@ function toPayload(
   }
 }
 
+/**
+ * The logged-in PSI's data in the factory and cell of the login (ADR-021); rows from before ADR-021 are claimed
+ * for them first. Sessions replay with the PSI level's counting mode.
+ */
 async function loadUserData(db: M100Db, auth: Auth | null): Promise<UserData> {
   if (!auth) return LOGGED_OUT;
   const { username } = auth;
+  await repo.claimUnscoped(db, auth);
   const [pos, open, outbox, view] = await Promise.all([
-    repo.listPos(db, username),
-    repo.listOpenSessions(db, username),
+    repo.listPos(db, auth),
+    repo.listOpenSessions(db, auth),
     repo.listOutbox(db, username),
-    repo.getView(db, username),
+    repo.getView(db, auth),
   ]);
   const sessions: Record<string, PoSession> = {};
   for (const session of open) {
@@ -241,7 +252,7 @@ async function loadUserData(db: M100Db, auth: Auth | null): Promise<UserData> {
     sessions[session.po] = {
       session,
       events,
-      state: replay(events),
+      state: replay(events, countingMode(auth.level)),
       photos: Object.fromEntries(photos.map((p) => [p.defectId, p])),
     };
   }
@@ -272,6 +283,10 @@ export function createAppStore(
 
     function requireUser(): string {
       return requireAuth().username;
+    }
+
+    function emptyState(): SessionState {
+      return emptySession(countingMode(requireAuth().level));
     }
 
     function setPhotos(
@@ -412,15 +427,15 @@ export function createAppStore(
       // ADD TO PO LIST also selects the PO (doc 05 §9.2).
       addPo: (po, partial) =>
         serial(async () => {
-          const username = requireUser();
-          const added = await repo.addPo(db, username, po, partial, now());
+          const auth = requireAuth();
+          const added = await repo.addPo(db, auth, po, partial, now());
           const view = { ...get().view, selectedPo: po.po };
-          await repo.saveView(db, username, view);
+          await repo.saveView(db, auth, view);
           set((s) => ({
             pos: [added.po, ...s.pos],
             sessions: {
               ...s.sessions,
-              [po.po]: { session: added.session, events: [], state: EMPTY_SESSION, photos: {} },
+              [po.po]: { session: added.session, events: [], state: emptyState(), photos: {} },
             },
             view,
           }));
@@ -428,19 +443,18 @@ export function createAppStore(
 
       setPartial: (po, partial) =>
         serial(async () => {
-          const username = requireUser();
-          await repo.setPartial(db, username, po, partial);
+          await repo.setPartial(db, requireAuth(), po, partial);
           set((s) => ({ pos: s.pos.map((p) => (p.po === po ? { ...p, partial } : p)) }));
         }),
 
       removePo: (po) =>
         serial(async () => {
-          const username = requireUser();
-          await repo.removePo(db, username, po);
+          const auth = requireAuth();
+          await repo.removePo(db, auth, po);
           let view = get().view;
           if (view.selectedPo === po) {
             view = { ...view, selectedPo: null };
-            await repo.saveView(db, username, view);
+            await repo.saveView(db, auth, view);
           }
           set((s) => {
             const sessions = { ...s.sessions };
@@ -554,7 +568,7 @@ export function createAppStore(
           set((s) => ({
             sessions: {
               ...s.sessions,
-              [po]: { session, events: [], state: EMPTY_SESSION, photos: {} },
+              [po]: { session, events: [], state: emptyState(), photos: {} },
             },
             outbox: [item, ...s.outbox],
           }));
@@ -572,9 +586,8 @@ export function createAppStore(
 
       setView: (patch) =>
         serial(async () => {
-          const username = requireUser();
           const view = { ...get().view, ...patch };
-          await repo.saveView(db, username, view);
+          await repo.saveView(db, requireAuth(), view);
           set({ view });
         }),
     };

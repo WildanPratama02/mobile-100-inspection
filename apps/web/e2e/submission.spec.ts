@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { type Page } from '@playwright/test';
 import { PHOTO_DIR_ENV } from './api/testApi';
 import { expect, test, type Sql, type Tablet } from './fixtures';
-import { addPo, bar, choice, login, openFamily, top5 } from './helpers';
+import { addPo, bar, choice, login, openFamily, tapNoDefect, top5 } from './helpers';
 
 const PO = '0903359388';
 // Quarter › Medial / Lateral Quarter › Stitching (reference/mapping/mapping.json).
@@ -257,8 +257,8 @@ test('PSI lv.2 with five Top 5 photos: submission, findings and photo files (AC-
     ['Medial Quarter', D035],
     ['Lateral Quarter', D039],
   ]);
-  await enterInspection(page);
-  await enterInspection(page);
+  // PSI lv.2 counts pairs with taps (ADR-021): 7 NO DEFECT + 3 inspections.
+  await tapNoDefect(page, 7);
   await inspect(page, 'REWORK', [
     ['Medial Quarter', D032],
     ['Medial Quarter', D040],
@@ -293,16 +293,16 @@ test('PSI lv.2 with five Top 5 photos: submission, findings and photo files (AC-
     partial_no: null,
     partial_qty: null,
     partial_text: null,
-    // ADR-019: Qty Inspection 30, six findings, two of them during B-GRADE.
+    // ADR-021: tapped counts, calculated as ADR-008. 10 pairs, 7 NO DEFECT, six findings, two during B-GRADE.
     qty_rework: 2,
     qty_bgrade_inspections: 1,
-    qty_no_defect: null,
-    qty_inspection: 30,
-    qty_a_grade: 24,
+    qty_no_defect: 7,
+    qty_inspection: 10,
+    qty_a_grade: 7,
     qty_b_grade: 2,
     qty_defect: 6,
-    rft: '0.80000',
-    defect_rate: '0.20000',
+    rft: '0.70000',
+    defect_rate: '0.60000',
     photo_count: 5,
   });
 

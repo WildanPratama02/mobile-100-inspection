@@ -1,6 +1,6 @@
 /**
  * EXPORT PDF (FR-12, doc 05 §8.5): an A4 report with the company mark and the title on every page header
- * (doc 05 §4a), then PO info, results, TOP 5 DEFECT, the photos (AC-12.2) and the full defect list.
+ * (doc 05 §4a), then PO info, results, TOP 5 DEFECT and the photos (AC-12.2). No full defect list (ADR-021).
  *
  * The page is printed, so it is drawn in black and greys only; the screen's colour tokens don't apply.
  */
@@ -121,26 +121,17 @@ export function toPdf(report: ExportReport, assets: PdfAssets): Blob {
     headStyles: { halign: 'center' },
   });
 
-  const photoColumn = report.top5.some((row) => row.photo !== null);
   table({
     startY: title('TOP 5 DEFECT', tableEnd(doc) + 8),
-    head: [['No', 'Defect', 'Klasifikasi', 'Area', 'Qty', ...(photoColumn ? ['Foto'] : [])]],
+    head: [['No', 'Defect', 'Klasifikasi', 'Area', 'Qty']],
     body:
       report.top5.length === 0
-        ? [[{ content: NO_DEFECT_TEXT, colSpan: photoColumn ? 6 : 5 }]]
-        : report.top5.map((t) => [
-            t.no,
-            t.name,
-            t.classification,
-            t.areas,
-            formatCount(t.qty),
-            ...(photoColumn ? [t.photo ? 'Ada' : '-'] : []),
-          ]),
+        ? [[{ content: NO_DEFECT_TEXT, colSpan: 5 }]]
+        : report.top5.map((t) => [t.no, t.name, t.classification, t.areas, formatCount(t.qty)]),
     columnStyles: {
       0: { cellWidth: 9, halign: 'center' },
       2: { cellWidth: 20 },
       4: { cellWidth: 12, halign: 'right' },
-      5: { cellWidth: 12, halign: 'center' },
     },
   });
 
@@ -180,38 +171,7 @@ export function toPdf(report: ExportReport, assets: PdfAssets): Blob {
       doc.text(lines.slice(0, 2), x, y + PHOTO_H + 3.5);
       x += PHOTO_W + PHOTO_GAP;
     }
-    y += rowH + 4;
   }
-
-  if (y + 20 > FOOTER_Y - 6) {
-    doc.addPage();
-    header();
-    y = CONTENT_TOP + 4;
-  }
-  table({
-    startY: title('DAFTAR DEFECT', y),
-    head: [['No', 'Tipe', 'Area', 'Sub Area', 'Family', 'Defect', 'Klasifikasi', 'Qty']],
-    body:
-      report.defects.length === 0
-        ? [[{ content: NO_DEFECT_TEXT, colSpan: 8 }]]
-        : report.defects.map((d) => [
-            d.no,
-            d.inspectionType,
-            d.area,
-            d.subArea,
-            d.family,
-            d.name,
-            d.classification,
-            formatCount(d.qty),
-          ]),
-    styles: { fontSize: 7.5, cellPadding: 1.4 },
-    columnStyles: {
-      0: { cellWidth: 8, halign: 'center' },
-      1: { cellWidth: 16 },
-      6: { cellWidth: 18 },
-      7: { cellWidth: 10, halign: 'right' },
-    },
-  });
 
   const pages = doc.getNumberOfPages();
   for (let i = 1; i <= pages; i++) {

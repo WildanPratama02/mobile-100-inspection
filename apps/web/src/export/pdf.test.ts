@@ -15,7 +15,7 @@ async function pdfText(report: ExportReport): Promise<string> {
 }
 
 describe('toPdf (FR-12)', () => {
-  it('is a PDF with the title, PO info, results, Top 5 and the defect list (AC-12.1)', async () => {
+  it('is a PDF with the title, PO info, results and Top 5 (AC-12.1)', async () => {
     const pdf = await pdfText(REPORT);
     expect(pdf.startsWith('%PDF-')).toBe(true);
     expect(pdf).toContain(`(${EXPORT_TITLE})`);
@@ -28,11 +28,15 @@ describe('toPdf (FR-12)', () => {
     expect(pdf).toContain('(10.002)');
     expect(pdf).toContain('18,8%');
     expect(pdf).toContain('TOP 5 DEFECT');
-    expect(pdf).toContain('DAFTAR DEFECT');
-    for (const value of ['BOND GAP', 'Vamp Center', 'Bonding', 'B-GRADE', 'CRITICAL']) {
-      expect(pdf).toContain(value);
-    }
+    for (const value of ['BOND GAP', 'VAMP, TOE BOX', 'CRITICAL']) expect(pdf).toContain(value);
     expect(pdf).toContain('Halaman 1 / ');
+  });
+
+  it('has no Foto column and no DAFTAR DEFECT table (ADR-021)', async () => {
+    const pdf = await pdfText(REPORT);
+    expect(pdf).not.toContain('(Foto)');
+    expect(pdf).not.toContain('DAFTAR DEFECT');
+    expect(pdf).not.toContain('Sub Area');
   });
 
   it('includes the attached photos with their defect names (AC-12.2)', async () => {
@@ -67,10 +71,13 @@ describe('toPdf (FR-12)', () => {
     expect(pdf).not.toContain('0.314 g');
   });
 
-  it('repeats the header on every page of a long defect list', async () => {
+  it('repeats the header on every page of a long photo section', async () => {
     const long: ExportReport = {
       ...REPORT,
-      defects: Array.from({ length: 120 }, (_, i) => ({ ...REPORT.defects[0]!, no: i + 1 })),
+      photos: Array.from({ length: 30 }, (_, i) => ({
+        ...REPORT.photos[2]!,
+        defectId: `D${String(i + 10).padStart(3, '0')}`,
+      })),
     };
     const pdf = await pdfText(long);
     const pages = Number(/Halaman 1 \/ (\d+)/.exec(pdf)?.[1]);

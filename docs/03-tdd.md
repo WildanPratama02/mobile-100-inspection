@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Version | 0.4 — Qty Inspection entered by the PSI (ADR-019: §3, §4.2, §5.5, §5.7, §8). v0.3 — PostgreSQL + photo store + admin app (ADR-018) |
+| Version | 0.5 — 29 Oct 2026 (ADR-021): counting mode per PSI level, `NO_DEFECT` events for PSI lv.2, Dexie version 3 with POs, sessions and screen per factory and cell (§4.2, §4.4), `/admin` out of the service worker (§4.1). 0.4 — Qty Inspection entered by the PSI (ADR-019: §3, §4.2, §5.5, §5.7, §8). v0.3 — PostgreSQL + photo store + admin app (ADR-018) |
 | Date | 27 Oct 2026 |
 | Status | Replaces v0.2, which was built on Google Sheets and Drive. Everything here can be built now. The HTTPS method is decided (option A, `m100.qdms.web.id`, §7.2, ADR-016); the server is known (Windows, operated by QIP Digital). Photo store decided: a plain folder for release 1 (§5.2). Open: the server pre-checks of §7.3. |
 | Related | [01 PRD](01-prd.md); [02 Data Design](02-data-design.md) v2.1; [04 API Contract](04-api-contract.md) v2.1; ADR-004, 005, 014, 015, 016, **018**, **019** in [07 Decision Log](07-decision-log.md) |
@@ -86,7 +86,7 @@ docs/
 
 ### 4.1 Build and service worker
 
-- Vite + `vite-plugin-pwa` (Workbox, `generateSW`). The service worker **precaches the whole app shell**: HTML, JS, CSS, self-hosted fonts, the shoe image, the mapping fallback. Navigation requests fall back to the cached `index.html`.
+- Vite + `vite-plugin-pwa` (Workbox, `generateSW`). The service worker **precaches the whole app shell**: HTML, JS, CSS, self-hosted fonts, the shoe image, the mapping fallback. Navigation requests fall back to the cached `index.html`, except under `/v1/` and `/admin` (`navigateFallbackDenylist`): the admin app has no service worker, and without the denylist a reload of `/admin/…` in a browser that once opened the tablet app would show the tablet app (ADR-021).
 - **API calls are never cached by the service worker.** Offline data lives in IndexedDB, written by app code, so it can be versioned, scoped per user and cleared deliberately.
 - Web app manifest: `display: standalone`, `orientation: landscape` (portrait and phone widths still work, NFR-01), name "Mobile 100% Inspection", icon from the company logo.
 - Requires a secure context (§7.2). On `http://localhost` it works for development.
@@ -98,15 +98,19 @@ docs/
 | `meta` | key | `deviceKey`, `installedAt`, `appVersion`, `masterDataVersion`, `masterDataFetchedAt` |
 | `masterData` | `'current'` | the `/master-data` document as received (users, factories/cells, areas, families, defects, map) |
 | `auth` | `'current'` | username, level, factory, cell, token, token expiry |
-| `pos` | `[username, po]` | PO details from `/pos`, partial `{number, qty}` or none, `addedAt` |
-| `sessions` | `id` | `username`, `po`, `status: open`, `createdAt` |
-| `events` | `[sessionId, seq]` | one row per tap: `START_REWORK`, `START_BGRADE`, `DEFECT{areaId, subAreaId, familyId, defectId}`, `END`, `UNDO`, `SET_QTY_INSPECTION{qty}` (SIMPAN in the QTY INSPECTION dialog, FR-15), with a timestamp. `NO_DEFECT` is no longer written (ADR-019); one left in a session that was open during the update is ignored by the reducer |
+| `poList` | `[username, factory, cell, po]` | PO details from `/pos`, partial `{number, qty}` or none, `addedAt`, and the factory and cell of the login (ADR-021) |
+| `sessions` | `id` | `username`, `factory`, `cell`, `po`, `status: open`, `createdAt`; indexed by `[username+factory+cell(+po+status)]` |
+| `events` | `[sessionId, seq]` | one row per tap: `START_REWORK`, `START_BGRADE`, `DEFECT{areaId, subAreaId, familyId, defectId}`, `END`, `UNDO`, `SET_QTY_INSPECTION{qty}` (SIMPAN in the QTY INSPECTION dialog, FR-15, PSI lv.1), `NO_DEFECT` (PSI lv.2, ADR-021), with a timestamp |
 | `photos` | `[sessionId, defectId]` | JPEG blob (≤ 960 px, ≤ 1 MB), SHA-256, taken-at |
 | `outbox` | `submissionUuid` | sealed submission (§4.6) |
 | `outboxPhotos` | `[submissionUuid, defectId]` | the photo blobs of a sealed session |
-| `view` | `username` | the screen (Home or Defect), the selected PO and the Defect drill-down path, so a restart returns to the same place (doc 05 §4, §8.4, §11.5, AC-06.2); per user because tablets are shared (BR-09) |
+| `views` | `[username, factory, cell]` | the screen (Home or Defect), the selected PO and the Defect drill-down path, so a restart returns to the same place (doc 05 §4, §8.4, §11.5, AC-06.2); per user and per factory and cell because tablets are shared (BR-09, ADR-021) |
+
+**Schema versions.** Version 1 had `pos` keyed `[username, po]` and `view` keyed `username`. A primary key can't change in IndexedDB, so version 2 (ADR-021) adds `poList` and `views`, copies every old row into them with `factory` and `cell` set to `''` (unscoped), and gives every `sessions` row `factory = cell = ''`; version 3 drops `pos` and `view`. An unscoped row belongs to no login until its PSI logs in again (§4.4).
 
 **A session is the result of reducing its event list** with the pure functions of `packages/shared`. Persisting events instead of counters makes the rules of persistence trivial: one tap = one IndexedDB write of one event, and the screen is updated from the stored result (NFR-05, AC-06.2). UNDO is an event that the reducer interprets by the cases of FR-08 (it never touches Qty Inspection). Qty Inspection is the `qty` of the session's last `SET_QTY_INSPECTION` event, empty when there is none (ADR-019); a `SET_QTY_INSPECTION` changes nothing else, so the UNDO history of the findings survives it. Recording a finding is never refused because of Qty Inspection (ADR-019 decision 6). **Legacy events:** every event is persisted and replayed when a session is loaded, so a session open during the update can still hold `NO_DEFECT` events; the reducer ignores them (no figure, no UNDO state), which is the compatibility strategy of ADR-019 decision 9. Sealed ADR-008 sessions in the outbox are never replayed: their payload bytes are sent as stored. Totals, Top 5 and the findings list of FR-09 are derived, never stored. Sealing (§4.6) puts the session's Qty Inspection into `counts.qtyInspection` and never writes `noDefect`.
+
+**Counting mode per PSI level (ADR-021).** The reducer runs in one of two modes, from the logged-in PSI's level (`countingMode` in `packages/shared`): `ENTERED` for PSI lv.1 (everything above) and `TAPPED` for PSI lv.2. In `TAPPED`: `NO_DEFECT` adds one A-Grade pair (refused during an inspection) and makes UNDO cancel it; `SET_QTY_INSPECTION` is ignored; Qty Inspection = NO DEFECT + REWORK + B-GRADE inspections started − the active one; the commands `noDefect` and `startInspection(…, po)` refuse a pair once NO DEFECT + REWORK + B-GRADE reach the partial quantity or Qty Order (`canAddPair`); sealing puts `noDefect` into `counts` and no `qtyInspection`. In `ENTERED`, `NO_DEFECT` events stay ignored (ADR-019 decision 9).
 
 ### 4.3 State and the persistence rule
 
@@ -114,7 +118,9 @@ Zustand holds the current view state (selected PO, drill-down path). Anything th
 
 ### 4.4 Shared tablets
 
-- `sessions`, `pos` and `events` carry the username; every query filters by it (AC-02.3). A PSI never sees another's sessions.
+- `sessions`, `poList` and `events` carry the username; every query filters by it (AC-02.3). A PSI never sees another's sessions.
+- `poList`, `sessions` and `views` also carry the factory and cell of the login, and the PO list, open sessions and screen are read for the login's username + factory + cell only (`Scope`, AC-02.4, ADR-021). A login with another factory or cell starts empty; the first factory and cell's data comes back on a later login there. SUBMIT PO seals with the login's factory and cell, which are always those of the session.
+- On every login and hydrate the store first claims the PSI's unscoped rows (`repo.claimUnscoped`, from before version 2): their POs, sessions and screen get the login's factory and cell, so a session open during the update is not lost. A PO already listed in that factory and cell keeps its own data; the old row stays unscoped.
 - LOGOUT deletes `auth` only. Sessions, POs and photos stay (AC-02.2).
 - `outbox` items keep the **author's token** next to the submission, so a submission sealed by PSI A is sent as A even after B has logged in (doc 04 §2). The sender refreshes that token itself if it is within 7 days of expiry.
 - The device key is per tablet, not per user, and is not removed by logout.

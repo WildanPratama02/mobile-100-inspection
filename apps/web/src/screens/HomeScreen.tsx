@@ -10,7 +10,8 @@
  */
 import { useRef, useState, type ChangeEvent } from 'react';
 import {
-  EMPTY_SESSION,
+  countingMode,
+  emptySession,
   findings,
   formatCount,
   formatPartial,
@@ -21,6 +22,7 @@ import {
   top5,
   totals,
   type Classification,
+  type CountingMode,
   type DefectId,
   type MappingIndex,
   type RankedDefect,
@@ -64,7 +66,12 @@ import { MissingPhotosDialog } from './MissingPhotosDialog';
 import { PartialDialog } from './PartialDialog';
 import { PhotoViewDialog } from './PhotoViewDialog';
 import { SettingsDialog } from './SettingsDialog';
-import { SubmitActiveDialog, SubmitConfirmDialog, SubmitEmptyDialog } from './SubmitDialogs';
+import {
+  SubmitActiveDialog,
+  SubmitConfirmDialog,
+  SubmitEmptyDialog,
+  SubmitNoPairsDialog,
+} from './SubmitDialogs';
 import { QtyInspectionDialog } from './QtyInspectionDialog';
 import { QtySubmitDialog } from './QtySubmitDialog';
 import { qtyNotice } from './qtyInspectionNotice';
@@ -85,6 +92,7 @@ type Open =
   | { kind: 'photo'; defectId: DefectId }
   | { kind: 'missing-photos'; names: string[] }
   | { kind: 'submit-active' }
+  | { kind: 'submit-no-pairs' }
   | { kind: 'submit-empty' }
   | { kind: 'submit-confirm' };
 type QtyOpen = { kind: 'qty' } | { kind: 'submit-qty'; issue: 'BELOW' | 'ABOVE' | 'IMPOSSIBLE' };
@@ -171,6 +179,7 @@ export function HomeScreen({ auth }: HomeScreenProps) {
     const block = submitBlock(auth.level, session, mapping, po);
     if (!block) setOpen({ kind: 'submit-confirm' });
     else if (block.kind === 'ACTIVE') setOpen({ kind: 'submit-active' });
+    else if (block.kind === 'NO_PAIRS') setOpen({ kind: 'submit-no-pairs' });
     else if (block.kind === 'EMPTY') setOpen({ kind: 'submit-empty' });
     else if (block.kind === 'BELOW' || block.kind === 'ABOVE' || block.kind === 'IMPOSSIBLE')
       setOpen({ kind: 'submit-qty', issue: block.kind });
@@ -296,7 +305,12 @@ export function HomeScreen({ auth }: HomeScreenProps) {
         </Pane>
 
         <Pane label="Hasil" className="home__stats">
-          <Results po={po} session={session} onEdit={() => setOpen({ kind: 'qty' })} />
+          <Results
+            po={po}
+            session={session}
+            mode={countingMode(auth.level)}
+            onEdit={() => setOpen({ kind: 'qty' })}
+          />
         </Pane>
 
         {active ? (
@@ -370,6 +384,14 @@ export function HomeScreen({ auth }: HomeScreenProps) {
       ) : null}
       {open?.kind === 'submit-active' ? (
         <SubmitActiveDialog
+          onAddDefect={() => {
+            close();
+            void setView({ screen: 'defect', defectPath: NO_PATH });
+          }}
+        />
+      ) : null}
+      {open?.kind === 'submit-no-pairs' ? (
+        <SubmitNoPairsDialog
           onAddDefect={() => {
             close();
             void setView({ screen: 'defect', defectPath: NO_PATH });
@@ -583,8 +605,16 @@ function Empty({ title, hint }: { title: string; hint: string }) {
   );
 }
 
-/** The results box (FR-04): seven values, using zero fallbacks until Qty Inspection is valid. */
-function Results({ po, session, onEdit }: PanelProps & { onEdit: () => void }) {
+/**
+ * The results box (FR-04): seven values, using zero fallbacks until Qty Inspection is valid. PSI lv.1 taps QTY
+ * INSPECTION to enter it; PSI lv.2 sees it counted from NO DEFECT and END INSPECTION (ADR-021).
+ */
+function Results({
+  po,
+  session,
+  mode,
+  onEdit,
+}: PanelProps & { mode: CountingMode; onEdit: () => void }) {
   if (!po) {
     return (
       <div className="home__results home__results--off">
@@ -598,7 +628,8 @@ function Results({ po, session, onEdit }: PanelProps & { onEdit: () => void }) {
       </div>
     );
   }
-  const t = totals(session?.state ?? EMPTY_SESSION, po);
+  const t = totals(session?.state ?? emptySession(mode), po);
+  const entered = mode === 'ENTERED';
   const bad = t.defectRate !== null && t.defectRate > DEFECT_RATE_BAD_ABOVE;
   return (
     <div className="home__results">
@@ -607,9 +638,9 @@ function Results({ po, session, onEdit }: PanelProps & { onEdit: () => void }) {
         label="Qty Inspection"
         value={t.qtyInspection === null ? null : formatCount(t.qtyInspection)}
         tone={t.qtyInspection !== null && t.qtyInspectionIssue ? 'bad' : undefined}
-        onClick={onEdit}
+        onClick={entered ? onEdit : undefined}
       />
-      {t.qtyInspection === null ? <span>Ketuk untuk isi</span> : null}
+      {entered && t.qtyInspection === null ? <span>Ketuk untuk isi</span> : null}
       <StatRow label="Qty Defect" value={formatCount(t.qtyDefect)} />
       <StatRow label="Qty A-Grade" value={formatCount(t.qtyAGrade ?? 0)} />
       <StatRow label="Qty B-Grade" value={formatCount(t.qtyBGrade)} />
@@ -620,7 +651,9 @@ function Results({ po, session, onEdit }: PanelProps & { onEdit: () => void }) {
       />
       <StatRow label="Pass Rate (RFT)" value={formatRate(t.passRate ?? 0)} />
       {t.qtyInspectionIssue ? (
-        <Notice tone="warning">{qtyNotice(t.qtyInspectionIssue.kind, t.qtyDefect, po)}</Notice>
+        <Notice tone="warning">
+          {qtyNotice(t.qtyInspectionIssue.kind, t.qtyDefect, po, mode)}
+        </Notice>
       ) : null}
     </div>
   );

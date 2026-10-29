@@ -16,6 +16,7 @@ const AUTH: Auth = {
   token: null,
   tokenExpiresAt: null,
 };
+const LV1: Auth = { ...AUTH, username: 'ANDI CONTOH', level: 'PSI lv.1' };
 const PO: Po = ALL_PO_MASTER.find((p) => p.po === '0903359388')!;
 
 const mapping = defaultMapping();
@@ -38,6 +39,14 @@ beforeEach(async () => {
 afterEach(async () => {
   await db.delete();
 });
+
+/** The same PO and screen for a PSI lv.1, who enters Qty Inspection on Home (ADR-019). */
+async function asLv1() {
+  await store.getState().logout();
+  await store.getState().login(LV1);
+  await store.getState().addPo(PO, null);
+  await store.getState().setView({ screen: 'defect' });
+}
 
 function renderDefect() {
   const po = store.getState().pos[0]!;
@@ -65,8 +74,13 @@ const historyRows = () =>
   within(screen.getByRole('region', { name: 'Riwayat defect' })).queryAllByRole('listitem');
 const session = () => store.getState().sessions[PO.po]!.state;
 
+/** The toast; a Notice (also a status) may be shown next to it. */
 async function toast(text: string) {
-  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(text));
+  await waitFor(() =>
+    expect(screen.getAllByRole('status').map((el) => el.textContent ?? '')).toContainEqual(
+      expect.stringContaining(text),
+    ),
+  );
 }
 
 async function startRework() {
@@ -87,12 +101,13 @@ describe('command states (doc 05 §11.2)', () => {
     renderDefect();
     expect(button('REWORK')).toBeEnabled();
     expect(button('B-GRADE')).toBeEnabled();
-    expect(screen.queryByRole('button', { name: 'NO DEFECT' })).not.toBeInTheDocument();
+    expect(button('NO DEFECT')).toBeEnabled();
     expect(button('END INSPECTION')).toBeDisabled();
     expect(bar('UNDO')).toBeDisabled();
     expect(pill('QUARTER')).toBeDisabled();
     expect(pill('GENERAL')).toBeDisabled();
     expect(screen.getByText('Mulai inspeksi')).toBeVisible();
+    expect(screen.getByText(/atau NO DEFECT untuk pasang tanpa defect\.$/)).toBeVisible();
     expect(screen.getByText('Belum ada defect tercatat untuk PO ini.')).toBeVisible();
   });
 
@@ -116,20 +131,54 @@ describe('command states (doc 05 §11.2)', () => {
     expect(session().active?.type).toBe('B-GRADE');
   });
 
-  it('removes NO DEFECT and keeps Qty Inspection independent of inspection starts', () => {
+  it('PSI lv.1 has no NO DEFECT; Qty Inspection stays independent of inspections (ADR-019)', async () => {
+    await asLv1();
     renderDefect();
     expect(screen.queryByRole('button', { name: 'NO DEFECT' })).not.toBeInTheDocument();
-    expect(totals(session()).qtyInspection).toBeNull();
-  });
-
-  it('END INSPECTION without defects leaves Qty Inspection empty (ADR-019)', async () => {
-    renderDefect();
+    expect(screen.getByText(/isi QTY INSPECTION di Home\.$/)).toBeVisible();
     await startRework();
     fireEvent.click(button('END INSPECTION'));
     await toast('Inspeksi selesai tanpa defect');
     expect(totals(session())).toMatchObject({ qtyInspection: null, qtyDefect: 0 });
+  });
+
+  it('PSI lv.2: END INSPECTION counts the pair (ADR-021)', async () => {
+    renderDefect();
+    await startRework();
+    expect(button('NO DEFECT')).toBeDisabled();
+    fireEvent.click(button('END INSPECTION'));
+    await toast('Inspeksi selesai tanpa defect');
+    expect(totals(session())).toMatchObject({ qtyInspection: 1, qtyAGrade: 0, qtyDefect: 0 });
     expect(button('END INSPECTION')).toBeDisabled();
     expect(screen.getByText('Mulai inspeksi')).toBeVisible();
+  });
+});
+
+describe('NO DEFECT, PSI lv.2 (ADR-021)', () => {
+  it('records one A-Grade pair at once; UNDO right after cancels it', async () => {
+    renderDefect();
+    fireEvent.click(button('NO DEFECT'));
+    await toast('No Defect tercatat. A-Grade +1');
+    expect(totals(session())).toMatchObject({ qtyInspection: 1, qtyAGrade: 1 });
+    expect(button('END INSPECTION')).toBeDisabled();
+    expect(button('REWORK')).toBeEnabled();
+
+    fireEvent.click(bar('UNDO'));
+    await toast('No Defect dibatalkan');
+    expect(totals(session())).toMatchObject({ qtyInspection: 0, qtyAGrade: 0 });
+    expect(bar('UNDO')).toBeDisabled();
+  });
+
+  it('disables NO DEFECT, REWORK and B-GRADE at the partial quantity, and says why', async () => {
+    await store.getState().setPartial(PO.po, { number: 1, qty: 2 });
+    renderDefect();
+    fireEvent.click(button('NO DEFECT'));
+    await toast('No Defect tercatat. A-Grade +1');
+    await startRework();
+    fireEvent.click(button('END INSPECTION'));
+    await toast('Inspeksi selesai tanpa defect');
+    for (const name of ['NO DEFECT', 'REWORK', 'B-GRADE']) expect(button(name)).toBeDisabled();
+    expect(screen.getByText(/Qty Inspection sudah 2 pasang, maksimum PO ini/)).toBeVisible();
   });
 });
 
@@ -176,7 +225,8 @@ describe('recording defects (FR-07, FR-09)', () => {
     expect(historyRows()[1]).toHaveTextContent('B-GRADE');
     // The row count is of the active inspection only (AC-07.3): the REWORK tap does not show.
     expect(option(D1!.name)).toHaveTextContent(/1$/);
-    expect(totals(session())).toMatchObject({ qtyInspection: null, qtyDefect: 3, qtyBGrade: 2 });
+    // PSI lv.2: the ended REWORK pair counts, the active B-GRADE one not yet (ADR-021).
+    expect(totals(session())).toMatchObject({ qtyInspection: 1, qtyDefect: 3, qtyBGrade: 2 });
   });
 
   it('opens an area with one sub-area at its families', async () => {
@@ -204,12 +254,13 @@ describe('BACK, HOME, UNDO (FR-08)', () => {
 
     fireEvent.click(bar('UNDO'));
     await toast('Inspeksi dibatalkan');
-    expect(totals(session()).qtyInspection).toBeNull();
+    expect(totals(session()).qtyInspection).toBe(0);
     expect(bar('UNDO')).toBeDisabled();
     await waitFor(() => expect(store.getState().view.defectPath).toEqual(NO_PATH));
   });
 
-  it('UNDO stays disabled after END and never changes Qty Inspection', async () => {
+  it('UNDO stays disabled after END and never changes an entered Qty Inspection', async () => {
+    await asLv1();
     await store.getState().tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 30 });
     renderDefect();
     await startRework();

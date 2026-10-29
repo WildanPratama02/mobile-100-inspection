@@ -9,8 +9,9 @@ import {
 
 export { NO_VALUE, formatCount, formatDate } from '@m100/shared';
 
+/** ADR-008 rows are tapped counts: PSI lv.2 since ADR-021, or any PSI before ADR-019. */
 export function countingRuleLabel(rule: CountingRule): string {
-  return rule === 'ADR-019' ? 'Qty Inspection diisi PSI' : 'Hitung per tap (lama)';
+  return rule === 'ADR-019' ? 'Qty Inspection diisi PSI' : 'Hitung per tap (NO DEFECT)';
 }
 
 /** A rate of a submission; "—" when Qty Inspection is 0 (BR-02). */
