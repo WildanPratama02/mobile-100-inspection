@@ -21,8 +21,9 @@ Each entry records one decision: the situation, what was decided, and what it co
 | 015 | API hosted on an existing PWI server; HTTPS required | Accepted (HTTPS method: ADR-016) | 16 Oct 2026 |
 | 016 | HTTPS through a domain of our own (`qdms.web.id`, Cloudflare DNS, Let's Encrypt via Caddy) | Accepted | 16 Oct 2026 |
 | 017 | Server shape: Caddy + NestJS, no database, the tablet is the durable store | **Superseded by 018** | 16 Oct 2026 |
-| 018 | PostgreSQL + object storage (MinIO or another S3-compatible store) replace Google Sheets and Drive | Accepted (photo store: plain folder for release 1) | 20 Oct 2026 |
+| 018 | PostgreSQL + object storage (MinIO or another S3-compatible store) replace Google Sheets and Drive | Accepted (photo store: plain folder for release 1; PostgreSQL version amended by 020) | 20 Oct 2026 |
 | 019 | Qty Inspection is entered by the PSI; NO DEFECT removed; Qty Defect counts findings; Qty A-Grade = Qty Inspection − Qty Defect | Accepted (revised 28 Oct 2026) | 27–28 Oct 2026 |
+| 020 | PostgreSQL 18 as the production version baseline (amends ADR-018 decision 1) | Approved in principle; in effect after its verification requirements pass | 29 Oct 2026 |
 
 ---
 
@@ -307,3 +308,22 @@ Defect Rate = Qty Defect ÷ Qty Inspection. Pass Rate (RFT) = Qty A-Grade ÷ Qty
 - Qty A-Grade + Qty B-Grade ≤ Qty Inspection, and Defect Rate + Pass Rate = 100%, for ADR-019 rows. This equals the convention of the old AppSheet rows (A-Grade = Qty Inspection − Total Defect) and differs from ADR-008 rows, where A-Grade was the NO DEFECT taps.
 - Reports that mix rows must read `counting_rule`: in ADR-008 rows `qty_no_defect` is the tapped A-Grade count; in ADR-019 rows it is empty and `qty_a_grade` is derived from Qty Defect.
 - Work: a database migration (`counting_rule`, `qty_no_defect` nullable, checks per rule), the API's `counts.qtyInspection` and validation, the shared counting engine, Home, the Defect screen, UNDO, exports and the admin detail (doc 08 Phase 5).
+
+## ADR-020 — PostgreSQL 18 as the production version baseline
+
+**Status: Approved in principle** by the product owner on 29 Oct 2026. Not yet in effect: it takes effect when every requirement below has executed evidence in `phase5-integration-review.md`. Amends ADR-018 decision 1 ("PostgreSQL 16"); everything else in ADR-018 stays.
+
+**Situation.** ADR-018, doc 03 and the deployment scripts name PostgreSQL 16, but the M100 server was installed on PostgreSQL 18.1 (service `postgresql-x64-18`, port 5432) and its nightly backups are made with the PostgreSQL 18 tools. Evidence of 28–29 Oct 2026 (disposable clusters, `phase5-release-preparation.md` §1): the full API suite passes on both 16.15 and 18.1 (754 tests, 715 passed, 0 failed, 39 conditional skips); `pg_dump` 16 refuses an 18 server; `pg_restore` 16 cannot read an 18 archive ("unsupported version (1.16)"); an 18 dump fails to load into 16 (`SET transaction_timeout`). Moving production to 16 would therefore be a downgrade without supported tooling, and every existing backup would become unreadable for the 16 tools.
+
+**Decision.**
+1. The production baseline is **PostgreSQL 18** (18.1 or a later 18.x minor release). PostgreSQL 16 stays supported for development and tests until the scripts and docs are switched, but production, staging and every restore machine use 18.
+2. **Matching tools.** `pg_dump`, `pg_restore` and `psql` used for backup and restore are always the same major version as the server (`PG_BIN` in `install.json` / `.env` points to the 18 `bin` folder). Backups are never restored with an older major version.
+3. **Migrations.** `db/migrations/0001`–`0006` run unchanged on 18; no migration may use a feature that 18 lacks, and every new migration is tested on 18 before release.
+4. **Restore testing.** A real production backup made with the 18 tools is restored on a second Windows machine with PostgreSQL 18 (`restore.ps1`), verified (dump SHA-256, row counts, every photo hash) and timed before release, and then quarterly.
+5. **Full verification on 18.** Before release: the full API suite, the tablet/PWA and admin browser suites (`pnpm e2e`), the T3.7 load and fault test on staging, and the Windows acceptance checklist C0–C11 (`phase5-release-preparation.md` §4), all against PostgreSQL 18.
+6. Minor upgrades (18.x) follow PostgreSQL's release notes; a minor upgrade is preceded by a backup and followed by C3 (readiness). A move to a later major version needs its own ADR.
+
+**Consequences.**
+- No data move; existing PG18 backups stay usable.
+- Work before release (not done yet): switch `install.ps1`'s default service and installer name, the `restore.ps1` help, the recovery runbook's `PG_BIN` example, doc 03 §1 and §7 and the deployment test fixtures to 18; obtain PostgreSQL 18 binaries for restore machines.
+- The running production database is not changed by this ADR.
