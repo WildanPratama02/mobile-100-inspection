@@ -1,9 +1,12 @@
 /**
- * Counting engine (BR-01, BR-02, BR-05, BR-10, FR-08, FR-15; ADR-019).
+ * Counting engine (BR-01, BR-02, BR-05, BR-10, FR-08, FR-15; ADR-019, ADR-021).
  *
  * A session is the reduction of its event log (doc 03 §4.2). Commands check whether a tap is allowed and
  * return the event to persist; `applyEvent` folds a stored event into the state; totals, findings and the
  * Top 5 are derived from the state, never stored. Everything here is pure.
+ *
+ * Two counting modes (ADR-021): PSI lv.1 enters Qty Inspection (`ENTERED`, ADR-019); PSI lv.2 counts it with
+ * taps (`TAPPED`): NO DEFECT adds an A-Grade pair, each ended REWORK or B-GRADE inspection a pair with a defect.
  */
 import type {
   AreaId,
@@ -15,9 +18,18 @@ import type {
   InspectionCounts,
   InspectionType,
   PoPartial,
+  PsiLevel,
   SessionEvent,
   SubmissionCounts,
 } from './domain';
+
+/** How a session gets its Qty Inspection (ADR-021). */
+export type CountingMode = 'ENTERED' | 'TAPPED';
+
+/** PSI lv.1 enters Qty Inspection; PSI lv.2 counts it with NO DEFECT and END INSPECTION (ADR-021). */
+export function countingMode(level: PsiLevel): CountingMode {
+  return level === 'PSI lv.2' ? 'TAPPED' : 'ENTERED';
+}
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
@@ -37,12 +49,16 @@ export interface ActiveInspection {
   defects: readonly RecordedDefect[];
 }
 
-/** What UNDO would do now (FR-08); each kind has its own toast (doc 05 §11.4). */
-export type UndoKind = 'DEFECT' | 'INSPECTION';
+/** What UNDO would do now (FR-08); each kind has its own toast (doc 05 §11.4). NO_DEFECT: `TAPPED` only. */
+export type UndoKind = 'DEFECT' | 'INSPECTION' | 'NO_DEFECT';
 
 export interface SessionState {
+  mode: CountingMode;
+  /** REWORK and B-GRADE inspections started, the active one included. */
   counts: InspectionCounts;
-  /** Entered by the PSI (FR-15); `null` until the first SET_QTY_INSPECTION. */
+  /** NO DEFECT taps (`TAPPED`); always 0 in `ENTERED`. */
+  noDefect: number;
+  /** Entered by the PSI (FR-15, `ENTERED`); `null` until the first SET_QTY_INSPECTION, always in `TAPPED`. */
   qtyInspection: number | null;
   active: ActiveInspection | null;
   /** Every defect tap that has not been undone, in tap order. */
@@ -51,13 +67,33 @@ export interface SessionState {
   undo: UndoKind | null;
 }
 
-export const EMPTY_SESSION: SessionState = {
-  counts: { rework: 0, bGrade: 0 },
-  qtyInspection: null,
-  active: null,
-  recorded: [],
-  undo: null,
-};
+export function emptySession(mode: CountingMode): SessionState {
+  return {
+    mode,
+    counts: { rework: 0, bGrade: 0 },
+    noDefect: 0,
+    qtyInspection: null,
+    active: null,
+    recorded: [],
+    undo: null,
+  };
+}
+
+/** An empty PSI lv.1 session (`ENTERED`). */
+export const EMPTY_SESSION: SessionState = emptySession('ENTERED');
+
+/**
+ * `TAPPED`: every pair tapped so far, the active inspection included. NO DEFECT, REWORK and B-GRADE are refused
+ * once this reaches the partial quantity or Qty Order (ADR-021).
+ */
+export function tappedPairs(state: SessionState): number {
+  return state.noDefect + state.counts.rework + state.counts.bGrade;
+}
+
+/** `TAPPED`: whether one more pair is allowed for this PO (ADR-021). Always true in `ENTERED`. */
+export function canAddPair(state: SessionState, po: PoQuantities): boolean {
+  return state.mode !== 'TAPPED' || tappedPairs(state) < (po.partial?.qty ?? po.orderQty);
+}
 
 /** The PO quantities that bound Qty Inspection (BR-10). */
 export interface PoQuantities {
@@ -102,13 +138,24 @@ export function checkQtyInspection(
 
 // ---- Commands: the event to persist, or `null` when the tap is not allowed ----
 
-/** REWORK or B-GRADE. Only one inspection at a time (BR-05). */
+/**
+ * REWORK or B-GRADE. Only one inspection at a time (BR-05). With `po`, `TAPPED` refuses a pair above the PO's
+ * maximum (ADR-021).
+ */
 export function startInspection(
   state: SessionState,
   type: InspectionType,
+  po?: PoQuantities,
 ): SessionEventPayload | null {
   if (state.active) return null;
+  if (po && !canAddPair(state, po)) return null;
   return { type: type === 'REWORK' ? 'START_REWORK' : 'START_BGRADE' };
+}
+
+/** NO DEFECT (`TAPPED` only): one A-Grade pair at once, outside an inspection, up to the maximum (ADR-021). */
+export function noDefect(state: SessionState, po: PoQuantities): SessionEventPayload | null {
+  if (state.mode !== 'TAPPED' || state.active || !canAddPair(state, po)) return null;
+  return { type: 'NO_DEFECT' };
 }
 
 /**
@@ -131,13 +178,16 @@ export function undo(state: SessionState): SessionEventPayload | null {
   return { type: 'UNDO' };
 }
 
-/** SIMPAN in the QTY INSPECTION dialog (FR-15): only a whole number valid for the session now (BR-10). */
+/**
+ * SIMPAN in the QTY INSPECTION dialog (FR-15, `ENTERED` only): only a whole number valid for the session now
+ * (BR-10).
+ */
 export function setQtyInspection(
   state: SessionState,
   qty: number,
   po: PoQuantities,
 ): SessionEventPayload | null {
-  if (!Number.isInteger(qty)) return null;
+  if (state.mode !== 'ENTERED' || !Number.isInteger(qty)) return null;
   const { qtyDefect } = defectTotals(findings(state));
   const limits = qtyInspectionLimits(qtyDefect, po.partial, po.orderQty);
   if (checkQtyInspection(qty, limits)) return null;
@@ -165,9 +215,10 @@ export function applyEvent(state: SessionState, event: SessionEvent): SessionSta
       };
     }
     case 'NO_DEFECT':
-      // Left by an app version from before ADR-019 in a session that was open during the update: it changes
-      // no figure and no UNDO state (ADR-019 decision 9).
-      return state;
+      // `ENTERED`: left by an app version from before ADR-019 in a session that was open during the update; it
+      // changes no figure and no UNDO state (ADR-019 decision 9). `TAPPED`: one A-Grade pair (ADR-021).
+      if (state.mode !== 'TAPPED' || active) return state;
+      return { ...state, noDefect: state.noDefect + 1, undo: 'NO_DEFECT' };
     case 'DEFECT': {
       if (!active) return state;
       const { areaId, subAreaId, familyId, defectId } = event;
@@ -192,15 +243,17 @@ export function applyEvent(state: SessionState, event: SessionEvent): SessionSta
     case 'UNDO':
       return applyUndo(state);
     case 'SET_QTY_INSPECTION':
-      // Leaves `undo` alone: changing Qty Inspection never touches the UNDO history (FR-08).
-      if (!Number.isInteger(event.qty) || event.qty < 1) return state;
+      // Leaves `undo` alone: changing Qty Inspection never touches the UNDO history (FR-08). `TAPPED` counts
+      // it from taps, so a value entered before ADR-021 is ignored there.
+      if (state.mode !== 'ENTERED' || !Number.isInteger(event.qty) || event.qty < 1) return state;
       return { ...state, qtyInspection: event.qty };
   }
 }
 
 /**
- * FR-08: the last defect of the active inspection; with none, the inspection itself. A cancelled inspection
- * leaves UNDO disabled, so it never reaches an ended inspection. Qty Inspection is never changed.
+ * FR-08: the last defect of the active inspection; with none, the inspection itself; right after NO DEFECT
+ * (`TAPPED`), that pair. A cancelled inspection leaves UNDO disabled, so it never reaches an ended inspection.
+ * An entered Qty Inspection is never changed.
  */
 function applyUndo(state: SessionState): SessionState {
   const { counts, active } = state;
@@ -218,6 +271,9 @@ function applyUndo(state: SessionState): SessionState {
     case 'INSPECTION':
       if (!active) return state;
       return { ...state, counts: addStarted(counts, active.type, -1), active: null, undo: null };
+    case 'NO_DEFECT':
+      if (active || state.noDefect < 1) return state;
+      return { ...state, noDefect: state.noDefect - 1, undo: null };
     case null:
       return state;
   }
@@ -229,8 +285,12 @@ function addStarted(counts: InspectionCounts, type: InspectionType, n: number): 
     : { ...counts, bGrade: counts.bGrade + n };
 }
 
-export function replay(events: readonly SessionEvent[]): SessionState {
-  return events.reduce(applyEvent, EMPTY_SESSION);
+/** The session of a PSI lv.1 (`ENTERED`, the default) or PSI lv.2 (`TAPPED`) from its stored events. */
+export function replay(
+  events: readonly SessionEvent[],
+  mode: CountingMode = 'ENTERED',
+): SessionState {
+  return events.reduce(applyEvent, emptySession(mode));
 }
 
 // ---- Derived values ----
@@ -284,15 +344,19 @@ export interface Totals {
   passRate: number | null;
 }
 
-/** `ADR-019` for a Qty Inspection entered by the PSI, `ADR-008` for a payload sealed before the update. */
+/**
+ * `ADR-019` for a Qty Inspection entered by the PSI; `ADR-008` for tapped counts: PSI lv.2 (ADR-021) or a
+ * payload sealed before ADR-019.
+ */
 export function countingRule(counts: SubmissionCounts): CountingRule {
   return counts.noDefect === undefined ? 'ADR-019' : 'ADR-008';
 }
 
 /**
- * Totals from what happened (doc 04 §4.1). ADR-019: Qty A-Grade = Qty Inspection − Qty Defect. A payload
- * sealed under ADR-008 keeps the ADR-008 rules: Qty Inspection = all inspections started, Qty A-Grade =
- * NO DEFECT. The API computes these from the submission; the outbox compares them with the API's answer.
+ * Totals from what happened (doc 04 §4.1). ADR-019: Qty A-Grade = Qty Inspection − Qty Defect. Tapped counts
+ * (PSI lv.2, ADR-021, or a payload sealed before ADR-019) follow ADR-008: Qty Inspection = all inspections +
+ * NO DEFECT, Qty A-Grade = NO DEFECT. The API computes these from the submission; the outbox compares them with
+ * the API's answer.
  */
 export function computeTotals(counts: SubmissionCounts, list: readonly Finding[]): Totals {
   const { qtyDefect, qtyBGrade } = defectTotals(list);
@@ -318,24 +382,45 @@ export function computeTotals(counts: SubmissionCounts, list: readonly Finding[]
 
 /** The session's figures on Home and in the exports (FR-04). */
 export interface SessionTotals {
-  /** Entered by the PSI; `null` until entered (shown "—"). */
+  /**
+   * `ENTERED`: entered by the PSI; `null` until entered (shown "—"). `TAPPED`: NO DEFECT taps + ended REWORK
+   * and B-GRADE inspections (a pair counts at END INSPECTION, ADR-021).
+   */
   qtyInspection: number | null;
   qtyDefect: number;
   qtyBGrade: number;
   /**
-   * Qty Inspection − Qty Defect, and the rates of BR-02. `null` while Qty Inspection is empty or not valid;
-   * the screen then shows `0` and `0,0%` (ADR-019 decision 7). Never submitted.
+   * `ENTERED`: Qty Inspection − Qty Defect, and the rates of BR-02; `null` while Qty Inspection is empty or not
+   * valid; the screen then shows `0` and `0,0%` (ADR-019 decision 7). Never submitted. `TAPPED`: the NO DEFECT
+   * taps, and rates once a pair is counted (ADR-021).
    */
   qtyAGrade: number | null;
   defectRate: number | null;
   passRate: number | null;
-  /** Why Qty Inspection is not valid (BR-10); `null` when it is. */
+  /**
+   * Why Qty Inspection is not valid (BR-10); `null` when it is. `TAPPED`: only ABOVE, when the pairs tapped
+   * are more than the partial quantity or Qty Order (for example after the partial was lowered).
+   */
   qtyInspectionIssue: QtyInspectionIssue | null;
 }
 
 /** Without `po` the upper limit of BR-10 is not checked. */
 export function totals(state: SessionState, po?: PoQuantities): SessionTotals {
   const { qtyDefect, qtyBGrade } = defectTotals(findings(state));
+  if (state.mode === 'TAPPED') {
+    const qtyInspection = tappedPairs(state) - (state.active ? 1 : 0);
+    const max = po ? (po.partial?.qty ?? po.orderQty) : Number.POSITIVE_INFINITY;
+    const rate = (n: number) => (qtyInspection === 0 ? null : n / qtyInspection);
+    return {
+      qtyInspection,
+      qtyDefect,
+      qtyBGrade,
+      qtyAGrade: state.noDefect,
+      defectRate: rate(qtyDefect),
+      passRate: rate(state.noDefect),
+      qtyInspectionIssue: tappedPairs(state) > max ? { kind: 'ABOVE', max } : null,
+    };
+  }
   const { qtyInspection } = state;
   const limits = qtyInspectionLimits(
     qtyDefect,

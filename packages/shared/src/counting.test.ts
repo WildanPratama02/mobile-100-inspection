@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   EMPTY_SESSION,
   applyEvent,
+  canAddPair,
   checkQtyInspection,
   computeTotals,
+  countingMode,
   countingRule,
+  emptySession,
   endInspection,
   findings,
+  noDefect,
   qtyInspectionLimits,
   rankDefects,
   recordDefect,
@@ -16,6 +20,7 @@ import {
   top5,
   totals,
   undo,
+  type CountingMode,
   type PoQuantities,
   type SessionEventPayload,
   type SessionState,
@@ -41,9 +46,14 @@ function entry(defectId: string, areaId?: string): AreaMapEntry {
 /** Taps through the commands, as the UI does, storing each event with a timestamp one second apart. */
 class Tablet {
   readonly events: SessionEvent[] = [];
-  state: SessionState = EMPTY_SESSION;
+  state: SessionState;
 
-  constructor(readonly po: PoQuantities = PO) {}
+  constructor(
+    readonly po: PoQuantities = PO,
+    mode: CountingMode = 'ENTERED',
+  ) {
+    this.state = mode === 'ENTERED' ? EMPTY_SESSION : emptySession(mode);
+  }
 
   private store(payload: SessionEventPayload | null): this {
     if (!payload) throw new Error('Tap not allowed');
@@ -61,7 +71,11 @@ class Tablet {
   }
 
   start(type: InspectionType) {
-    return this.store(startInspection(this.state, type));
+    return this.store(startInspection(this.state, type, this.po));
+  }
+  noDefect(times = 1) {
+    for (let i = 0; i < times; i++) this.store(noDefect(this.state, this.po));
+    return this;
   }
   rework() {
     return this.start('REWORK');
@@ -486,6 +500,163 @@ describe('legacy NO_DEFECT events (ADR-019 decision 9)', () => {
     const without = t.events.filter((e) => e.type !== 'NO_DEFECT');
     expect(replay(t.events)).toEqual(replay(without));
     expect(quantities(totals(replay(t.events), PO))).toEqual([20, 19, 1, 0]);
+  });
+});
+
+describe('PSI lv.2 counts Qty Inspection with taps (ADR-021)', () => {
+  const lv2 = (po: PoQuantities = PO) => new Tablet(po, 'TAPPED');
+
+  it('PSI lv.1 enters Qty Inspection, PSI lv.2 taps it', () => {
+    expect(countingMode('PSI lv.1')).toBe('ENTERED');
+    expect(countingMode('PSI lv.2')).toBe('TAPPED');
+  });
+
+  // Columns: Qty Inspection, Qty A-Grade, Qty Defect, Qty B-Grade.
+  it('NO DEFECT: Qty Inspection +1, Qty A-Grade +1', () => {
+    expect(quantities(lv2().noDefect().totals)).toEqual([1, 1, 0, 0]);
+    expect(quantities(lv2().noDefect(3).totals)).toEqual([3, 3, 0, 0]);
+  });
+
+  it('a REWORK or B-GRADE pair is counted at END INSPECTION', () => {
+    const t = lv2().rework();
+    expect(quantities(t.totals)).toEqual([0, 0, 0, 0]);
+    t.defect('D035');
+    expect(quantities(t.totals)).toEqual([0, 0, 1, 0]);
+    t.end();
+    expect(quantities(t.totals)).toEqual([1, 0, 1, 0]);
+    t.bGrade().end();
+    expect(quantities(t.totals)).toEqual([2, 0, 1, 0]);
+  });
+
+  it('each defect: Qty Defect +1; in B-GRADE also Qty B-Grade +1 (three findings add 3)', () => {
+    const t = lv2().bGrade().defect('D035').defect('D005').defect('D001').end();
+    expect(quantities(t.totals)).toEqual([1, 0, 3, 3]);
+    t.rework().defect('D035').end();
+    expect(quantities(t.totals)).toEqual([2, 0, 4, 3]);
+  });
+
+  it('Defect Rate = Qty Defect ÷ Qty Inspection, Pass Rate = NO DEFECT ÷ Qty Inspection', () => {
+    const t = lv2().noDefect(8).rework().defect('D035').defect('D005').end().bGrade().end();
+    expect(t.totals).toMatchObject({
+      qtyInspection: 10,
+      qtyAGrade: 8,
+      qtyDefect: 2,
+      qtyBGrade: 0,
+      defectRate: 0.2,
+      passRate: 0.8,
+      qtyInspectionIssue: null,
+    });
+  });
+
+  it('rates are null until the first pair is counted (screens show 0,0%)', () => {
+    expect(lv2().totals).toMatchObject({ qtyInspection: 0, qtyAGrade: 0, defectRate: null });
+    expect(lv2().rework().defect('D035').totals).toMatchObject({
+      qtyInspection: 0,
+      defectRate: null,
+      passRate: null,
+    });
+  });
+
+  it('submits ADR-008 counts that give the same totals on the API', () => {
+    const t = lv2().noDefect(5).rework().defect('D035').end().bGrade().defect('D005').end();
+    const counts = { ...t.state.counts, noDefect: t.state.noDefect };
+    expect(countingRule(counts)).toBe('ADR-008');
+    const api = computeTotals(counts, findings(t.state));
+    const shown = t.totals;
+    expect([api.qtyInspection, api.qtyAGrade, api.qtyDefect, api.qtyBGrade]).toEqual(
+      quantities(shown),
+    );
+    expect([api.defectRate, api.passRate]).toEqual([shown.defectRate, shown.passRate]);
+  });
+
+  describe('NO DEFECT', () => {
+    it('is refused during an inspection and in a PSI lv.1 session', () => {
+      expect(noDefect(lv2().rework().state, PO)).toBeNull();
+      expect(noDefect(new Tablet().state, PO)).toBeNull();
+    });
+
+    it('UNDO right after it removes that pair; then UNDO is disabled', () => {
+      const t = lv2().noDefect(2);
+      expect(t.state.undo).toBe('NO_DEFECT');
+      t.undo();
+      expect(quantities(t.totals)).toEqual([1, 1, 0, 0]);
+      expect(t.state.undo).toBeNull();
+      expect(undo(t.state)).toBeNull();
+    });
+
+    it('UNDO never reaches a NO DEFECT before an inspection', () => {
+      const t = lv2().noDefect().rework().undo();
+      expect(t.state.undo).toBeNull();
+      expect(quantities(t.totals)).toEqual([1, 1, 0, 0]);
+    });
+  });
+
+  describe('maximum: the partial quantity, else Qty Order (ADR-021)', () => {
+    const small: PoQuantities = { orderQty: 3, partial: null };
+
+    it('refuses NO DEFECT, REWORK and B-GRADE at the maximum, never a defect', () => {
+      const t = lv2(small).noDefect(2).rework();
+      // The active inspection is the third pair: no new pair, but its defects are still recorded.
+      expect(canAddPair(t.state, small)).toBe(false);
+      t.defect('D035').defect('D005').end();
+      expect(t.totals.qtyInspection).toBe(3);
+      expect(t.totals.qtyDefect).toBe(2);
+      expect(noDefect(t.state, small)).toBeNull();
+      expect(startInspection(t.state, 'REWORK', small)).toBeNull();
+      expect(startInspection(t.state, 'B-GRADE', small)).toBeNull();
+      expect(t.totals.qtyInspectionIssue).toBeNull();
+    });
+
+    it('uses the partial quantity when set', () => {
+      const partial: PoQuantities = { orderQty: 100, partial: { number: 1, qty: 2 } };
+      const t = lv2(partial).noDefect(2);
+      expect(noDefect(t.state, partial)).toBeNull();
+    });
+
+    it('an UNDO frees the pair again', () => {
+      const t = lv2(small).noDefect(3).undo();
+      expect(noDefect(t.state, small)).not.toBeNull();
+    });
+
+    it('flags pairs above a maximum lowered afterwards (ABOVE)', () => {
+      const t = lv2().noDefect(5);
+      expect(totals(t.state, { orderQty: 100, partial: { number: 1, qty: 4 } })).toMatchObject({
+        qtyInspection: 5,
+        qtyInspectionIssue: { kind: 'ABOVE', max: 4 },
+      });
+    });
+
+    it('ENTERED sessions are never limited by taps', () => {
+      expect(
+        canAddPair(new Tablet(small).rework().end().rework().end().rework().end().state, small),
+      ).toBe(true);
+    });
+  });
+
+  describe('events of the other mode', () => {
+    it('TAPPED ignores an entered Qty Inspection; ENTERED ignores NO DEFECT taps', () => {
+      const events = new Tablet().qty(40).push({ type: 'NO_DEFECT' }).events;
+      expect(replay(events, 'TAPPED')).toMatchObject({ qtyInspection: null, noDefect: 1 });
+      expect(replay(events, 'ENTERED')).toMatchObject({ qtyInspection: 40, noDefect: 0 });
+      expect(replay(events)).toEqual(replay(events, 'ENTERED'));
+    });
+
+    it('setQtyInspection is refused in TAPPED', () => {
+      expect(setQtyInspection(lv2().state, 5, PO)).toBeNull();
+    });
+  });
+
+  it('replays to the same state', () => {
+    const t = lv2()
+      .noDefect(2)
+      .rework()
+      .defect('D035')
+      .undo()
+      .defect('D005')
+      .end()
+      .noDefect()
+      .undo();
+    expect(replay(t.events, 'TAPPED')).toEqual(t.state);
   });
 });
 
