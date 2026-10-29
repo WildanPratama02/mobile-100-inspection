@@ -1,7 +1,15 @@
 import type { DefectId, Po } from '@m100/shared';
+import { Dexie } from 'dexie';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as repo from './repo';
-import { createDb, type Auth, type M100Db, type OutboxRow, type PhotoRow } from './schema';
+import {
+  createDb,
+  type Auth,
+  type M100Db,
+  type OutboxRow,
+  type PhotoRow,
+  type Scope,
+} from './schema';
 
 const AT = '2026-10-16T01:00:00.000Z';
 const LATER = '2026-10-16T02:00:00.000Z';
@@ -14,6 +22,15 @@ const A: Auth = {
   token: null,
   tokenExpiresAt: null,
 };
+
+const DEFAULT_SCREEN = {
+  screen: 'home',
+  selectedPo: null,
+  defectPath: { areaId: null, subAreaId: null, familyId: null },
+} as const;
+
+/** Another PSI on the same tablet, same factory and cell. */
+const OTHER: Scope = { username: 'psi.uji.dua', factory: A.factory, cell: A.cell };
 
 const po = (number: string): Po => ({
   po: number,
@@ -46,8 +63,8 @@ afterEach(async () => {
 
 describe('events', () => {
   it('numbers the events of each session 1, 2, 3 on its own', async () => {
-    const s1 = await repo.openSession(db, A.username, '0903359388', AT);
-    const s2 = await repo.openSession(db, A.username, 'CX-0902368685', AT);
+    const s1 = await repo.openSession(db, A, '0903359388', AT);
+    const s2 = await repo.openSession(db, A, 'CX-0902368685', AT);
     await repo.appendEvent(db, A.username, s1.id, { type: 'START_REWORK' }, AT);
     await repo.appendEvent(db, A.username, s2.id, { type: 'NO_DEFECT' }, AT);
     await repo.appendEvent(db, A.username, s1.id, { type: 'END' }, AT);
@@ -62,7 +79,7 @@ describe('events', () => {
   });
 
   it('stores a defect event with its full area map entry', async () => {
-    const s = await repo.openSession(db, A.username, '0903359388', AT);
+    const s = await repo.openSession(db, A, '0903359388', AT);
     const entry = { areaId: 'A01', subAreaId: 'S01', familyId: 'F01', defectId: 'D049' } as const;
     await repo.appendEvent(db, A.username, s.id, { type: 'DEFECT', ...entry }, AT);
     expect(await repo.listEvents(db, A.username, s.id)).toEqual([
@@ -71,8 +88,8 @@ describe('events', () => {
   });
 
   it('writes only into the PSI’s own open session', async () => {
-    const own = await repo.openSession(db, A.username, '0903359388', AT);
-    const closed = await repo.openSession(db, A.username, 'CX-0902368685', AT);
+    const own = await repo.openSession(db, A, '0903359388', AT);
+    const closed = await repo.openSession(db, A, 'CX-0902368685', AT);
     await db.sessions.update(closed.id, { status: 'closed' });
 
     await expect(
@@ -88,7 +105,7 @@ describe('events', () => {
   });
 
   it('never lists another PSI’s events (AC-02.3)', async () => {
-    const s = await repo.openSession(db, A.username, '0903359388', AT);
+    const s = await repo.openSession(db, A, '0903359388', AT);
     await repo.appendEvent(db, A.username, s.id, { type: 'NO_DEFECT' }, AT);
     expect(await repo.listEvents(db, 'psi.uji.dua', s.id)).toEqual([]);
   });
@@ -96,24 +113,24 @@ describe('events', () => {
 
 describe('sessions', () => {
   it('keeps one open session per user and PO', async () => {
-    const first = await repo.openSession(db, A.username, '0903359388', AT);
-    const again = await repo.openSession(db, A.username, '0903359388', LATER);
-    const other = await repo.openSession(db, 'psi.uji.dua', '0903359388', AT);
+    const first = await repo.openSession(db, A, '0903359388', AT);
+    const again = await repo.openSession(db, A, '0903359388', LATER);
+    const other = await repo.openSession(db, OTHER, '0903359388', AT);
     expect(again).toEqual(first);
     expect(other.id).not.toBe(first.id);
   });
 
   it('adds a PO together with its empty open session', async () => {
-    const { session } = await repo.addPo(db, A.username, po('0903359388'), null, AT);
-    expect(await repo.openSession(db, A.username, '0903359388', LATER)).toEqual(session);
+    const { session } = await repo.addPo(db, A, po('0903359388'), null, AT);
+    expect(await repo.openSession(db, A, '0903359388', LATER)).toEqual(session);
   });
 });
 
 describe('user scoping (AC-02.3)', () => {
   it('never returns one PSI’s POs, sessions or screen to another', async () => {
-    const B = 'psi.uji.dua';
-    await repo.addPo(db, A.username, po('0903359388'), { number: 1, qty: 600 }, AT);
-    await repo.saveView(db, A.username, {
+    const B = OTHER;
+    await repo.addPo(db, A, po('0903359388'), { number: 1, qty: 600 }, AT);
+    await repo.saveView(db, A, {
       screen: 'defect',
       selectedPo: '0903359388',
       defectPath: { areaId: 'A01', subAreaId: null, familyId: null },
@@ -122,21 +139,41 @@ describe('user scoping (AC-02.3)', () => {
     expect(await repo.listPos(db, B)).toEqual([]);
     expect(await repo.listOpenSessions(db, B)).toEqual([]);
     expect(await repo.getView(db, B)).toBeNull();
-    expect(await repo.listPos(db, A.username)).toHaveLength(1);
-    expect(await repo.listOpenSessions(db, A.username)).toHaveLength(1);
+    expect(await repo.listPos(db, A)).toHaveLength(1);
+    expect(await repo.listOpenSessions(db, A)).toHaveLength(1);
+  });
+
+  it('keeps the data of each factory and cell apart, also for the same PO (ADR-021)', async () => {
+    const otherCell: Scope = { ...A, cell: 'C02' };
+    const otherFactory: Scope = { ...A, factory: 'F 2' };
+    const first = await repo.addPo(db, A, po('0903359388'), { number: 1, qty: 600 }, AT);
+    await repo.saveView(db, A, { ...DEFAULT_SCREEN, selectedPo: '0903359388' });
+
+    for (const scope of [otherCell, otherFactory]) {
+      expect(await repo.listPos(db, scope)).toEqual([]);
+      expect(await repo.listOpenSessions(db, scope)).toEqual([]);
+      expect(await repo.getView(db, scope)).toBeNull();
+    }
+    const second = await repo.addPo(db, otherCell, po('0903359388'), null, LATER);
+    expect(second.session.id).not.toBe(first.session.id);
+    await repo.setPartial(db, otherCell, '0903359388', { number: 2, qty: 10 });
+    expect((await repo.listPos(db, A))[0]?.partial).toEqual({ number: 1, qty: 600 });
+    await repo.removePo(db, otherCell, '0903359388');
+    expect(await repo.listPos(db, A)).toHaveLength(1);
+    expect(await repo.listOpenSessions(db, A)).toEqual([first.session]);
   });
 
   it('keeps POs, sessions, events and photos when the login is cleared (AC-02.2)', async () => {
     await repo.saveAuth(db, A);
-    const { session } = await repo.addPo(db, A.username, po('0903359388'), null, AT);
+    const { session } = await repo.addPo(db, A, po('0903359388'), null, AT);
     await repo.appendEvent(db, A.username, session.id, { type: 'NO_DEFECT' }, AT);
     await repo.putPhoto(db, A.username, photo(session.id, 'aa'));
 
     await repo.clearAuth(db);
 
     expect(await repo.getAuth(db)).toBeNull();
-    expect(await repo.listPos(db, A.username)).toHaveLength(1);
-    expect(await repo.listOpenSessions(db, A.username)).toEqual([session]);
+    expect(await repo.listPos(db, A)).toHaveLength(1);
+    expect(await repo.listOpenSessions(db, A)).toEqual([session]);
     expect(await repo.listEvents(db, A.username, session.id)).toHaveLength(1);
     expect(await repo.listPhotos(db, session.id)).toHaveLength(1);
   });
@@ -144,54 +181,47 @@ describe('user scoping (AC-02.3)', () => {
 
 describe('PO list', () => {
   it('lists the newest PO first and keeps leading zeros and prefixes (AC-03.5)', async () => {
-    await repo.addPo(db, A.username, po('0903359388'), null, AT);
-    await repo.addPo(db, A.username, po('CX-0902368685'), null, LATER);
-    expect((await repo.listPos(db, A.username)).map((p) => p.po)).toEqual([
-      'CX-0902368685',
-      '0903359388',
-    ]);
+    await repo.addPo(db, A, po('0903359388'), null, AT);
+    await repo.addPo(db, A, po('CX-0902368685'), null, LATER);
+    expect((await repo.listPos(db, A)).map((p) => p.po)).toEqual(['CX-0902368685', '0903359388']);
   });
 
   it('refuses a PO already in the list (AC-03.1)', async () => {
-    await repo.addPo(db, A.username, po('0903359388'), null, AT);
-    await expect(repo.addPo(db, A.username, po('0903359388'), null, LATER)).rejects.toThrow(
+    await repo.addPo(db, A, po('0903359388'), null, AT);
+    await expect(repo.addPo(db, A, po('0903359388'), null, LATER)).rejects.toThrow(
       repo.PoAlreadyListedError,
     );
-    expect(await repo.listOpenSessions(db, A.username)).toHaveLength(1);
+    expect(await repo.listOpenSessions(db, A)).toHaveLength(1);
   });
 
   it('changes the partial of a listed PO', async () => {
-    await repo.addPo(db, A.username, po('0903359388'), null, AT);
-    await repo.setPartial(db, A.username, '0903359388', { number: 2, qty: 300 });
-    expect((await repo.listPos(db, A.username))[0]?.partial).toEqual({ number: 2, qty: 300 });
+    await repo.addPo(db, A, po('0903359388'), null, AT);
+    await repo.setPartial(db, A, '0903359388', { number: 2, qty: 300 });
+    expect((await repo.listPos(db, A))[0]?.partial).toEqual({ number: 2, qty: 300 });
   });
 
   it('removes a PO without data and refuses one with data (AC-03.4)', async () => {
-    await repo.addPo(db, A.username, po('0903359388'), null, AT);
-    const { session } = await repo.addPo(db, A.username, po('CX-0902368685'), null, AT);
+    await repo.addPo(db, A, po('0903359388'), null, AT);
+    const { session } = await repo.addPo(db, A, po('CX-0902368685'), null, AT);
     await repo.appendEvent(db, A.username, session.id, { type: 'START_BGRADE' }, AT);
 
-    await repo.removePo(db, A.username, '0903359388');
-    await expect(repo.removePo(db, A.username, 'CX-0902368685')).rejects.toThrow(
-      repo.PoHasDataError,
-    );
+    await repo.removePo(db, A, '0903359388');
+    await expect(repo.removePo(db, A, 'CX-0902368685')).rejects.toThrow(repo.PoHasDataError);
 
-    expect((await repo.listPos(db, A.username)).map((p) => p.po)).toEqual(['CX-0902368685']);
-    expect((await repo.listOpenSessions(db, A.username)).map((s) => s.po)).toEqual([
-      'CX-0902368685',
-    ]);
+    expect((await repo.listPos(db, A)).map((p) => p.po)).toEqual(['CX-0902368685']);
+    expect((await repo.listOpenSessions(db, A)).map((s) => s.po)).toEqual(['CX-0902368685']);
   });
 
   it('refuses to remove a PO whose session has a photo', async () => {
-    const { session } = await repo.addPo(db, A.username, po('0903359388'), null, AT);
+    const { session } = await repo.addPo(db, A, po('0903359388'), null, AT);
     await repo.putPhoto(db, A.username, photo(session.id, 'aa'));
-    await expect(repo.removePo(db, A.username, '0903359388')).rejects.toThrow(repo.PoHasDataError);
+    await expect(repo.removePo(db, A, '0903359388')).rejects.toThrow(repo.PoHasDataError);
   });
 });
 
 describe('photos', () => {
   it('keeps one photo per defect of a session (AC-10.5)', async () => {
-    const s = await repo.openSession(db, A.username, '0903359388', AT);
+    const s = await repo.openSession(db, A, '0903359388', AT);
     await repo.putPhoto(db, A.username, photo(s.id, 'first'));
     await repo.putPhoto(db, A.username, photo(s.id, 'second'));
     expect((await repo.listPhotos(db, s.id)).map((p) => p.sha256)).toEqual(['second']);
@@ -199,15 +229,15 @@ describe('photos', () => {
   });
 
   it('removes a photo (HAPUS)', async () => {
-    const s = await repo.openSession(db, A.username, '0903359388', AT);
+    const s = await repo.openSession(db, A, '0903359388', AT);
     await repo.putPhoto(db, A.username, photo(s.id, 'aa'));
     await repo.deletePhoto(db, A.username, s.id, 'D001');
     expect(await repo.listPhotos(db, s.id)).toEqual([]);
   });
 
   it('writes and removes photos only in the PSI’s own open session', async () => {
-    const own = await repo.openSession(db, A.username, '0903359388', AT);
-    const closed = await repo.openSession(db, A.username, 'CX-0902368685', AT);
+    const own = await repo.openSession(db, A, '0903359388', AT);
+    const closed = await repo.openSession(db, A, 'CX-0902368685', AT);
     await repo.putPhoto(db, A.username, photo(closed.id, 'kept'));
     await db.sessions.update(closed.id, { status: 'closed' });
 
@@ -330,7 +360,7 @@ describe('sealSession (doc 03 §4.6)', () => {
 
   /** An open session with REWORK, D001 and D002 recorded, ended, and a photo of each. */
   async function recorded() {
-    const s = await repo.openSession(db, A.username, PO, AT);
+    const s = await repo.openSession(db, A, PO, AT);
     await repo.appendEvent(db, A.username, s.id, { type: 'START_REWORK' }, AT);
     await repo.appendEvent(db, A.username, s.id, defect('D001'), AT);
     await repo.appendEvent(db, A.username, s.id, defect('D002'), AT);
@@ -376,7 +406,7 @@ describe('sealSession (doc 03 §4.6)', () => {
     expect((await db.sessions.get(s.id))?.status).toBe('closed');
     expect(next).toMatchObject({ username: A.username, po: PO, status: 'open', createdAt: LATER });
     expect(next.id).not.toBe(s.id);
-    expect((await repo.listOpenSessions(db, A.username)).map((o) => o.id)).toEqual([next.id]);
+    expect((await repo.listOpenSessions(db, A)).map((o) => o.id)).toEqual([next.id]);
     // The sealed session never changes again.
     await expect(
       repo.appendEvent(db, A.username, s.id, { type: 'NO_DEFECT' }, LATER),
@@ -437,5 +467,82 @@ describe('sealSession (doc 03 §4.6)', () => {
     expect(await snapshot()).toEqual(before);
     expect(await db.outbox.count()).toBe(0);
     expect((await db.sessions.get(s.id))?.status).toBe('open');
+  });
+});
+
+describe('update to per-cell data (ADR-021)', () => {
+  /** A database as the app before ADR-021 left it: version 1, rows without factory and cell. */
+  async function versionOne(name: string) {
+    const old = new Dexie(name);
+    old.version(1).stores({
+      meta: 'key',
+      masterData: 'id',
+      auth: 'id',
+      pos: '[username+po], username',
+      sessions: 'id, username, [username+po+status]',
+      events: '[sessionId+seq], sessionId',
+      photos: '[sessionId+defectId], sessionId',
+      outbox: 'submissionUuid, state, authorUsername',
+      outboxPhotos: '[submissionUuid+defectId], submissionUuid',
+      view: 'username',
+    });
+    await old.open();
+    await old.table('pos').bulkAdd([
+      { ...po('0903359388'), username: A.username, partial: null, addedAt: AT },
+      { ...po('CX-0902368685'), username: OTHER.username, partial: null, addedAt: AT },
+    ]);
+    await old.table('sessions').bulkAdd([
+      { id: 's1', username: A.username, po: '0903359388', status: 'open', createdAt: AT },
+      { id: 's0', username: A.username, po: '0903359388', status: 'closed', createdAt: AT },
+      { id: 's2', username: OTHER.username, po: 'CX-0902368685', status: 'open', createdAt: AT },
+    ]);
+    await old.table('events').add({
+      sessionId: 's1',
+      seq: 1,
+      at: AT,
+      type: 'START_REWORK',
+      username: A.username,
+    });
+    await old
+      .table('view')
+      .add({ ...DEFAULT_SCREEN, selectedPo: '0903359388', username: A.username });
+    old.close();
+  }
+
+  it('keeps every row, unscoped, and the next login claims the PSI’s own', async () => {
+    const name = `test-${crypto.randomUUID()}`;
+    await versionOne(name);
+    const updated = createDb(name);
+    try {
+      await updated.open();
+      expect(updated.verno).toBe(3);
+      expect(updated.tables.map((t) => t.name)).not.toContain('pos');
+      expect(await updated.poList.count()).toBe(2);
+      const rows = await updated.poList.toArray();
+      expect(rows.every((p) => p.factory === '' && p.cell === '')).toBe(true);
+      expect(await repo.listPos(updated, A)).toEqual([]);
+
+      expect(await repo.claimUnscoped(updated, A)).toEqual(['0903359388']);
+      expect((await repo.listPos(updated, A)).map((p) => p.po)).toEqual(['0903359388']);
+      expect((await repo.listOpenSessions(updated, A)).map((s) => s.id)).toEqual(['s1']);
+      expect(await repo.listEvents(updated, A.username, 's1')).toHaveLength(1);
+      expect((await repo.getView(updated, A))?.selectedPo).toBe('0903359388');
+      // Another PSI's rows wait for their own login; a second claim finds nothing.
+      expect(await repo.claimUnscoped(updated, A)).toEqual([]);
+      expect(await repo.listPos(updated, OTHER)).toEqual([]);
+      expect(await repo.claimUnscoped(updated, OTHER)).toEqual(['CX-0902368685']);
+      expect((await repo.listOpenSessions(updated, OTHER)).map((s) => s.id)).toEqual(['s2']);
+    } finally {
+      await updated.delete();
+    }
+  });
+
+  it('leaves an unscoped PO alone when the same PO is already listed in this cell', async () => {
+    await repo.addPo(db, A, po('0903359388'), null, LATER);
+    const legacy = { ...po('0903359388'), username: A.username, partial: null, addedAt: AT };
+    await db.poList.add({ ...legacy, factory: '', cell: '' });
+    expect(await repo.claimUnscoped(db, A)).toEqual([]);
+    expect(await repo.listPos(db, A)).toHaveLength(1);
+    expect(await db.poList.count()).toBe(2);
   });
 });

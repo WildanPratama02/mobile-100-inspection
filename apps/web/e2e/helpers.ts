@@ -55,6 +55,20 @@ export async function setQtyInspection(page: Page, qty: number) {
   await dialog.getByRole('button', { name: 'SIMPAN' }).click();
   await expect(dialog).toHaveCount(0);
 }
+/**
+ * PSI lv.2 (ADR-021): taps NO DEFECT `times` times on the Defect screen, opened from Home with ADD DEFECT, and
+ * returns Home.
+ */
+export async function tapNoDefect(page: Page, times: number) {
+  await page.getByRole('button', { name: 'ADD DEFECT' }).click();
+  const button = page.getByRole('button', { name: 'NO DEFECT' });
+  for (let i = 0; i < times; i++) await button.click();
+  await page
+    .getByRole('navigation', { name: 'Navigasi input defect' })
+    .getByRole('button', { name: 'HOME' })
+    .click();
+  await expect(page.getByRole('button', { name: 'SUBMIT PO' })).toBeVisible();
+}
 export const pill = (page: Page, name: string) =>
   page.getByRole('group', { name: 'Pilih area sepatu' }).getByRole('button', { name });
 export const choice = (page: Page, name: string) =>

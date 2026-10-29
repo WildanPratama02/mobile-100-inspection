@@ -1,6 +1,6 @@
 import {
   defaultMapping,
-  EMPTY_SESSION,
+  emptySession,
   toWibIso,
   totals,
   type AreaMapEntry,
@@ -186,7 +186,8 @@ describe('reload mid-inspection (AC-06.2)', () => {
     expect(session.active?.type).toBe('REWORK');
     expect(session.active?.defects).toHaveLength(2);
     expect(session.undo).toBe('DEFECT');
-    expect(totals(session)).toMatchObject({ qtyInspection: null, qtyDefect: 2, qtyBGrade: 0 });
+    // PSI lv.2 (ADR-021): the active pair is counted at END INSPECTION.
+    expect(totals(session)).toMatchObject({ qtyInspection: 0, qtyDefect: 2, qtyBGrade: 0 });
   });
 
   it('restores a log with an ended inspection, UNDO and an active B-GRADE', async () => {
@@ -195,7 +196,8 @@ describe('reload mid-inspection (AC-06.2)', () => {
     await tap(PO.po, { type: 'START', inspection: 'REWORK' });
     await tap(PO.po, { type: 'DEFECT', entry: TOE });
     await tap(PO.po, { type: 'END' });
-    await tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 30 });
+    await tap(PO.po, { type: 'NO_DEFECT' });
+    await tap(PO.po, { type: 'NO_DEFECT' });
     await tap(PO.po, { type: 'UNDO' });
     await tap(PO.po, { type: 'START', inspection: 'B-GRADE' });
     await tap(PO.po, { type: 'DEFECT', entry: HEEL });
@@ -206,9 +208,10 @@ describe('reload mid-inspection (AC-06.2)', () => {
 
     expect(after).toEqual(store.getState().sessions[PO.po]!.state);
     expect(after.active?.type).toBe('B-GRADE');
+    expect(after.noDefect).toBe(1);
     expect(totals(after)).toMatchObject({
-      qtyInspection: 30,
-      qtyAGrade: 28,
+      qtyInspection: 2,
+      qtyAGrade: 1,
       qtyDefect: 2,
       qtyBGrade: 1,
     });
@@ -241,11 +244,49 @@ describe('shared tablet (AC-02.2, AC-02.3)', () => {
     expect(store.getState().view.selectedPo).toBe(PO.po);
   });
 
+  it('starts empty in another factory or cell and restores the first one there (ADR-021)', async () => {
+    const store = await loggedInWithPo();
+    await store.getState().tap(PO.po, { type: 'NO_DEFECT' });
+    await store.getState().setView({ selectedPo: PO.po });
+    const first = store.getState().sessions;
+
+    await store.getState().logout();
+    await store.getState().login({ ...A, cell: 'C02' });
+    expect(store.getState()).toMatchObject({ pos: [], sessions: {}, view: DEFAULT_VIEW });
+    await store.getState().addPo(PO, null);
+    expect(totals(store.getState().sessions[PO.po]!.state).qtyInspection).toBe(0);
+
+    await store.getState().logout();
+    await store.getState().login({ ...A, factory: 'F 2', cell: 'C01' });
+    expect(store.getState().pos).toEqual([]);
+
+    await store.getState().logout();
+    await store.getState().login(A);
+    expect(store.getState().sessions).toEqual(first);
+    expect(store.getState().view.selectedPo).toBe(PO.po);
+    expect(store.getState().pos[0]?.partial).toEqual({ number: 1, qty: 600 });
+  });
+
+  it('submits with the factory and cell of the login the session belongs to (ADR-021)', async () => {
+    const store = await loggedInWithPo();
+    await store.getState().tap(PO.po, { type: 'NO_DEFECT' });
+    await store.getState().logout();
+    await store.getState().login({ ...A, factory: 'F 2', cell: 'C09' });
+    await store.getState().addPo(PO, null);
+    await store.getState().tap(PO.po, { type: 'NO_DEFECT' });
+    const item = await store.getState().submitPo(PO.po, defaultMapping());
+    expect(JSON.parse(item.payloadJson)).toMatchObject({ factory: 'F 2', cell: 'C09' });
+
+    await store.getState().logout();
+    await store.getState().login(A);
+    expect(totals(store.getState().sessions[PO.po]!.state).qtyInspection).toBe(1);
+  });
+
   it('refuses changes when nobody is logged in', async () => {
     const store = createAppStore(db, now);
     await store.getState().hydrate();
     await expect(store.getState().addPo(PO, null)).rejects.toThrow('Not logged in');
-    expect(await db.pos.count()).toBe(0);
+    expect(await db.poList.count()).toBe(0);
   });
 });
 
@@ -472,7 +513,7 @@ describe('renewToken (doc 04 §2)', () => {
       Promise.reject(new ApiError(401, 'TOKEN_INVALID', 'Sesi login tidak valid.'));
     await expect(store.getState().renewToken({ refresh })).rejects.toBeInstanceOf(ApiError);
     expect(store.getState().auth).toBeNull();
-    expect(await repo.listPos(db, A.username)).toHaveLength(1);
+    expect(await repo.listPos(db, A)).toHaveLength(1);
   });
 
   it('keeps the login when the API cannot be reached', async () => {
@@ -621,7 +662,7 @@ describe('submitPo (FR-11, doc 03 §4.6)', () => {
     await tap(PO.po, { type: 'START', inspection: 'B-GRADE' });
     await tap(PO.po, { type: 'DEFECT', entry: HEEL });
     await tap(PO.po, { type: 'END' });
-    await tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 30 });
+    for (let i = 0; i < 28; i++) await tap(PO.po, { type: 'NO_DEFECT' });
     await savePhoto(PO.po, 'D001', jpeg('sha-toe'));
     await savePhoto(PO.po, 'D049', jpeg('sha-heel'));
     return store;
@@ -663,8 +704,8 @@ describe('submitPo (FR-11, doc 03 §4.6)', () => {
     expect(waitingCount(after)).toBe(1);
     const next = after.sessions[PO.po]!;
     expect(next.session.id).not.toBe(sealed.id);
-    expect(next).toMatchObject({ events: [], state: EMPTY_SESSION, photos: {} });
-    expect(totals(next.state)).toMatchObject({ qtyInspection: null, qtyDefect: 0 });
+    expect(next).toMatchObject({ events: [], state: emptySession('TAPPED'), photos: {} });
+    expect(totals(next.state)).toMatchObject({ qtyInspection: 0, qtyDefect: 0 });
     expect(after.pos[0]?.partial).toEqual({ number: 1, qty: 600 });
     expect((await db.sessions.get(sealed.id))?.status).toBe('closed');
     expect(
@@ -695,7 +736,8 @@ describe('submitPo (FR-11, doc 03 §4.6)', () => {
       cell: 'C01',
       po: PO.po,
       partial: { number: 1, qty: 600 },
-      counts: { rework: 1, bGrade: 1, qtyInspection: 30 },
+      // PSI lv.2 sends its NO DEFECT taps (ADR-021).
+      counts: { rework: 1, bGrade: 1, noDefect: 28 },
     });
     expect(payload.findings.map((f) => [f.inspectionType, f.defectId, f.qty])).toEqual([
       ['REWORK', 'D001', 2],
@@ -738,16 +780,38 @@ describe('submitPo (FR-11, doc 03 §4.6)', () => {
       expect(store.getState().outbox).toEqual([]);
     };
 
-    await blocked('EMPTY');
+    await blocked('NO_PAIRS');
     await tap(PO.po, { type: 'START', inspection: 'REWORK' });
     await blocked('ACTIVE');
     await tap(PO.po, { type: 'DEFECT', entry: TOE });
     await tap(PO.po, { type: 'END' });
-    await tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 30 });
     await blocked('PHOTOS_MISSING');
     await store.getState().savePhoto(PO.po, 'D001', jpeg('aa'));
     await removePhoto(PO.po, 'D001');
     await blocked('PHOTOS_MISSING');
+  });
+
+  it('PSI lv.2 counts NO DEFECT up to the partial quantity; PSI lv.1 has no NO DEFECT (ADR-021)', async () => {
+    const store = await loggedInWithPo();
+    await store.getState().setPartial(PO.po, { number: 1, qty: 2 });
+    const { tap } = store.getState();
+    expect(await tap(PO.po, { type: 'NO_DEFECT' })).not.toBeNull();
+    expect(await tap(PO.po, { type: 'START', inspection: 'REWORK' })).not.toBeNull();
+    expect(await tap(PO.po, { type: 'DEFECT', entry: TOE })).not.toBeNull();
+    expect(await tap(PO.po, { type: 'END' })).not.toBeNull();
+    expect(await tap(PO.po, { type: 'NO_DEFECT' })).toBeNull();
+    expect(await tap(PO.po, { type: 'START', inspection: 'B-GRADE' })).toBeNull();
+    expect(totals(store.getState().sessions[PO.po]!.state)).toMatchObject({
+      qtyInspection: 2,
+      qtyAGrade: 1,
+      qtyDefect: 1,
+    });
+    expect(await tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 2 })).toBeNull();
+
+    await store.getState().logout();
+    await store.getState().login(B);
+    await store.getState().addPo(PO, null);
+    expect(await store.getState().tap(PO.po, { type: 'NO_DEFECT' })).toBeNull();
   });
 
   it('submits PSI lv.1 without photos (AC-10.6)', async () => {

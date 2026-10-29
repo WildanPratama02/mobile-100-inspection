@@ -5,7 +5,8 @@
  */
 import {
   APP_NAME,
-  EMPTY_SESSION,
+  countingMode,
+  emptySession,
   fileDate,
   findings,
   formatDateTime,
@@ -74,7 +75,7 @@ export interface ExportInput {
 }
 
 export function exportReport({ po, session, auth, mapping, now }: ExportInput): ExportReport {
-  const state = session?.state ?? EMPTY_SESSION;
+  const state = session?.state ?? emptySession(countingMode(auth.level));
   const attached = session?.photos ?? {};
   const photos = takesPhotos(auth.level);
 

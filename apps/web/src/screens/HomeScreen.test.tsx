@@ -87,6 +87,18 @@ const defect = (e: AreaMapEntry): TapCommand => ({ type: 'DEFECT', entry: e });
 const START_REWORK: TapCommand = { type: 'START', inspection: 'REWORK' };
 const START_BGRADE: TapCommand = { type: 'START', inspection: 'B-GRADE' };
 const END: TapCommand = { type: 'END' };
+const NO_DEFECT: TapCommand = { type: 'NO_DEFECT' };
+/** `n` NO DEFECT taps: PSI lv.2 counts Qty Inspection with them (ADR-021). */
+const noDefects = (n: number): TapCommand[] => Array.from({ length: n }, () => NO_DEFECT);
+const LV1: Auth = { ...AUTH, username: 'ANDI CONTOH', level: 'PSI lv.1' };
+
+/** Logs PSI lv.1 in instead, who enters Qty Inspection (ADR-019). */
+async function asLv1() {
+  await act(async () => {
+    await store.getState().logout();
+    await store.getState().login(LV1);
+  });
+}
 
 /** The value shown beside a results label. */
 function stat(label: string): string {
@@ -130,9 +142,21 @@ describe('Home states (doc 05 §8.2)', () => {
     expect(infoValue('MODEL')).toBe(PO.model);
     expect(infoValue('DESTINATION')).toBe(PO.destination);
     expect(stat('Qty PO Order')).toBe('10.002');
-    expect(stat('Qty Inspection')).toBe('\u2014');
+    // PSI lv.2 counts Qty Inspection from 0; it is not a button (ADR-021).
+    expect(stat('Qty Inspection')).toBe('0');
+    expect(screen.queryByRole('button', { name: 'Ubah Qty Inspection' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Ketuk untuk isi')).not.toBeInTheDocument();
     expect(stat('Pass Rate (RFT)')).toBe('0,0%');
     for (const name of BOTTOM) expect(screen.getByRole('button', { name })).toBeEnabled();
+  });
+
+  it('PSI lv.1 with an empty session: "—" and QTY INSPECTION to tap (ADR-019)', async () => {
+    await asLv1();
+    await store.getState().addPo(PO, null);
+    renderHome(LV1);
+    expect(stat('Qty Inspection')).toBe('\u2014');
+    expect(screen.getByRole('button', { name: 'Ubah Qty Inspection' })).toBeInTheDocument();
+    expect(screen.getByText('Ketuk untuk isi')).toBeInTheDocument();
   });
 
   it('while an inspection is active: marks the PO and says how to go on', async () => {
@@ -153,9 +177,10 @@ describe('Home states (doc 05 §8.2)', () => {
 });
 
 describe('results panel (FR-04, AC-04.1)', () => {
-  it('uses the entered quantity and finding totals (ADR-019)', async () => {
+  it('PSI lv.1: uses the entered quantity and finding totals (ADR-019)', async () => {
+    await asLv1();
     await store.getState().addPo(PO, null);
-    renderHome();
+    renderHome(LV1);
     const a = entry('MINOR', 'A01');
     await tap(PO.po, START_REWORK, defect(a), defect(a), END);
     expect(stat('Qty Inspection')).toBe('\u2014');
@@ -172,6 +197,26 @@ describe('results panel (FR-04, AC-04.1)', () => {
     expect(await store.getState().tap(PO.po, { type: 'UNDO' })).toBeNull();
   });
 
+  it('PSI lv.2: counts NO DEFECT and ended inspections; A-Grade is NO DEFECT (ADR-021)', async () => {
+    await store.getState().addPo(PO, null);
+    renderHome();
+    const a = entry('MINOR', 'A01');
+    await tap(PO.po, ...noDefects(8));
+    expect(stat('Qty Inspection')).toBe('8');
+    expect(stat('Qty A-Grade')).toBe('8');
+    expect(stat('Pass Rate (RFT)')).toBe('100,0%');
+    await tap(PO.po, START_REWORK, defect(a), defect(a));
+    // The active pair counts at END INSPECTION.
+    expect(stat('Qty Inspection')).toBe('8');
+    await tap(PO.po, END, START_BGRADE, defect(a), END);
+    expect(stat('Qty Inspection')).toBe('10');
+    expect(stat('Qty Defect')).toBe('3');
+    expect(stat('Qty A-Grade')).toBe('8');
+    expect(stat('Qty B-Grade')).toBe('1');
+    expect(stat('Defect Rate')).toBe('30,0%');
+    expect(stat('Pass Rate (RFT)')).toBe('80,0%');
+  });
+
   it('marks Defect Rate above 5,0% only (U3)', async () => {
     await store.getState().addPo(PO, null);
     renderHome();
@@ -179,7 +224,7 @@ describe('results panel (FR-04, AC-04.1)', () => {
       within(screen.getByRole('region', { name: 'Hasil' }))
         .getByText('Defect Rate')
         .closest('.m100-stat');
-    await tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 20 });
+    await tap(PO.po, ...noDefects(19));
     await tap(PO.po, START_REWORK, defect(entry('MINOR', 'A01')), END);
     expect(stat('Defect Rate')).toBe('5,0%');
     expect(rate()).not.toHaveClass('m100-stat--bad');
@@ -258,11 +303,11 @@ describe('PO list (FR-03)', () => {
   it('selecting a PO switches the info strip and the results (AC-03.3)', async () => {
     await store.getState().addPo(PO, null);
     await store.getState().addPo(CX, null);
-    await tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 30 });
+    await tap(PO.po, ...noDefects(3));
     renderHome();
     expect(infoValue('PO NUMBER')).toBe('CX-0902368685');
     expect(stat('Qty PO Order')).toBe('2.400');
-    expect(stat('Qty Inspection')).toBe('\u2014');
+    expect(stat('Qty Inspection')).toBe('0');
 
     fireEvent.click(screen.getByRole('button', { name: /^0903359388/ }));
     await waitFor(() => expect(infoValue('PO NUMBER')).toBe('0903359388'));
@@ -271,7 +316,7 @@ describe('PO list (FR-03)', () => {
       'true',
     );
     expect(stat('Qty PO Order')).toBe('10.002');
-    expect(stat('Qty Inspection')).toBe('30');
+    expect(stat('Qty Inspection')).toBe('3');
   });
 
   it('shows the partial with UBAH PARTIAL, or PO PARTIAL without one (U9)', async () => {
@@ -315,7 +360,7 @@ describe('removing a PO by long press (AC-03.4)', () => {
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /^CX-0902368685/ })).not.toBeInTheDocument(),
     );
-    expect(await db.pos.count()).toBe(1);
+    expect(await db.poList.count()).toBe(1);
   });
 
   it('does not respond on a PO with data, and a short tap only selects', async () => {
@@ -330,7 +375,6 @@ describe('removing a PO by long press (AC-03.4)', () => {
 });
 
 describe('photos (FR-10, doc 05 §12)', () => {
-  const LV1: Auth = { ...AUTH, username: 'ANDI CONTOH', level: 'PSI lv.1' };
   const shot = (name = 'shot.jpg') => new File(['raw'], name, { type: 'image/jpeg' });
   let hashes = 0;
 
@@ -488,7 +532,6 @@ describe('photos (FR-10, doc 05 §12)', () => {
 });
 
 describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
-  const LV1: Auth = { ...AUTH, username: 'ANDI CONTOH', level: 'PSI lv.1' };
   const FILE = /^M100_0903359388_\d{8}\.(pdf|xlsx)$/;
 
   beforeEach(() => {
@@ -621,9 +664,7 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
 });
 
 describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
-  const LV1: Auth = { ...AUTH, username: 'ANDI CONTOH', level: 'PSI lv.1' };
   const jpeg = { blob: new Blob(['j'], { type: 'image/jpeg' }), sha256: 'h' };
-  const QTY: TapCommand = { type: 'SET_QTY_INSPECTION', qty: 30 };
   const submit = () => fireEvent.click(screen.getByRole('button', { name: 'SUBMIT PO' }));
   const summary = (label: string) =>
     within(screen.getByRole('dialog', { name: 'Submit PO' }))
@@ -662,9 +703,21 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
     expect(await stored()).toEqual(before);
   });
 
-  it('blocks when Qty Inspection is 0', async () => {
+  it('PSI lv.2: blocks while no pair is tapped; Ke ADD DEFECT opens the Defect screen (ADR-021)', async () => {
     await store.getState().addPo(PO, null);
     renderHome();
+    submit();
+    const dialog = screen.getByRole('alertdialog', { name: 'Belum ada pasang diinspeksi' });
+    expect(dialog).toHaveTextContent('Tekan NO DEFECT untuk pasang tanpa defect');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Ke ADD DEFECT' }));
+    await waitFor(() => expect(store.getState().view.screen).toBe('defect'));
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('PSI lv.1: blocks when Qty Inspection is empty', async () => {
+    await asLv1();
+    await store.getState().addPo(PO, null);
+    renderHome(LV1);
     submit();
     const dialog = screen.getByRole('alertdialog', { name: 'QTY INSPECTION belum diisi' });
     expect(dialog).toHaveTextContent('Isi jumlah pasang yang diinspeksi sebelum SUBMIT PO.');
@@ -677,10 +730,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
     const a = entry('MAJOR', 'A01');
     const b = entry('MINOR', 'A01');
     await store.getState().addPo(PO, null);
-    await tap(PO.po, START_REWORK, defect(a), defect(b), defect(b), END, {
-      type: 'SET_QTY_INSPECTION',
-      qty: 30,
-    });
+    await tap(PO.po, START_REWORK, defect(a), defect(b), defect(b), END, ...noDefects(27));
     await act(() => store.getState().savePhoto(PO.po, a.defectId, jpeg));
     renderHome();
     submit();
@@ -698,7 +748,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
   it('confirms with the summary; BATAL, the close button and the scrim change nothing', async () => {
     const a = entry('MAJOR', 'A01');
     await store.getState().addPo(PO, { number: 1, qty: 1200 });
-    await tap(PO.po, START_BGRADE, defect(a), END, QTY);
+    await tap(PO.po, START_BGRADE, defect(a), END, ...noDefects(29));
     await act(() => store.getState().savePhoto(PO.po, a.defectId, jpeg));
     renderHome();
     const before = await stored();
@@ -729,7 +779,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
   it('KIRIM seals the session: Home shows zeros, the toast and the waiting count (AC-04.2, AC-11.3)', async () => {
     const a = entry('MAJOR', 'A01');
     await store.getState().addPo(PO, { number: 2, qty: 300 });
-    await tap(PO.po, START_REWORK, defect(a), END, { type: 'SET_QTY_INSPECTION', qty: 30 });
+    await tap(PO.po, START_REWORK, defect(a), END, ...noDefects(29));
     await act(() => store.getState().savePhoto(PO.po, a.defectId, jpeg));
     renderHome();
     expect(screen.queryByLabelText(/pengiriman menunggu/)).not.toBeInTheDocument();
@@ -740,7 +790,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
     expect(await screen.findByText('Tersimpan. Menunggu koneksi.')).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByLabelText('1 pengiriman menunggu')).toHaveTextContent('1');
-    expect(stat('Qty Inspection')).toBe('\u2014');
+    expect(stat('Qty Inspection')).toBe('0');
     expect(stat('Qty Defect')).toBe('0');
     expect(stat('Defect Rate')).toBe('0,0%');
     expect(screen.getByText('Belum ada defect')).toBeInTheDocument();
@@ -764,7 +814,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
 
     async function kirim(sender: OutboxSender) {
       await store.getState().addPo(PO, null);
-      await tap(PO.po, QTY);
+      await tap(PO.po, ...noDefects(30));
       render(
         <AppStoreContext.Provider value={store}>
           <OutboxSenderContext.Provider value={sender}>
@@ -790,7 +840,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
       await kirim(sender);
       expect(await screen.findByText('Sedang dikirim.')).toBeInTheDocument();
       // Home does not wait for the answer: the next round can start (doc 05 §13.3).
-      expect(stat('Qty Inspection')).toBe('\u2014');
+      expect(stat('Qty Inspection')).toBe('0');
       const [item] = await db.outbox.toArray();
       expect(sender.send).toHaveBeenCalledWith(item!.submissionUuid);
       await act(async () => {
@@ -822,10 +872,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
   });
 
   it('PSI lv.1 confirms without a Foto row and submits no photo (AC-10.6)', async () => {
-    await act(async () => {
-      await store.getState().logout();
-      await store.getState().login(LV1);
-    });
+    await asLv1();
     await store.getState().addPo(PO, null);
     await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')), END, {
       type: 'SET_QTY_INSPECTION',
@@ -844,7 +891,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
   it('says so when sealing fails on the tablet, and keeps the session', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await store.getState().addPo(PO, null);
-    await tap(PO.po, QTY);
+    await tap(PO.po, ...noDefects(30));
     renderHome();
     const before = await stored();
     vi.spyOn(db.outbox, 'add').mockRejectedValueOnce(new Error('QuotaExceededError'));

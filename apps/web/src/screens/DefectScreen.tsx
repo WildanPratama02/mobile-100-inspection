@@ -1,5 +1,6 @@
 /**
- * S6 Defect screen (doc 05 §11): REWORK / B-GRADE / NO DEFECT above the shoe map and END INSPECTION below it; on
+ * S6 Defect screen (doc 05 §11): REWORK / B-GRADE (and NO DEFECT for PSI lv.2, ADR-021) above the shoe map and
+ * END INSPECTION below it; on
  * the right the context line, breadcrumb, drill-down list, the session's history and BACK / HOME / UNDO.
  *
  * Every tap goes through `store.tap`, which writes to IndexedDB before the state changes (NFR-05); counting comes
@@ -8,8 +9,11 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import {
-  EMPTY_SESSION,
+  canAddPair,
+  countingMode,
+  emptySession,
   findings,
+  formatCount,
   type AreaId,
   type AreaMapEntry,
   type Classification,
@@ -28,6 +32,7 @@ import {
   CommandButton,
   HistoryRow,
   List,
+  Notice,
   OptionRow,
   Pane,
   SHOE_AREAS,
@@ -116,13 +121,14 @@ export function DefectScreen({ po }: DefectScreenProps) {
   const path = useAppStore((s) => s.view.defectPath);
   const tap = useAppStore((s) => s.tap);
   const setView = useAppStore((s) => s.setView);
+  const level = useAppStore((s) => s.auth?.level ?? 'PSI lv.1');
   const [optionFlash, setOptionFlash] = useState<Flash | null>(null);
   const [historyFlash, setHistoryFlash] = useState<Flash | null>(null);
   const historyRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const layout = useShoeLayout(mapRef);
 
-  const state = session?.state ?? EMPTY_SESSION;
+  const state = session?.state ?? emptySession(countingMode(level));
   const active = state.active;
   const defects = active?.defects ?? [];
   const history = findings(state);
@@ -168,6 +174,13 @@ export function DefectScreen({ po }: DefectScreenProps) {
       toast(`Inspeksi ${inspection} dimulai`);
     });
 
+  // PSI lv.2 only (ADR-021): one A-Grade pair at once, no END INSPECTION.
+  const noDefect = () =>
+    run({ type: 'NO_DEFECT' }, () => {
+      go(NO_PATH);
+      toast('No Defect tercatat. A-Grade +1');
+    });
+
   const end = () =>
     run({ type: 'END' }, ({ before }) => {
       go(NO_PATH);
@@ -187,6 +200,8 @@ export function DefectScreen({ po }: DefectScreenProps) {
       } else if (before.undo === 'INSPECTION') {
         go(NO_PATH);
         toast('Inspeksi dibatalkan');
+      } else {
+        toast('No Defect dibatalkan');
       }
     });
 
@@ -200,8 +215,11 @@ export function DefectScreen({ po }: DefectScreenProps) {
     });
   };
 
+  // PSI lv.2 counts pairs with taps, up to the partial quantity or Qty Order (ADR-021).
+  const tapped = state.mode === 'TAPPED';
+  const room = canAddPair(state, po);
   const commandState = (type: InspectionType): CommandButtonProps['state'] =>
-    !active ? 'idle' : active.type === type ? 'active' : 'disabled';
+    !active ? (room ? 'idle' : 'disabled') : active.type === type ? 'active' : 'disabled';
 
   const counts = areaCounts(defects);
   const areas: Record<string, ShoeMapAreaState> = {};
@@ -215,7 +233,7 @@ export function DefectScreen({ po }: DefectScreenProps) {
   return (
     <main className="app-screen defect">
       <Pane label="Sepatu" className="defect__shoe">
-        <div className="defect__cmds">
+        <div className={tapped ? 'defect__cmds defect__cmds--three' : 'defect__cmds'}>
           <CommandButton
             mode="rework"
             state={commandState('REWORK')}
@@ -226,7 +244,20 @@ export function DefectScreen({ po }: DefectScreenProps) {
             state={commandState('B-GRADE')}
             onClick={() => start('B-GRADE')}
           />
+          {tapped ? (
+            <CommandButton
+              mode="nodefect"
+              state={active || !room ? 'disabled' : 'idle'}
+              onClick={noDefect}
+            />
+          ) : null}
         </div>
+        {tapped && !active && !room ? (
+          <Notice tone="warning">
+            Qty Inspection sudah {formatCount(po.partial?.qty ?? po.orderQty)} pasang, maksimum PO
+            ini. Tidak bisa menambah pasang lagi.
+          </Notice>
+        ) : null}
         <div className="defect__map" ref={mapRef}>
           <ShoeMap
             src={SHOE_SRC}

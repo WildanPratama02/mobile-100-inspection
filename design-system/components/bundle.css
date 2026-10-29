@@ -40,7 +40,7 @@
 .m100-dialog__body{padding:14px 16px 16px;display:grid;gap:var(--space-3);font-family:var(--font-body);font-size:15px}
 .m100-toast{display:inline-flex;align-items:center;gap:var(--space-2);background:var(--surface);color:var(--ink);border:1px solid var(--line-strong);border-radius:var(--radius-md);padding:10px 16px;font-family:var(--font-body);font-size:15px;font-weight:600;box-shadow:var(--shadow-overlay);max-width:min(92vw,520px)}
 .m100-toast--error{border-color:var(--danger);color:var(--danger)}
-.m100-toast--floating{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 14px);transform:translateX(-50%);z-index:60;animation:m100-tin .18s ease-out}
+.m100-toast--floating{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 14px);transform:translateX(-50%);z-index:60;animation:m100-tin .18s ease-out;pointer-events:none}
 @keyframes m100-tin{from{opacity:0;transform:translate(-50%,-8px)}to{opacity:1;transform:translate(-50%,0)}}
 .m100-notice{border:1px solid var(--line-strong);border-radius:var(--radius-md);padding:10px 12px;font-family:var(--font-body);font-size:14.5px;color:var(--ink);background:var(--surface)}
 .m100-notice--warning{background:var(--warning-soft)}

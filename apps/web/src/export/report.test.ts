@@ -3,6 +3,7 @@ import {
   findings,
   replay,
   top5,
+  type CountingMode,
   type DefectId,
   type SessionEvent,
   type SessionEventPayload,
@@ -28,6 +29,8 @@ const LV1: Auth = { ...LV2, username: 'ANDI CONTOH', level: 'PSI lv.1' };
 const PO: PoRow = {
   ...ALL_PO_MASTER.find((p) => p.po === '0903359388')!,
   username: LV2.username,
+  factory: LV2.factory,
+  cell: LV2.cell,
   partial: null,
   addedAt: '2026-10-19T00:00:00.000Z',
 };
@@ -35,10 +38,15 @@ const PO: PoRow = {
 // 14.05 WIB on 19 Oct 2026.
 const NOW = new Date('2026-10-19T07:05:00Z');
 
-/** Taps in order, one second apart, reduced by the shared engine like the store does. */
+/**
+ * Taps in order, one second apart, reduced by the shared engine like the store does: `ENTERED` (PSI lv.1) unless
+ * told `TAPPED` (PSI lv.2, ADR-021).
+ */
 class Taps {
   private readonly events: SessionEvent[] = [];
   private readonly photos: Partial<Record<DefectId, PhotoRow>> = {};
+
+  constructor(private readonly mode: CountingMode = 'ENTERED') {}
 
   private push(payload: SessionEventPayload): this {
     const seq = this.events.length + 1;
@@ -58,6 +66,10 @@ class Taps {
   }
   end() {
     return this.push({ type: 'END' });
+  }
+  noDefect(times = 1) {
+    for (let i = 0; i < times; i++) this.push({ type: 'NO_DEFECT' });
+    return this;
   }
   undo() {
     return this.push({ type: 'UNDO' });
@@ -91,7 +103,7 @@ class Taps {
         createdAt: '2026-10-19T01:00:00.000Z',
       },
       events: this.events,
-      state: replay(this.events),
+      state: replay(this.events, this.mode),
       photos: this.photos,
     };
   }
@@ -158,9 +170,43 @@ describe('exportReport (FR-12)', () => {
     ]);
   });
 
+  it('PSI lv.2: Qty Inspection and A-Grade from NO DEFECT and ended inspections (ADR-021)', () => {
+    const taps = new Taps('TAPPED')
+      .noDefect(7)
+      .rework()
+      .defect('D005')
+      .defect('D049')
+      .end()
+      .bGrade()
+      .defect('D035')
+      .end();
+    expect(exportReport(input(taps)).results.map((r) => r.value)).toEqual([
+      10002,
+      9,
+      3,
+      7,
+      1,
+      3 / 9,
+      7 / 9,
+    ]);
+  });
+
   it('exports an empty session with the Home display fallbacks (doc 05 §8.5)', () => {
-    for (const report of [exportReport(input(undefined)), exportReport(input(new Taps()))]) {
+    // PSI lv.2 counts from 0 (ADR-021); PSI lv.1 has not entered Qty Inspection yet ("—").
+    for (const report of [
+      exportReport(input(undefined)),
+      exportReport(input(new Taps('TAPPED'))),
+    ]) {
+      expect(report.results.map((r) => r.value)).toEqual([10002, 0, 0, 0, 0, 0, 0]);
+    }
+    const lv1 = [
+      exportReport(input(undefined, { auth: LV1 })),
+      exportReport(input(new Taps(), { auth: LV1 })),
+    ];
+    for (const report of lv1) {
       expect(report.results.map((r) => r.value)).toEqual([10002, null, 0, 0, 0, 0, 0]);
+    }
+    for (const report of [exportReport(input(undefined)), ...lv1]) {
       expect(report.top5).toEqual([]);
       expect(report.photos).toEqual([]);
       expect(report.missingPhotos).toEqual([]);

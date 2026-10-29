@@ -1,9 +1,10 @@
 /**
  * Reads and writes of the local database (doc 03 §4.2–4.4). User data is always read by username, so one
- * PSI never sees another's POs, sessions or screen (AC-02.3).
+ * PSI never sees another's POs, sessions or screen (AC-02.3); POs, sessions and the screen also by the factory
+ * and cell of the login (`Scope`, ADR-021).
  */
 import { Dexie } from 'dexie';
-import type { DefectId, Po, PoPartial, Session, SessionEventPayload } from '@m100/shared';
+import type { DefectId, Po, PoPartial, SessionEventPayload } from '@m100/shared';
 import type {
   Auth,
   EventRow,
@@ -13,6 +14,8 @@ import type {
   OutboxRow,
   PhotoRow,
   PoRow,
+  Scope,
+  SessionRow,
   View,
 } from './schema';
 
@@ -71,9 +74,15 @@ export class PoHasDataError extends Error {
   }
 }
 
-/** The PSI's POs, newest first (doc 05 §9: an added PO goes to the top). */
-export async function listPos(db: M100Db, username: string): Promise<PoRow[]> {
-  const rows = await db.pos.where('username').equals(username).toArray();
+const scopeKey = ({ username, factory, cell }: Scope): [string, string, string] => [
+  username,
+  factory,
+  cell,
+];
+
+/** The PSI's POs in this factory and cell, newest first (doc 05 §9: an added PO goes to the top; ADR-021). */
+export async function listPos(db: M100Db, scope: Scope): Promise<PoRow[]> {
+  const rows = await db.poList.where('[username+factory+cell]').equals(scopeKey(scope)).toArray();
   return rows.sort((a, b) => b.addedAt.localeCompare(a.addedAt));
 }
 
@@ -83,16 +92,17 @@ export async function listPos(db: M100Db, username: string): Promise<PoRow[]> {
  */
 export async function addPo(
   db: M100Db,
-  username: string,
+  scope: Scope,
   po: Po,
   partial: PoPartial | null,
   at: string,
-): Promise<{ po: PoRow; session: Session }> {
-  return db.transaction('rw', db.pos, db.sessions, async () => {
-    if (await db.pos.get([username, po.po])) throw new PoAlreadyListedError(po.po);
-    const row: PoRow = { ...po, username, partial, addedAt: at };
-    await db.pos.add(row);
-    const session = await openSessionInTx(db, username, po.po, at);
+): Promise<{ po: PoRow; session: SessionRow }> {
+  return db.transaction('rw', db.poList, db.sessions, async () => {
+    if (await db.poList.get([...scopeKey(scope), po.po])) throw new PoAlreadyListedError(po.po);
+    const { username, factory, cell } = scope;
+    const row: PoRow = { ...po, username, factory, cell, partial, addedAt: at };
+    await db.poList.add(row);
+    const session = await openSessionInTx(db, scope, po.po, at);
     return { po: row, session };
   });
 }
@@ -100,61 +110,103 @@ export async function addPo(
 /** PO PARTIAL can change at any time; it is read at SUBMIT PO (doc 05 §10, AC-03.7). */
 export async function setPartial(
   db: M100Db,
-  username: string,
+  scope: Scope,
   po: string,
   partial: PoPartial | null,
 ): Promise<void> {
-  const updated = await db.pos.update([username, po], { partial });
-  if (updated === 0) throw new Error(`PO ${po} is not in the list of ${username}`);
+  const updated = await db.poList.update([...scopeKey(scope), po], { partial });
+  if (updated === 0) throw new Error(`PO ${po} is not in the list of ${scope.username}`);
 }
 
 /** Removes a PO whose open session has no events and no photos (AC-03.4); otherwise refuses. */
-export async function removePo(db: M100Db, username: string, po: string): Promise<void> {
-  await db.transaction('rw', [db.pos, db.sessions, db.events, db.photos], async () => {
-    const session = await findOpenSession(db, username, po);
+export async function removePo(db: M100Db, scope: Scope, po: string): Promise<void> {
+  await db.transaction('rw', [db.poList, db.sessions, db.events, db.photos], async () => {
+    const session = await findOpenSession(db, scope, po);
     if (session) {
       const events = await db.events.where('sessionId').equals(session.id).count();
       const photos = await db.photos.where('sessionId').equals(session.id).count();
       if (events > 0 || photos > 0) throw new PoHasDataError(po);
       await db.sessions.delete(session.id);
     }
-    await db.pos.delete([username, po]);
+    await db.poList.delete([...scopeKey(scope), po]);
+  });
+}
+
+/**
+ * Gives the PSI's rows from before ADR-021 (no factory and cell) to the factory and cell of this login, so a
+ * session open during the update is not lost. A PO already listed here keeps its own data; the old row stays
+ * unscoped then. Returns the POs claimed.
+ */
+export function claimUnscoped(db: M100Db, scope: Scope): Promise<string[]> {
+  const unscoped = (username: string) => [username, '', ''] as const;
+  return db.transaction('rw', [db.poList, db.sessions, db.views], async () => {
+    const old = await db.poList
+      .where('[username+factory+cell]')
+      .equals([...unscoped(scope.username)])
+      .toArray();
+    const claimed: string[] = [];
+    for (const row of old) {
+      if (await db.poList.get([...scopeKey(scope), row.po])) continue;
+      await db.poList.delete([...unscoped(scope.username), row.po]);
+      await db.poList.add({ ...row, factory: scope.factory, cell: scope.cell });
+      claimed.push(row.po);
+    }
+    await db.sessions
+      .where('[username+factory+cell]')
+      .equals([...unscoped(scope.username)])
+      .filter((s) => claimed.includes(s.po))
+      .modify({ factory: scope.factory, cell: scope.cell });
+    const view = await db.views.get([...unscoped(scope.username)]);
+    if (view) {
+      if (!(await db.views.get(scopeKey(scope)))) {
+        await db.views.add({ ...view, factory: scope.factory, cell: scope.cell });
+      }
+      await db.views.delete([...unscoped(scope.username)]);
+    }
+    return claimed;
   });
 }
 
 // ---- Sessions and events (doc 03 §4.2) ----
 
-function findOpenSession(db: M100Db, username: string, po: string): Promise<Session | undefined> {
-  return db.sessions.where('[username+po+status]').equals([username, po, 'open']).first();
+function findOpenSession(db: M100Db, scope: Scope, po: string): Promise<SessionRow | undefined> {
+  return db.sessions
+    .where('[username+factory+cell+po+status]')
+    .equals([...scopeKey(scope), po, 'open'])
+    .first();
 }
 
 async function openSessionInTx(
   db: M100Db,
-  username: string,
+  scope: Scope,
   po: string,
   at: string,
-): Promise<Session> {
-  const found = await findOpenSession(db, username, po);
+): Promise<SessionRow> {
+  const found = await findOpenSession(db, scope, po);
   if (found) return found;
-  const session: Session = { id: crypto.randomUUID(), username, po, status: 'open', createdAt: at };
+  const { username, factory, cell } = scope;
+  const session: SessionRow = {
+    id: crypto.randomUUID(),
+    username,
+    factory,
+    cell,
+    po,
+    status: 'open',
+    createdAt: at,
+  };
   await db.sessions.add(session);
   return session;
 }
 
-/** The one open session of a PSI's PO, created when there is none. */
-export function openSession(
-  db: M100Db,
-  username: string,
-  po: string,
-  at: string,
-): Promise<Session> {
-  return db.transaction('rw', db.sessions, () => openSessionInTx(db, username, po, at));
+/** The one open session of a PSI's PO in this factory and cell, created when there is none. */
+export function openSession(db: M100Db, scope: Scope, po: string, at: string): Promise<SessionRow> {
+  return db.transaction('rw', db.sessions, () => openSessionInTx(db, scope, po, at));
 }
 
-export async function listOpenSessions(db: M100Db, username: string): Promise<Session[]> {
+export async function listOpenSessions(db: M100Db, scope: Scope): Promise<SessionRow[]> {
   return db.sessions
-    .where('username')
-    .equals(username)
+    .where('[username+factory+cell]')
+    .equals(scopeKey(scope))
     .filter((s) => s.status === 'open')
     .toArray();
 }
@@ -280,7 +332,7 @@ export interface SealRequest {
  * photos differ from what the submission was built from. Photos the submission leaves out (a defect undone
  * completely) go with the closed session.
  */
-export function sealSession(db: M100Db, request: SealRequest): Promise<Session> {
+export function sealSession(db: M100Db, request: SealRequest): Promise<SessionRow> {
   const { username, sessionId, lastSeq, item, at } = request;
   return db.transaction(
     'rw',
@@ -303,7 +355,8 @@ export function sealSession(db: M100Db, request: SealRequest): Promise<Session> 
       await db.sessions.update(sessionId, { status: 'closed' });
       const session = await db.sessions.get(sessionId);
       if (!session) throw new SessionNotOpenError(sessionId);
-      return openSessionInTx(db, username, session.po, at);
+      // The new session belongs to the same factory and cell as the sealed one (ADR-021).
+      return openSessionInTx(db, session, session.po, at);
     },
   );
 }
@@ -382,14 +435,15 @@ export function purgeSentOutbox(db: M100Db, now: string): Promise<string[]> {
 
 // ---- Screen state (doc 05 §4, §8.4, §11.5) ----
 
-export async function getView(db: M100Db, username: string): Promise<View | null> {
-  const row = await db.view.get(username);
+export async function getView(db: M100Db, scope: Scope): Promise<View | null> {
+  const row = await db.views.get(scopeKey(scope));
   if (!row) return null;
   return { screen: row.screen, selectedPo: row.selectedPo, defectPath: row.defectPath };
 }
 
-export async function saveView(db: M100Db, username: string, view: View): Promise<void> {
-  await db.view.put({ ...view, username });
+export async function saveView(db: M100Db, scope: Scope, view: View): Promise<void> {
+  const { username, factory, cell } = scope;
+  await db.views.put({ ...view, username, factory, cell });
 }
 
 // ---- Storage ----

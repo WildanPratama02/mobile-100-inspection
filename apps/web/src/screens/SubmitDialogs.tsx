@@ -24,6 +24,25 @@ export function SubmitActiveDialog({ onAddDefect }: { onAddDefect: () => void })
   );
 }
 
+/** PSI lv.2 has tapped no pair yet (ADR-021): `Ke ADD DEFECT` opens S6, where NO DEFECT is. */
+export function SubmitNoPairsDialog({ onAddDefect }: { onAddDefect: () => void }) {
+  return (
+    <Overlay>
+      <Dialog title="Belum ada pasang diinspeksi" role="alertdialog" onClose={false}>
+        <p className="dialog__text">
+          Tekan NO DEFECT untuk pasang tanpa defect, atau REWORK / B-GRADE untuk pasang dengan
+          defect, sebelum SUBMIT PO.
+        </p>
+        <div className="dialog__actions">
+          <Button variant="primary" onClick={onAddDefect}>
+            Ke ADD DEFECT
+          </Button>
+        </div>
+      </Dialog>
+    </Overlay>
+  );
+}
+
 /** Qty Inspection is empty: the action opens the quantity editor. */
 export function SubmitEmptyDialog({ onClose }: { onClose: () => void }) {
   return (

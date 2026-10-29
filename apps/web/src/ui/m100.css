@@ -315,6 +315,8 @@
   transform: translateX(-50%);
   z-index: 60;
   animation: m100-tin 0.18s ease-out;
+  /* A toast has no controls; taps go through to what it covers (NO DEFECT, tapped in a row). */
+  pointer-events: none;
 }
 @keyframes m100-tin {
   from {

@@ -2,8 +2,8 @@
  * The tablet's local database (doc 03 §4.2).
  *
  * Everything that must survive a reload lives here and is written before the UI shows its effect (NFR-05,
- * doc 03 §4.3). User data (`pos`, `sessions`, `events`, `view`) carries the username and every query filters
- * by it (AC-02.3, BR-09).
+ * doc 03 §4.3). User data (`poList`, `sessions`, `events`, `views`) carries the username and every query filters
+ * by it (AC-02.3, BR-09); POs, sessions and the screen also by factory and cell (`Scope`, ADR-021).
  */
 import { Dexie, type Table } from 'dexie';
 import type {
@@ -47,9 +47,8 @@ export interface AuthRow extends Auth {
   id: 'current';
 }
 
-/** A PO in a PSI's list, with its PO PARTIAL (ADR-013). */
-export interface PoRow extends Po {
-  username: string;
+/** A PO in a PSI's list of one factory and cell (ADR-021), with its PO PARTIAL (ADR-013). */
+export interface PoRow extends Po, Scope {
   partial: PoPartial | null;
   addedAt: string;
 }
@@ -123,21 +122,33 @@ export interface View {
   defectPath: DefectPath;
 }
 
-export interface ViewRow extends View {
+export interface ViewRow extends View, Scope {}
+
+/**
+ * Whose data a row is: a PSI in one factory and cell (ADR-021). A login with another factory or cell starts with
+ * an empty PO list; the data of the first comes back with a later login there. `factory` and `cell` are `''` in a
+ * row written before ADR-021, until the PSI's next login claims it (`repo.claimUnscoped`).
+ */
+export interface Scope {
   username: string;
+  factory: string;
+  cell: string;
 }
+
+/** A session as stored, with its scope. */
+export type SessionRow = Session & Scope;
 
 export class M100Db extends Dexie {
   meta!: Table<MetaRow, string>;
   masterData!: Table<MasterDataRow, 'current'>;
   auth!: Table<AuthRow, 'current'>;
-  pos!: Table<PoRow, [string, string]>;
-  sessions!: Table<Session, string>;
+  poList!: Table<PoRow, [string, string, string, string]>;
+  sessions!: Table<SessionRow, string>;
   events!: Table<EventRow, [string, number]>;
   photos!: Table<PhotoRow, [string, DefectId]>;
   outbox!: Table<OutboxRow, string>;
   outboxPhotos!: Table<OutboxPhotoRow, [string, DefectId]>;
-  view!: Table<ViewRow, string>;
+  views!: Table<ViewRow, [string, string, string]>;
 
   constructor(name: string) {
     super(name);
@@ -153,6 +164,31 @@ export class M100Db extends Dexie {
       outboxPhotos: '[submissionUuid+defectId], submissionUuid',
       view: 'username',
     });
+    // ADR-021: POs, sessions and the screen per factory and cell. A primary key can't change, so `pos` and `view`
+    // move to new tables; rows from before stay unscoped (`''`) until their PSI logs in again.
+    this.version(2)
+      .stores({
+        poList: '[username+factory+cell+po], [username+factory+cell], username',
+        sessions: 'id, username, [username+factory+cell], [username+factory+cell+po+status]',
+        views: '[username+factory+cell], username',
+      })
+      .upgrade(async (tx) => {
+        const unscoped = { factory: '', cell: '' };
+        const pos = (await tx.table('pos').toArray()) as Array<Omit<PoRow, 'factory' | 'cell'>>;
+        await tx.table('poList').bulkAdd(pos.map((p) => ({ ...p, ...unscoped })));
+        const views = (await tx.table('view').toArray()) as Array<
+          Omit<ViewRow, 'factory' | 'cell'>
+        >;
+        await tx.table('views').bulkAdd(views.map((v) => ({ ...v, ...unscoped })));
+        await tx
+          .table('sessions')
+          .toCollection()
+          .modify((s: Partial<Scope>) => {
+            s.factory ??= '';
+            s.cell ??= '';
+          });
+      });
+    this.version(3).stores({ pos: null, view: null });
   }
 }
 
