@@ -1,6 +1,9 @@
 # Phase 5 integration review — remediation
 
-**Verdict: HOLD. Do not merge the implementation, deploy, or create its PR.**
+**Verdict: HOLD until the fast-track go-live steps G1–G9 pass** (`phase5-release-preparation.md` §8).
+On 29 Oct 2026 the owner chose the fast track (F1: no NAS or share, so the recovery architecture and tooling are
+skipped for release 1, risks A1–A6 accepted) and authorized opening the implementation PR. Merge and deployment
+follow §8; nothing here is deployed yet.
 Updated 2026-10-28. PASS applies only to the stated executed check, not to a broader
 production environment or recovery lifecycle.
 
@@ -231,4 +234,6 @@ photos or cleared device storage can cause irreversible loss.
 **HOLD remains** until mandatory environment, service recovery, actual backup,
 device reconciliation and readiness gates have executed evidence. No implementation
 PR, merge, deployment or production-readiness claim follows from this report.
+*(Superseded on 29 Oct 2026 by the owner's fast-track decision F1: the gate set is now G1–G9 of
+`phase5-release-preparation.md` §8 and the implementation PR is authorized; see the verdict at the top.)*
 

@@ -1,7 +1,9 @@
 # Phase 5 release preparation
 
-**Status: HOLD.** Nothing in this document authorizes a release, deployment or merge. A gate is PASS only
-when its verification below has been executed and its evidence recorded in `phase5-integration-review.md`.
+**Status: HOLD until the fast-track go-live steps G1–G9 (section 8) pass.** The OWNER chose the fast track on
+29 Oct 2026 (F1) and authorized opening the implementation PR; merging and deploying follow section 8. A step or
+gate is PASS only when its verification has been executed and its evidence recorded in
+`phase5-integration-review.md`.
 Prepared 29 Oct 2026 on branch `t5-qty-inspection`. Companion documents:
 [`phase5-recovery-runbook.md`](phase5-recovery-runbook.md) (procedures) and
 [`phase5-integration-review.md`](phase5-integration-review.md) (evidence).
@@ -17,6 +19,7 @@ Decisions marked **OWNER** need the product owner's written approval before rele
 | D3 | RTO **provisional**: 4 hours on the same server, 1 business day on a replacement server, pending a timed rehearsal | Section 3; checklist C6, C10 measure it |
 | D4 | Recovery tooling: **design only**, nothing implemented or deployed without approval | Section 7 |
 | D5 | Both Phase 5 documents live at `docs/phase5-integration-review.md` and `docs/phase5-release-preparation.md` and are committed to `t5-qty-inspection` (documentation only) | — |
+| **F1** | **Fast-track go-live (29 Oct 2026, later the same day).** The company has no NAS and no backup permission on a folder share, so the recovery architecture (section 6) and the recovery tooling (section 7) are **skipped** for release 1; the owner wants production earlier. Backups stay on this server until a **second internal disk** is added; until then there is **no off-machine copy** | Section 8 replaces C0–C12 as the go-live gate set; sections 6 and 7 stay as reference for a later release; D2's zero-loss objective is **not met** at go-live (risks accepted in 8.1) |
 
 ## 1. PostgreSQL production compatibility
 
@@ -260,3 +263,46 @@ Recovery rehearsal with: pre-backup and post-backup ADR-008 and ADR-019 submissi
 "Terkirim" and open work; a lost photo file; a conflicting resend. Expected: every server-accepted submission
 present once, original UUIDs and hashes, no reused display number, every photo hash verified, no ADR-008
 recalculation, all actions in the audit log.
+
+## 8. Fast-track go-live (OWNER decision F1, 29 Oct 2026)
+
+### 8.1 Risks the OWNER accepts by going live without sections 6 and 7
+
+Observed on 29 Oct 2026: drive C: (PostgreSQL 18 data) and drive D: (`D:\Project\M100`, photos, and
+`D:\m100_backup`) are partitions of **one physical SSD** (Samsung MZVLQ512HBLU, disk 0).
+
+| # | Risk | Consequence |
+|---|---|---|
+| A1 | **Single SSD.** Database, photos and every backup are on the same disk; no off-machine copy until a second internal disk is added | A failure of that SSD loses **all** submissions, photos and backups since installation. Nothing can be restored |
+| A2 | Nightly backup only (R1) | A software, operator or database error restored from the nightly backup loses up to about **24 hours** of server-accepted submissions; D2's zero-loss objective is not met |
+| A3 | No reconciliation or resend of "Terkirim" items (section 7 not built) | Submissions lost by A2 are recoverable only by hand, and only while the tablets still hold them (7 days) |
+| A4 | Display numbers can be reused after a restore from a dump (7.3 not built) | A number printed or exported before the incident can later name another submission |
+| A5 | Migration 0006 is one-way (section 2) | After the upgrade there is no application-only rollback; problems are fixed forward |
+| A6 | Gates verified only on the developer machine (API, browser, T3.7 on PG18) or deferred (staging, second-machine restore, Redmi, reboot) | Server-specific problems (ACLs, TLS, service order, device camera) can appear first in production |
+
+**Mitigation after go-live (OWNER to schedule):** add a second internal disk and set `BACKUP_DIR` to it
+(`install.json` `BackupDir`), then copy the existing `D:\m100_backup` there; this removes A1 for new backups.
+Sections 6 and 7 remain available for a later release.
+
+### 8.2 Minimal go-live runbook
+
+Run G3–G9 in an **elevated** Windows PowerShell 5.1 on the server at a shift change, with this repository's
+`deploy\windows` scripts from the release zip. Record each result in `phase5-integration-review.md`. None of
+these has been executed yet.
+
+| # | Step | Command / action | Must be true before continuing |
+|---|---|---|---|
+| G1 | Merge | Review and merge the implementation PR into `main` | `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm e2e` green on the merged commit |
+| G2 | Release zip | On the build machine, from `main`: `pnpm release` → `release\m100-<yyyy.MM.dd>-<sha>.zip`; copy it to the server | Zip name has no `-dirty` |
+| G3 | Versions (C0) | `& 'C:\Program Files\PostgreSQL\18\bin\postgres.exe' --version`; `& 'C:\Program Files\PostgreSQL\18\bin\pg_dump.exe' --version`; `(Get-Content D:\Project\M100\install.json -Raw \| ConvertFrom-Json).PostgresBin` | All 18.x; `PostgresBin` is the 18 `bin` folder |
+| G4 | Pre-checks (C1) | `powershell -ExecutionPolicy Bypass -File precheck.ps1 -Root D:\Project\M100 -BackupDir D:\m100_backup` | No FAIL |
+| G5 | Backup **and restore test** (C6, same server) | Ask PSI to send waiting items first (header counter 0). `D:\Project\M100\current\deploy\windows\m100.ps1 backup --kind pre-upgrade`; then `restore.ps1 -From <that backup folder> -PgBin 'C:\Program Files\PostgreSQL\18\bin'` (scratch database, dropped afterwards; **never** `-Full`) | Restore reports matching counts and photo files; note the backup folder and the restore duration |
+| G6 | Upgrade | `upgrade.ps1 -Release <zip>` from the **new** release's `deploy\windows` folder (it takes another pre-upgrade backup and applies migration 0006). Never `-Rollback` after 0006 | Script ends without error; if it stops, keep services stopped and follow section 2.2 (forward fix) |
+| G7 | Readiness (C3) | `curl.exe -s https://m100.qdms.web.id/v1/health`; `curl.exe -s -H "X-Device-Key: <test tablet key>" https://m100.qdms.web.id/v1/system/status`; on one test tablet: QTY INSPECTION + REWORK finding → SUBMIT PO; check it in `/admin/` | Health 200; every readiness check OK; the submission is stored with `counting_rule` ADR-019 and correct totals |
+| G8 | TLS and services (C2, C4 subset) | From factory Wi-Fi open `https://m100.qdms.web.id/admin/` (valid certificate, no warning); `Get-Service m100-api, m100-caddy, postgresql-x64-18`; `Restart-Service m100-api` then repeat the health check | Services Running and Automatic; API healthy again after restart |
+| G9 | Tablet smoke test (C8 subset) | On one real production tablet: setup link or existing key, login, a PO with findings and QTY INSPECTION, Wi-Fi off → SUBMIT PO → Wi-Fi on; PSI lv.2 photo | Exactly one submission on the server; outbox drains; photo stored |
+| G10 | Next morning (C7) | `Get-ScheduledTask -TaskName 'M100 nightly' \| Get-ScheduledTaskInfo`; newest folder in `D:\m100_backup\daily` | LastTaskResult 0; new backup folder present |
+
+Deferred until after go-live (still recommended, not blocking under F1): C5 ACL review, host reboot test, a full
+Redmi Pad 2 journey, T3.7 on staging, restore on a second machine (needs another PostgreSQL 18 machine), S3 and
+real master-data tests.
