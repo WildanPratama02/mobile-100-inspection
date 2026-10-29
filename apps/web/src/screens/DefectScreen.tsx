@@ -297,6 +297,7 @@ export function DefectScreen({ po }: DefectScreenProps) {
           // A new level starts at the top; the same level keeps its scroll position (FR-07.3).
           key={`${path.areaId}|${path.subAreaId}|${path.familyId}|${!!active}`}
           active={!!active}
+          tapped={tapped}
           path={path}
           defects={defects}
           flash={optionFlash}
@@ -351,6 +352,8 @@ export function DefectScreen({ po }: DefectScreenProps) {
 
 interface DrillDownProps {
   active: boolean;
+  /** PSI lv.2 counts pairs with NO DEFECT (ADR-021); PSI lv.1 enters Qty Inspection on Home. */
+  tapped: boolean;
   path: DefectPath;
   defects: readonly RecordedDefect[];
   flash: Flash | null;
@@ -359,7 +362,7 @@ interface DrillDownProps {
 }
 
 /** The drill-down list (doc 05 §11.3), or the hint of the level it can't show yet. */
-function DrillDown({ active, path, defects, flash, onPath, onDefect }: DrillDownProps) {
+function DrillDown({ active, tapped, path, defects, flash, onPath, onDefect }: DrillDownProps) {
   const mapping = useMapping();
   const { areaId, subAreaId, familyId } = path;
   const level = active ? levelOf(path) : 0;
@@ -369,7 +372,11 @@ function DrillDown({ active, path, defects, flash, onPath, onDefect }: DrillDown
     content = (
       <Hint
         title="Mulai inspeksi"
-        text="Pilih REWORK, B-GRADE, atau NO DEFECT untuk mengaktifkan area dan defect."
+        text={
+          tapped
+            ? 'Pilih REWORK atau B-GRADE untuk mengaktifkan area dan defect, atau NO DEFECT untuk pasang tanpa defect.'
+            : 'Pilih REWORK atau B-GRADE untuk mengaktifkan area dan defect. Pasang tanpa defect tidak perlu ditekan; isi QTY INSPECTION di Home.'
+        }
       />
     );
   } else if (level === 0 || !areaId) {

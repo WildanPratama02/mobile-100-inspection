@@ -107,6 +107,7 @@ describe('command states (doc 05 §11.2)', () => {
     expect(pill('QUARTER')).toBeDisabled();
     expect(pill('GENERAL')).toBeDisabled();
     expect(screen.getByText('Mulai inspeksi')).toBeVisible();
+    expect(screen.getByText(/atau NO DEFECT untuk pasang tanpa defect\.$/)).toBeVisible();
     expect(screen.getByText('Belum ada defect tercatat untuk PO ini.')).toBeVisible();
   });
 
@@ -134,6 +135,7 @@ describe('command states (doc 05 §11.2)', () => {
     await asLv1();
     renderDefect();
     expect(screen.queryByRole('button', { name: 'NO DEFECT' })).not.toBeInTheDocument();
+    expect(screen.getByText(/isi QTY INSPECTION di Home\.$/)).toBeVisible();
     await startRework();
     fireEvent.click(button('END INSPECTION'));
     await toast('Inspeksi selesai tanpa defect');
