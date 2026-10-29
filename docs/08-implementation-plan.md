@@ -249,5 +249,30 @@ Home: QTY INSPECTION row tappable (`StatRow onClick`, U20), dialog S5b with `Num
 
 ### T5.4 Admin app
 A1 list and A1b detail show the counting rule and the counts (doc 05 §20.3).
-- [x] The detail of an ADR-019 submission shows Qty Inspection, REWORK and B-GRADE pairs and "Qty Inspection diisi PSI"; an ADR-008 one shows its NO DEFECT count and "Hitung per tap (lama)".
+- [x] The detail of an ADR-019 submission shows Qty Inspection, REWORK and B-GRADE pairs and "Qty Inspection diisi PSI"; an ADR-008 one shows its NO DEFECT count and "Hitung per tap (lama)" ("Hitung per tap (NO DEFECT)" since ADR-021).
 - [x] The admin Playwright tests pass with both kinds of submission in the database.
+
+## Phase 6 — PSI lv.2 counts with taps, data per factory and cell, slimmer exports (ADR-021) · Done 29 Oct 2026
+
+A change request of 29 Oct 2026 to code that is already built (Phase 5). Specs: ADR-021; PRD v0.8 AC-02.4, FR-04, FR-06, FR-08, FR-11, FR-12, FR-15, BR-01, BR-02, BR-09, BR-10; doc 02 v2.2 §4.1; doc 03 v0.5 §4.1, §4.2, §4.4; doc 04 v2.2 §4.1, §4.2, A18; doc 05 v0.4 §8, §11, §13.1, §15, G4. One branch, one release; no database migration.
+
+### T6.1 Counting engine per PSI level (`packages/shared`)
+`CountingMode` (`ENTERED` / `TAPPED`), `countingMode(level)`, `emptySession(mode)`, `replay(events, mode)`, `noDefect(state, po)`, `canAddPair`, `startInspection(state, type, po)`; `totals` and `checkSubmit` (`NO_PAIRS`) per mode; `buildSubmission` sends `noDefect` for `TAPPED`.
+- [x] NO DEFECT: Qty Inspection +1, Qty A-Grade +1; a REWORK / B-GRADE pair counts at END INSPECTION; three findings in one B-GRADE pair add 3 to Qty Defect and Qty B-Grade; UNDO right after NO DEFECT removes it.
+- [x] At the partial quantity / Qty Order: NO DEFECT, REWORK and B-GRADE refused, defects of an open inspection still recorded; a partial lowered afterwards gives ABOVE.
+- [x] `TAPPED` ignores `SET_QTY_INSPECTION`; `ENTERED` ignores `NO_DEFECT`; tablet totals equal `computeTotals` of the submitted counts.
+
+### T6.2 API maximum and admin label
+- [x] `POST /submissions` refuses tapped counts above `partial.qty` / `ORDER QTY` (`counts`, `INVALID`); the doc 02 §9 test example moves to the 1.200-pair fixture PO so its 30 pairs fit.
+- [x] The admin app labels ADR-008 rows "Hitung per tap (NO DEFECT)".
+
+### T6.3 Tablet app (web)
+- [x] PSI lv.2: NO DEFECT on S6 (toast, UNDO "No Defect dibatalkan"), disabled during an inspection and at the maximum with the S6 notice; QTY INSPECTION on Home not tappable; SUBMIT PO with no pair → "Belum ada pasang diinspeksi"; the payload carries `noDefect`. PSI lv.1 unchanged.
+- [x] POs, sessions and the screen per username + factory + cell (Dexie v2/v3, `repo.claimUnscoped`): another factory or cell starts empty and the first comes back (Vitest and Playwright `login.spec.ts`); a database of version 1 opens with every row kept and claimed by the next login.
+- [x] The floating toast lets taps through (NO DEFECT tapped in a row).
+
+### T6.4 Exports
+- [x] PDF and Excel without the Foto column and without the full defect list (no "DAFTAR DEFECT" table, no "Daftar Defect" sheet).
+
+### T6.5 Admin reload
+- [x] The tablet service worker leaves `/admin`, `/admin/` and `/admin/…` to the server (Playwright `pwa.spec.ts`, which fails without the denylist).
