@@ -16,7 +16,6 @@ import {
   totals,
   type Classification,
   type DefectId,
-  type InspectionType,
   type MappingIndex,
 } from '@m100/shared';
 import { areaLabels } from '../app/mapping';
@@ -26,7 +25,7 @@ import type { PoSession } from '../state/store';
 /** The header title of the PDF (ADR-010). */
 export const EXPORT_TITLE = APP_NAME.toUpperCase();
 
-/** Shown in place of the Top 5 and the defect list of an empty session (doc 05 §8.5). */
+/** Shown in place of the Top 5 of an empty session (doc 05 §8.5). */
 export const NO_DEFECT_TEXT = 'Belum ada defect.';
 
 export type ResultValue =
@@ -41,21 +40,6 @@ export interface Top5Line {
   name: string;
   classification: Classification;
   areas: string;
-  qty: number;
-  /** PSI lv.2 only; `null` for PSI lv.1, who takes no photos (AC-10.6). */
-  photo: boolean | null;
-}
-
-/** One row of the findings list (FR-09, AC-09.2): area + sub-area + defect + inspection type. */
-export interface DefectLine {
-  no: number;
-  inspectionType: InspectionType;
-  area: string;
-  subArea: string;
-  family: string;
-  defectId: DefectId;
-  name: string;
-  classification: Classification;
   qty: number;
 }
 
@@ -73,8 +57,8 @@ export interface ExportReport {
   /** Labelled values of the header: PO info, inspector, Factory/Cell, export time. */
   info: Array<[label: string, value: string]>;
   results: ResultValue[];
+  /** Without a photo column; the files have no full defect list (ADR-021). */
   top5: Top5Line[];
-  defects: DefectLine[];
   /** Every photo of a defect in the current findings, Top 5 first, each once (AC-12.2). */
   photos: ExportPhoto[];
   /** PSI lv.2: Top 5 defect names without a photo. Exporting is refused while any is left (BR-04). */
@@ -138,22 +122,7 @@ export function exportReport({ po, session, auth, mapping, now }: ExportInput): 
       classification: row.classification,
       areas: areaLabels(row.areaIds, mapping),
       qty: row.qty,
-      photo: photos ? attached[row.defectId] !== undefined : null,
     })),
-    defects: list.map((f, i) => {
-      const defect = defectOf(f.defectId);
-      return {
-        no: i + 1,
-        inspectionType: f.inspectionType,
-        area: mapping.area(f.areaId)?.name ?? f.areaId,
-        subArea: mapping.subArea(f.subAreaId)?.name ?? f.subAreaId,
-        family: mapping.family(f.familyId)?.name ?? f.familyId,
-        defectId: f.defectId,
-        name: defect.name,
-        classification: defect.classification,
-        qty: f.qty,
-      };
-    }),
     // A photo of a defect that was undone completely is not part of the findings and stays out.
     photos: ranked.flatMap((row, i) => {
       const photo = attached[row.defectId];

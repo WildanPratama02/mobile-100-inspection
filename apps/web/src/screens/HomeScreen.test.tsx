@@ -546,7 +546,7 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
     renderHome();
     fireEvent.click(screen.getByRole('button', { name: 'EXPORT EXCEL' }));
     await waitFor(() => expect(saveFile).toHaveBeenCalledOnce());
-    expect(vi.mocked(exportFile).mock.lastCall![1].defects).toEqual([]);
+    expect(vi.mocked(exportFile).mock.lastCall![1].top5).toEqual([]);
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 

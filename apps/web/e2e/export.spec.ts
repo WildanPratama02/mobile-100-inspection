@@ -97,7 +97,8 @@ test('PSI lv.1 exports Excel and PDF of the open session, which stays as it was 
   const workbook = Object.values(parts)
     .map((data) => strFromU8(data))
     .join('\n');
-  expect(strFromU8(parts['xl/workbook.xml']!)).toContain('name="Daftar Defect"');
+  // One sheet only: no Daftar Defect, no Foto column (ADR-021).
+  expect(strFromU8(parts['xl/workbook.xml']!)).not.toContain('Daftar Defect');
   for (const text of [
     '0903359388',
     'ANDI CONTOH (PSI lv.1)',
@@ -106,25 +107,20 @@ test('PSI lv.1 exports Excel and PDF of the open session, which stays as it was 
     'Qty Inspection',
     'TOP 5 DEFECT',
     DEFECT,
-    'Medial Quarter',
-    'REWORK',
   ]) {
     expect(workbook).toContain(text);
   }
+  expect(workbook).not.toContain('Foto');
 
   const pdf = await exportVia(page, 'EXPORT PDF');
   expect(pdf.suggestedFilename()).toBe(`${base}.pdf`);
   await expect(page.getByText(`File dibuat: ${base}.pdf`)).toBeVisible();
   const text = (await bytes(pdf)).toString('latin1');
   expect(text.startsWith('%PDF-')).toBe(true);
-  for (const value of [
-    'MOBILE 100% INSPECTION',
-    '0903359388',
-    'BROKEN STITCHING',
-    'DAFTAR DEFECT',
-  ]) {
+  for (const value of ['MOBILE 100% INSPECTION', '0903359388', 'BROKEN STITCHING']) {
     expect(text).toContain(value);
   }
+  expect(text).not.toContain('DAFTAR DEFECT');
   // No photos for PSI lv.1 (AC-10.6).
   expect(text).not.toContain('/DCTDecode');
 
@@ -182,5 +178,5 @@ test('PSI lv.2 exports only with every Top 5 photo, and the PDF carries it (BR-0
     .map((data) => strFromU8(data))
     .join('\n');
   expect(workbook).toContain('DEWI CONTOH (PSI lv.2)');
-  expect(workbook).toContain('Foto');
+  expect(workbook).not.toContain('Foto');
 });

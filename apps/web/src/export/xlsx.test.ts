@@ -3,8 +3,8 @@
 // folders; Node, like the browser, has one realm. The browser itself is covered by e2e/export.spec.ts.
 import { strFromU8, unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
-import { REPORT, REPORT_EMPTY, REPORT_LV1 } from './testReport';
-import { DEFECTS_SHEET, SUMMARY_SHEET, toXlsx, XLSX_TYPE } from './xlsx';
+import { REPORT, REPORT_EMPTY } from './testReport';
+import { SUMMARY_SHEET, toXlsx, XLSX_TYPE } from './xlsx';
 import type { ExportReport } from './report';
 
 /** The workbook's XML parts by name. */
@@ -21,13 +21,14 @@ function text(xml: Record<string, string>): string {
 }
 
 describe('toXlsx (FR-12)', () => {
-  it('has the sheets Ringkasan and Daftar Defect', async () => {
+  it('has the one sheet Ringkasan, no Daftar Defect (ADR-021)', async () => {
     const xml = await parts(REPORT);
     expect(xml['xl/workbook.xml']).toContain(`name="${SUMMARY_SHEET}"`);
-    expect(xml['xl/workbook.xml']).toContain(`name="${DEFECTS_SHEET}"`);
+    expect(xml['xl/workbook.xml']).not.toContain('Daftar Defect');
+    expect(xml['xl/worksheets/sheet2.xml']).toBeUndefined();
   });
 
-  it('holds the header, results, Top 5 and every finding (AC-12.1)', async () => {
+  it('holds the header, results and Top 5 without a Foto column (AC-12.1, ADR-021)', async () => {
     const all = text(await parts(REPORT));
     for (const [label, value] of REPORT.info) {
       expect(all).toContain(label);
@@ -36,19 +37,9 @@ describe('toXlsx (FR-12)', () => {
     for (const r of REPORT.results) expect(all).toContain(r.label);
     expect(all).toContain('TOP 5 DEFECT');
     expect(all).toContain('VAMP, TOE BOX');
-    for (const d of REPORT.defects) {
-      for (const value of [
-        d.inspectionType,
-        d.area,
-        d.subArea,
-        d.family,
-        d.name,
-        d.classification,
-      ]) {
-        expect(all).toContain(value);
-      }
-    }
-    expect(all).toContain('Foto');
+    for (const t of REPORT.top5) expect(all).toContain(t.name);
+    expect(all).not.toContain('Foto');
+    expect(all).not.toContain('Sub Area');
   });
 
   it('writes quantities as numbers and rates as percentages', async () => {
@@ -57,10 +48,6 @@ describe('toXlsx (FR-12)', () => {
     expect(sheet1).toContain('<v>10002</v>');
     expect(sheet1).toContain(`<v>${3 / 16}</v>`);
     expect(xml['xl/styles.xml']).toContain('0.0%');
-  });
-
-  it('PSI lv.1 has no Foto column (AC-10.6)', async () => {
-    expect(text(await parts(REPORT_LV1))).not.toContain('Foto');
   });
 
   it('an empty session shows "Belum ada defect." and "—" for the rates (doc 05 §8.5)', async () => {

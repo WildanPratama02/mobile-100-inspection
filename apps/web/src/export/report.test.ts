@@ -162,7 +162,6 @@ describe('exportReport (FR-12)', () => {
     for (const report of [exportReport(input(undefined)), exportReport(input(new Taps()))]) {
       expect(report.results.map((r) => r.value)).toEqual([10002, null, 0, 0, 0, 0, 0]);
       expect(report.top5).toEqual([]);
-      expect(report.defects).toEqual([]);
       expect(report.photos).toEqual([]);
       expect(report.missingPhotos).toEqual([]);
     }
@@ -188,49 +187,25 @@ describe('exportReport (FR-12)', () => {
       name: name('D049'),
       classification: mapping.defect('D049')!.classification,
       qty: 3,
-      photo: null,
     });
+    expect(report.top5[0]).not.toHaveProperty('photo');
     expect(report.top5[0]!.areas).not.toBe('');
   });
 
-  it('lists every finding with area, sub-area, family, inspection type, classification and qty', () => {
-    const taps = new Taps().rework().defect('D049').defect('D071').defect('D049').end();
-    taps.bGrade().defect('D049').end();
-    const rows = exportReport(input(taps)).defects;
-    const entry49 = mapping.map.find((e) => e.defectId === 'D049')!;
-    expect(rows).toEqual([
-      {
-        no: 1,
-        inspectionType: 'REWORK',
-        area: mapping.area(entry49.areaId)!.name,
-        subArea: mapping.subArea(entry49.subAreaId)!.name,
-        family: mapping.family(entry49.familyId)!.name,
-        defectId: 'D049',
-        name: name('D049'),
-        classification: mapping.defect('D049')!.classification,
-        qty: 2,
-      },
-      expect.objectContaining({ no: 2, inspectionType: 'REWORK', defectId: 'D071', qty: 1 }),
-      expect.objectContaining({ no: 3, inspectionType: 'B-GRADE', defectId: 'D049', qty: 1 }),
-    ]);
-    // D049 and D071 share a name but stay apart (ADR-009).
-    expect(name('D049')).toBe(name('D071'));
+  it('has no full defect list (ADR-021)', () => {
+    const taps = new Taps().rework().defect('D049').defect('D071').end();
+    expect(exportReport(input(taps))).not.toHaveProperty('defects');
   });
 
   describe('photos (PSI lv.2)', () => {
-    it('marks Top 5 rows with and without a photo, and names the missing ones (BR-04)', () => {
+    it('names the Top 5 defects without a photo (BR-04)', () => {
       const taps = new Taps().rework().defect('D005', 2).defect('D035').photo('D035');
       const report = exportReport(input(taps));
-      expect(report.top5.map((t) => [t.defectId, t.photo])).toEqual([
-        ['D005', false],
-        ['D035', true],
-      ]);
       expect(report.missingPhotos).toEqual([name('D005')]);
     });
 
-    it('PSI lv.1 has no photo column and never misses a photo (AC-10.6)', () => {
+    it('PSI lv.1 never misses a photo (AC-10.6)', () => {
       const report = exportReport(input(new Taps().rework().defect('D005'), { auth: LV1 }));
-      expect(report.top5[0]!.photo).toBeNull();
       expect(report.missingPhotos).toEqual([]);
     });
 
@@ -253,7 +228,7 @@ describe('exportReport (FR-12)', () => {
     it('leaves out the photo of a defect that was undone completely', () => {
       const taps = new Taps().rework().defect('D005').defect('D035').photo('D035').undo();
       const report = exportReport(input(taps));
-      expect(report.defects.map((d) => d.defectId)).toEqual(['D005']);
+      expect(report.top5.map((d) => d.defectId)).toEqual(['D005']);
       expect(report.photos).toEqual([]);
     });
   });

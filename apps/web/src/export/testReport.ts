@@ -45,7 +45,6 @@ export const REPORT: ExportReport = {
       classification: 'CRITICAL',
       areas: 'VAMP, TOE BOX',
       qty: 2,
-      photo: true,
     },
     {
       no: 2,
@@ -53,31 +52,6 @@ export const REPORT: ExportReport = {
       name: 'WRINKLE',
       classification: 'MAJOR',
       areas: 'QUARTER',
-      qty: 1,
-      photo: true,
-    },
-  ],
-  defects: [
-    {
-      no: 1,
-      inspectionType: 'REWORK',
-      area: 'Vamp',
-      subArea: 'Vamp Center',
-      family: 'Bonding',
-      defectId: 'D005',
-      name: 'BOND GAP',
-      classification: 'CRITICAL',
-      qty: 2,
-    },
-    {
-      no: 2,
-      inspectionType: 'B-GRADE',
-      area: 'Quarter',
-      subArea: 'Medial Quarter',
-      family: 'Upper Material',
-      defectId: 'D035',
-      name: 'WRINKLE',
-      classification: 'MAJOR',
       qty: 1,
     },
   ],
@@ -89,12 +63,8 @@ export const REPORT: ExportReport = {
   missingPhotos: [],
 };
 
-/** The same session for PSI lv.1: no photo column, no photos. */
-export const REPORT_LV1: ExportReport = {
-  ...REPORT,
-  top5: REPORT.top5.map((t) => ({ ...t, photo: null })),
-  photos: [],
-};
+/** The same session for PSI lv.1: no photos. */
+export const REPORT_LV1: ExportReport = { ...REPORT, photos: [] };
 
 /** An empty session (doc 05 §8.5). */
 export const REPORT_EMPTY: ExportReport = {
@@ -105,5 +75,4 @@ export const REPORT_EMPTY: ExportReport = {
       : { ...r, value: r.label === 'Qty PO Order' ? r.value : 0 },
   ),
   top5: [],
-  defects: [],
 };
