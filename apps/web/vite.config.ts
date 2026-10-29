@@ -112,8 +112,9 @@ export default defineConfig({
         // App shell, self-hosted fonts and the shoe photo are precached for offline use (doc 03 §4.1).
         globPatterns: ['**/*.{js,css,html,png,avif,woff2}'],
         navigateFallback: '/index.html',
-        // API calls are never cached by the service worker (doc 03 §4.1).
-        navigateFallbackDenylist: [/^\/v1\//],
+        // API calls are never cached by the service worker (doc 03 §4.1). The admin app at /admin/ has no service
+        // worker (doc 05 §20); without this a reload there would show the tablet app (ADR-021).
+        navigateFallbackDenylist: [/^\/v1\//, /^\/admin(\/|$)/],
       },
     }),
   ],

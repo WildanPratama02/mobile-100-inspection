@@ -51,6 +51,23 @@ test('is installable: manifest, icons and an active service worker', async ({ pa
   });
 });
 
+test('leaves /admin/ to the server, so a reload of the admin app never shows the tablet app', async ({
+  page,
+}) => {
+  await firstLaunch(page);
+  await page.goto('/');
+  await expect
+    .poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null))
+    .toBe(true);
+  // A route of the tablet app is answered by the service worker's fallback ...
+  expect((await page.goto('/home'))?.fromServiceWorker()).toBe(true);
+  // ... an admin route never is (doc 05 §20: the admin app has no service worker).
+  for (const path of ['/admin', '/admin/', '/admin/submissions']) {
+    const answer = await page.goto(path);
+    expect(answer?.fromServiceWorker(), path).toBe(false);
+  }
+});
+
 test('runs under the production headers of deploy/Caddyfile without a CSP violation (T4.1)', async ({
   page,
 }) => {
