@@ -8,7 +8,7 @@ import { SelectInput, TextField } from '../common/fields';
 import { Link } from '../common/Link';
 import { Empty, LoadError, Loading } from '../common/StateView';
 import { useResource } from '../common/useResource';
-import { formatCount, moment, rate, todayWib } from '../format';
+import { countingRuleLabel, formatCount, moment, rate, todayWib } from '../format';
 
 export const EMPTY_TEXT = 'Tidak ada submission untuk filter ini.';
 
@@ -99,6 +99,7 @@ const COLUMNS: Column<AdminSubmissionSummary>[] = [
     cell: (s) => rate(s.defectRate, s.qtyInspection),
   },
   { key: 'photos', header: 'Foto', numeric: true, cell: (s) => formatCount(s.photoCount) },
+  { key: 'rule', header: 'Aturan hitung', cell: (s) => countingRuleLabel(s.countingRule) },
 ];
 
 /** A1 — the read-only DataTable of submissions, home of the admin app (doc 05 §20.3). */

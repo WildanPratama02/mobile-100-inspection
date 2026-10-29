@@ -2,6 +2,7 @@ import type { SVGProps } from 'react';
 import { cx } from './cx';
 
 export type IconName =
+  | 'edit'
   | 'plus'
   | 'chevron-down'
   | 'chevron-right'
@@ -23,8 +24,9 @@ export interface IconProps {
 
 type Shape = ['path', SVGProps<SVGPathElement>] | ['circle', SVGProps<SVGCircleElement>];
 
-/** The eleven line icons on a 24px grid (design-system Iconography). */
+/** The twelve line icons on a 24px grid (design-system Iconography). */
 const ICONS: Record<IconName, Shape[]> = {
+  edit: [['path', { d: 'M14 5l5 5M4 20l4-1L20 7l-5-5L3 14z' }]],
   plus: [['path', { d: 'M12 4v16M4 12h16' }]],
   'chevron-down': [['path', { d: 'M5 9l7 7 7-7' }]],
   'chevron-right': [['path', { d: 'M9 5l7 7-7 7' }]],

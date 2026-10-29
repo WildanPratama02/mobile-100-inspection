@@ -459,6 +459,20 @@
   font-weight: 600;
   color: var(--ink-2);
 }
+button.m100-stat {
+  width: 100%;
+  min-height: var(--tap-min);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  text-align: left;
+}
+button.m100-stat > b {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
 .m100-stat > b {
   font-family: var(--font-display);
   font-size: 26px;

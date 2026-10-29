@@ -9,6 +9,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   type AreaId,
   type Classification,
+  type CountingRule,
   type DefectId,
   type Finding,
   formatDisplayNo,
@@ -64,6 +65,7 @@ const filterSchema = z.object(filterFields).refine(rangeInOrder, RANGE_ERROR);
 const listSchema = z.object({ ...filterFields, page: pageQuery }).refine(rangeInOrder, RANGE_ERROR);
 
 export interface AdminSubmissionSummary {
+  countingRule: CountingRule;
   id: string;
   displayNo: string;
   sealedAt: string;
@@ -125,7 +127,7 @@ export interface AdminSubmissionDetail extends AdminSubmissionSummary {
   podd: string | null;
   crd: string | null;
   partial: { number: number; qty: number } | null;
-  counts: { rework: number; bGrade: number; noDefect: number };
+  counts: { rework: number; bGrade: number; noDefect: number | null; qtyInspection: number };
   findings: AdminFinding[];
   top5: AdminTop5Place[];
   photos: { id: number; defectId: string }[];
@@ -202,6 +204,7 @@ export class SubmissionsAdminService {
         rework: row.qtyRework,
         bGrade: row.qtyBGradeInspections,
         noDefect: row.qtyNoDefect,
+        qtyInspection: row.qtyInspection,
       },
       findings: findings.map((f) => ({
         inspectionType: f.inspectionType,
@@ -303,6 +306,7 @@ export class SubmissionsAdminService {
 
 function summaryOf(row: SubmissionRow): AdminSubmissionSummary {
   return {
+    countingRule: row.countingRule,
     id: row.id,
     displayNo: formatDisplayNo(row.displayNo),
     sealedAt: toWibIso(row.sealedAt),

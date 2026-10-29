@@ -78,6 +78,28 @@ const codes = (failures: Failure[]) => failures.map((f) => [f.path, f.code]);
 const NOW = new Date('2026-10-16T07:32:05.000Z');
 
 describe('rules 3 and 4: counts against findings (doc 04 §4.2; the request carries no totals)', () => {
+  it('reports both limits when findings exceed the order quantity, even above the minimum', () => {
+    const failures = checkCounts(
+      request({
+        counts: { rework: 1, bGrade: 0, qtyInspection: 30 },
+        findings: [finding('D035', 20)],
+      }),
+      17,
+    );
+    expect(failures).toEqual([
+      {
+        path: 'counts.qtyInspection',
+        code: 'INVALID',
+        message: 'Qty Inspection minimal 20: jumlah defect yang tercatat.',
+      },
+      {
+        path: 'counts.qtyInspection',
+        code: 'INVALID',
+        message: 'Qty Inspection maksimal 17 pasang.',
+      },
+    ]);
+  });
+
   it('refuses Qty Inspection 0', () => {
     expect(codes(checkCounts(request({ counts: { rework: 0, bGrade: 0, noDefect: 0 } })))).toEqual([
       ['counts', 'INVALID'],

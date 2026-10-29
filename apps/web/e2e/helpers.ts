@@ -45,6 +45,16 @@ export async function addPo(page: Page, po: string) {
 }
 
 export const toast = (page: Page) => page.getByRole('status');
+export async function setQtyInspection(page: Page, qty: number) {
+  await page.getByRole('button', { name: 'Ubah Qty Inspection' }).click();
+  const dialog = page.getByRole('dialog', { name: 'QTY INSPECTION' });
+  const pad = dialog.getByRole('group', { name: 'Qty inspection' });
+  await pad.getByRole('button', { name: 'HAPUS', exact: true }).click();
+  for (const digit of String(qty))
+    await pad.getByRole('button', { name: digit, exact: true }).click();
+  await dialog.getByRole('button', { name: 'SIMPAN' }).click();
+  await expect(dialog).toHaveCount(0);
+}
 export const pill = (page: Page, name: string) =>
   page.getByRole('group', { name: 'Pilih area sepatu' }).getByRole('button', { name });
 export const choice = (page: Page, name: string) =>

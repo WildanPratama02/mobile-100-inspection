@@ -47,9 +47,9 @@ describe('submissions check constraints (doc 02 §4.1)', () => {
     [
       'Qty Inspection is not the sum of the counts',
       { qty_inspection: 31 },
-      'submissions_qty_inspection_sum_check',
+      'submissions_counting_totals_check',
     ],
-    ['A-Grade is not NO DEFECT', { qty_a_grade: 17 }, 'submissions_qty_a_grade_check'],
+    ['A-Grade is not NO DEFECT', { qty_a_grade: 17 }, 'submissions_counting_totals_check'],
     ['B-Grade exceeds Qty Defect', { qty_b_grade: 12 }, 'submissions_qty_b_grade_le_defect_check'],
     [
       'Qty Inspection is 0',

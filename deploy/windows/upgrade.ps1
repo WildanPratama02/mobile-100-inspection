@@ -6,8 +6,8 @@
   Upgrade: unpacks the release next to the old one (releases\<version>), takes a pg_dump first (backup
   --kind pre-upgrade), stops the API, runs db:migrate from the new release, switches the junction `current`,
   rewrites the service definitions, starts the API and Caddy and checks the API's health. If the new API does not
-  become healthy, the junction goes back to the old release and the old API is started again; the migrations stay
-  (they are backward compatible within one release, doc 03 section 7.6).
+  become healthy, automatic fallback requires identical migration histories. Otherwise services stay stopped
+  for forward recovery or coordinated restore (docs/phase5-recovery-runbook.md). Liveness is not readiness.
 
   Rollback: switches `current` back to the release that was current before the last upgrade.
 
@@ -48,6 +48,7 @@ if ($Rollback) {
     if (-not (Test-Path -LiteralPath $previousFile)) { throw 'No previous release recorded: nothing to roll back to' }
     $target = ([IO.File]::ReadAllText($previousFile)).Trim()
     if (-not (Test-Path -LiteralPath $target)) { throw "The previous release $target is gone" }
+    Assert-CodeRollbackCompatible $oldDir $target
     Write-Step "Rollback: $oldDir -> $target"
     Switch-Release $oldDir $target
     Write-Host "Rolled back to $target." -ForegroundColor Green
@@ -66,7 +67,8 @@ Stop-M100Services
 try {
     Invoke-Cli $settings $newDir 'db-migrate'
 } catch {
-    Write-Warning "db:migrate failed: $($_.Exception.Message). Starting the old release again."
+    Write-Warning "db:migrate failed: $($_.Exception.Message). Checking fallback compatibility."
+    Assert-CodeRollbackCompatible $newDir $oldDir
     Start-M100Services $settings
     throw
 }
@@ -75,8 +77,9 @@ Write-Step "Switch current: $oldDir -> $newDir"
 try {
     Switch-Release $oldDir $newDir
 } catch {
-    Write-Warning "The new release did not start: $($_.Exception.Message). Switching back to $oldDir."
+    Write-Warning "The new release did not start: $($_.Exception.Message). Checking fallback compatibility."
     Stop-M100Services
+    Assert-CodeRollbackCompatible $newDir $oldDir
     Set-Junction $current $oldDir
     Write-ServiceDefinitions $settings $oldDir
     Start-M100Services $settings
@@ -96,4 +99,5 @@ try {
 } catch {
     Write-Warning "https://$($settings.PublicHost)/v1/health: $($_.Exception.Message)"
 }
-Write-Host "Upgraded to $newDir. Roll back with: .\upgrade.ps1 -Rollback" -ForegroundColor Green
+Write-Host "Upgraded to $newDir. Verify readiness and a real submission before releasing tablets." -ForegroundColor Green
+Write-Host 'Code rollback requires identical migration histories; otherwise use the recovery runbook.'

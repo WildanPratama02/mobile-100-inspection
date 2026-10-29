@@ -168,12 +168,6 @@ export function DefectScreen({ po }: DefectScreenProps) {
       toast(`Inspeksi ${inspection} dimulai`);
     });
 
-  const noDefect = () =>
-    run({ type: 'NO_DEFECT' }, () => {
-      go(NO_PATH);
-      toast('No Defect tercatat. A-Grade +1');
-    });
-
   const end = () =>
     run({ type: 'END' }, ({ before }) => {
       go(NO_PATH);
@@ -193,8 +187,6 @@ export function DefectScreen({ po }: DefectScreenProps) {
       } else if (before.undo === 'INSPECTION') {
         go(NO_PATH);
         toast('Inspeksi dibatalkan');
-      } else {
-        toast('No Defect dibatalkan');
       }
     });
 
@@ -234,7 +226,6 @@ export function DefectScreen({ po }: DefectScreenProps) {
             state={commandState('B-GRADE')}
             onClick={() => start('B-GRADE')}
           />
-          <CommandButton mode="nodefect" state={active ? 'disabled' : 'idle'} onClick={noDefect} />
         </div>
         <div className="defect__map" ref={mapRef}>
           <ShoeMap

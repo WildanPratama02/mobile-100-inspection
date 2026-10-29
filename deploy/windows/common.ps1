@@ -189,6 +189,30 @@ function Wait-Health([string] $Url = 'http://127.0.0.1:3000/v1/health', [int] $S
     throw "$Url did not answer 200 within $Seconds s (last: $last)"
 }
 
+# A code-only switch cannot remove an applied migration. Require the same migration
+# files and hashes for automatic/manual rollback; unknown compatibility fails closed.
+function Assert-CodeRollbackCompatible([string] $From, [string] $To) {
+    $fromMigrations = Join-Path $From 'db\migrations'
+    $toMigrations = Join-Path $To 'db\migrations'
+    foreach ($path in @($fromMigrations, $toMigrations)) {
+        if (-not (Test-Path -LiteralPath $path -PathType Container)) {
+            throw 'Cannot establish rollback compatibility: migration directory missing. Use the recovery runbook.'
+        }
+    }
+    $source = @(Get-ChildItem -LiteralPath $fromMigrations -Filter '*.sql' -File | Sort-Object Name)
+    $target = @(Get-ChildItem -LiteralPath $toMigrations -Filter '*.sql' -File | Sort-Object Name)
+    if ($source.Count -eq 0 -or $source.Count -ne $target.Count) {
+        throw 'Code-only rollback blocked across a migration boundary. Use forward recovery or coordinated restore.'
+    }
+    for ($i = 0; $i -lt $source.Count; $i++) {
+        if ($source[$i].Name -ne $target[$i].Name -or
+            (Get-FileHash -LiteralPath $source[$i].FullName -Algorithm SHA256).Hash -ne
+            (Get-FileHash -LiteralPath $target[$i].FullName -Algorithm SHA256).Hash) {
+            throw 'Code-only rollback blocked: migration histories differ. Use forward recovery or coordinated restore.'
+        }
+    }
+}
+
 function Stop-M100Services {
     foreach ($name in @('m100-caddy', 'm100-api')) {
         if (Get-Service -Name $name -ErrorAction SilentlyContinue) { Stop-Service -Name $name -Force }

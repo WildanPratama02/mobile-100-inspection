@@ -1,3 +1,4 @@
+import { setQtyInspection } from './helpers';
 // SUBMIT PO end to end: the tablet app against the real API, test database and disk photo store started by global
 // setup (T3.6: AC-03.7, AC-10.6, AC-11.1; doc 02 §4, §6, §7). Nothing is stubbed: what the PSI taps must arrive in
 // `submissions`, `submission_findings`, `submission_photos` and `PHOTO_DIR`.
@@ -7,7 +8,7 @@ import { join } from 'node:path';
 import { type Page } from '@playwright/test';
 import { PHOTO_DIR_ENV } from './api/testApi';
 import { expect, test, type Sql, type Tablet } from './fixtures';
-import { addPo, bar, choice, login, openFamily, toast, top5 } from './helpers';
+import { addPo, bar, choice, login, openFamily, top5 } from './helpers';
 
 const PO = '0903359388';
 // Quarter › Medial / Lateral Quarter › Stitching (reference/mapping/mapping.json).
@@ -39,7 +40,7 @@ interface SubmissionRow {
   partial_text: string | null;
   qty_rework: number;
   qty_bgrade_inspections: number;
-  qty_no_defect: number;
+  qty_no_defect: number | null;
   qty_inspection: number;
   qty_a_grade: number;
   qty_b_grade: number;
@@ -200,11 +201,8 @@ async function inspect(
   await bar(page, 'HOME').click();
 }
 
-async function noDefect(page: Page) {
-  await page.getByRole('button', { name: 'ADD DEFECT' }).click();
-  await page.getByRole('button', { name: 'NO DEFECT' }).click();
-  await expect(toast(page)).toHaveText('No Defect tercatat. A-Grade +1');
-  await bar(page, 'HOME').click();
+async function enterInspection(page: Page) {
+  await setQtyInspection(page, 30);
 }
 
 /** Takes a photo for the first Top 5 row that still needs one, as the system camera hands it over. */
@@ -259,8 +257,8 @@ test('PSI lv.2 with five Top 5 photos: submission, findings and photo files (AC-
     ['Medial Quarter', D035],
     ['Lateral Quarter', D039],
   ]);
-  await noDefect(page);
-  await noDefect(page);
+  await enterInspection(page);
+  await enterInspection(page);
   await inspect(page, 'REWORK', [
     ['Medial Quarter', D032],
     ['Medial Quarter', D040],
@@ -295,16 +293,16 @@ test('PSI lv.2 with five Top 5 photos: submission, findings and photo files (AC-
     partial_no: null,
     partial_qty: null,
     partial_text: null,
-    // BR-01 / ADR-008: two REWORK, one B-GRADE, two NO DEFECT; six defects, two of them during B-GRADE.
+    // ADR-019: Qty Inspection 30, six findings, two of them during B-GRADE.
     qty_rework: 2,
     qty_bgrade_inspections: 1,
-    qty_no_defect: 2,
-    qty_inspection: 5,
-    qty_a_grade: 2,
+    qty_no_defect: null,
+    qty_inspection: 30,
+    qty_a_grade: 24,
     qty_b_grade: 2,
     qty_defect: 6,
-    rft: '0.40000',
-    defect_rate: '1.20000',
+    rft: '0.80000',
+    defect_rate: '0.20000',
     photo_count: 5,
   });
 
@@ -386,7 +384,7 @@ test('PSI lv.1: the submission has no photos (AC-10.6)', async ({ page, sql, tab
   await login(page, 'ANDI CONTOH');
   await addPo(page, PO);
   await inspect(page, 'REWORK', [['Medial Quarter', D035]]);
-  await noDefect(page);
+  await enterInspection(page);
   await expect(top5(page).getByRole('button', { name: 'Foto wajib' })).toHaveCount(0);
 
   await submit(page, 1);
@@ -394,9 +392,9 @@ test('PSI lv.1: the submission has no photos (AC-10.6)', async ({ page, sql, tab
   expect(row).toMatchObject({
     username: 'ANDI CONTOH',
     level: 'PSI lv.1',
-    qty_inspection: 2,
+    qty_inspection: 30,
     qty_defect: 1,
-    qty_a_grade: 1,
+    qty_a_grade: 29,
     photo_count: 0,
   });
   expect(await findings(sql, row!.id)).toHaveLength(1);
@@ -431,11 +429,11 @@ test('PO PARTIAL on, kept, then off: each submission stores the partial of that 
   await expect(info).toContainText('P2 · 1.200 dari 10.002');
 
   // On: the first submission carries P2 1.200.
-  await noDefect(page);
+  await enterInspection(page);
   await submit(page, 1);
   // Unchanged: every Submit PO for the PO writes it again (ADR-013).
   await expect(info).toContainText('P2 · 1.200 dari 10.002');
-  await noDefect(page);
+  await enterInspection(page);
   await submit(page, 2);
 
   // Off: UBAH PARTIAL, untick, SIMPAN.
@@ -444,7 +442,7 @@ test('PO PARTIAL on, kept, then off: each submission stores the partial of that 
   await partial.getByRole('checkbox', { name: /PO PARTIAL/ }).click();
   await partial.getByRole('button', { name: 'SIMPAN' }).click();
   await expect(info).not.toContainText('dari 10.002');
-  await noDefect(page);
+  await enterInspection(page);
   await submit(page, 3);
 
   const rows = await stored(sql, tablet, 3);

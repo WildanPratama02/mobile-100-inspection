@@ -365,7 +365,7 @@ export function UiKitPage() {
       <Section name="StatRow">
         <Pane label="Hasil">
           <StatRow label="Qty PO Order" value="2.400" />
-          <StatRow label="QTY INSPECTION" value="128" />
+          <StatRow label="QTY INSPECTION" value="128" onClick={() => setDigits('128')} />
           <StatRow label="Qty Defect" value="24" />
           <StatRow label="Qty A-Grade" value="104" />
           <StatRow label="Qty B-Grade" value="6" />
@@ -546,6 +546,7 @@ export function UiKitPage() {
           />
           <NumberPad label="Kosong" value="" unit="PASANG" placeholder="0" />
           <NumberPad label="Melebihi maks" value="12000" max={10002} unit="PASANG" />
+          <NumberPad label="Di bawah minimum" value="2" min={3} unit="PASANG" />
           <NumberPad label="Nol" value="0" max={10002} unit="PASANG" />
         </div>
       </Section>

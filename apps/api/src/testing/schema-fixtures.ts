@@ -53,6 +53,7 @@ export type SubmissionRow = Record<string, unknown>;
 /** The doc 02 §9 example: 10 REWORK pairs with 8 defects, 2 B-GRADE pairs with 3 defects, 18 NO DEFECT. */
 export function submissionRow(overrides: SubmissionRow = {}): SubmissionRow {
   return {
+    counting_rule: 'ADR-008',
     id: randomUUID(),
     payload_sha256: createHash('sha256').update(randomUUID()).digest(),
     sealed_at: '2026-10-16T17:30:00.000Z', // 00:30 WIB on 17 Oct

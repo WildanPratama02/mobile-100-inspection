@@ -1,5 +1,13 @@
 /** The admin schemas of `docs/04-openapi.yaml` (doc 04 §8), as the admin app reads them. */
-import type { AreaId, Classification, DefectId, InspectionType, Po, PsiLevel } from '@m100/shared';
+import type {
+  AreaId,
+  Classification,
+  CountingRule,
+  DefectId,
+  InspectionType,
+  Po,
+  PsiLevel,
+} from '@m100/shared';
 
 export type { Classification, DefectId, PsiLevel };
 
@@ -102,6 +110,7 @@ export interface Page<T> {
 }
 
 export interface AdminSubmissionSummary {
+  countingRule: CountingRule;
   id: string;
   displayNo: string;
   sealedAt: string;
@@ -146,7 +155,7 @@ export interface AdminSubmissionDetail extends AdminSubmissionSummary {
   podd: string | null;
   crd: string | null;
   partial: { number: number; qty: number } | null;
-  counts: { rework: number; bGrade: number; noDefect: number };
+  counts: { rework: number; bGrade: number; noDefect: number | null; qtyInspection: number };
   findings: AdminFinding[];
   top5: {
     rank: number;

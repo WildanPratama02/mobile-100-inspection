@@ -7,6 +7,7 @@ export interface NumberPadProps {
   /** Digit string without separators. */
   value: string;
   max?: number;
+  min?: number;
   unit?: string;
   placeholder?: string;
   hint?: string;
@@ -22,6 +23,7 @@ export function NumberPad({
   label,
   value,
   max,
+  min = 1,
   unit,
   placeholder,
   hint,
@@ -31,13 +33,13 @@ export function NumberPad({
   const digits = value ?? '';
   const n = digits === '' ? 0 : parseInt(digits, 10);
   const over = max != null && n > max ? max : null;
-  const zero = digits !== '' && n < 1;
+  const zero = digits !== '' && n < min;
   const bad = over != null || zero;
   const message =
     over != null
       ? `Maksimum ${formatCount(over)} pasang`
       : zero
-        ? 'Minimal 1 pasang'
+        ? `Minimal ${formatCount(min)} pasang`
         : (hint ?? '');
 
   const press = (d: string) => {

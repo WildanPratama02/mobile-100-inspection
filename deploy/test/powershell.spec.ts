@@ -89,6 +89,31 @@ describe.runIf(process.platform === 'win32')('common.ps1', () => {
     );
   });
 
+  it('blocks code rollback across migration additions or edits, without switching services', () => {
+    const from = join(work, 'rollback-from');
+    const to = join(work, 'rollback-to');
+    for (const release of [from, to]) {
+      mkdirSync(join(release, 'db', 'migrations'), { recursive: true });
+      writeFileSync(join(release, 'db', 'migrations', '0005.sql'), '-- identical');
+    }
+    const check = () =>
+      withCommon<string>(
+        `& { try { Assert-CodeRollbackCompatible ${q(from)} ${q(to)}; 'allowed' } catch { $_.Exception.Message } }`,
+      );
+    expect(check()).toBe('allowed');
+    writeFileSync(join(from, 'db', 'migrations', '0006.sql'), '-- ADR-019');
+    expect(check()).toContain('migration boundary');
+    writeFileSync(join(to, 'db', 'migrations', '0006.sql'), '-- different');
+    expect(check()).toContain('histories differ');
+    writeFileSync(join(to, 'db', 'migrations', '0006.sql'), '-- ADR-019');
+    expect(check()).toBe('allowed');
+    expect(
+      withCommon<string>(
+        `& { try { Assert-CodeRollbackCompatible ${q(from)} ${q(join(work, 'missing'))}; 'allowed' } catch { $_.Exception.Message } }`,
+      ),
+    ).toContain('directory missing');
+  });
+
   it('switches the junction without touching the release it pointed to', () => {
     const releases = join(work, 'releases');
     for (const v of ['a', 'b']) {

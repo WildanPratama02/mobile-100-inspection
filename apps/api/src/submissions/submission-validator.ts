@@ -38,7 +38,7 @@ export interface ValidSubmission {
   json: Buffer;
   payloadSha256: string;
   photos: ValidPhoto[];
-  /** ADR-008 totals computed by the API (doc 04 §4.1). */
+  /** Totals computed by the API using the payload's counting rule (doc 04 §4.1). */
   totals: Totals;
 }
 

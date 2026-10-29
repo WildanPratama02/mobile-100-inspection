@@ -8,7 +8,15 @@ import { Link } from '../common/Link';
 import { Overlay } from '../common/Overlay';
 import { Empty, LoadError, Loading } from '../common/StateView';
 import { useResource } from '../common/useResource';
-import { actorName, auditSummary, formatCount, formatDate, moment, rate } from '../format';
+import {
+  actorName,
+  auditSummary,
+  countingRuleLabel,
+  formatCount,
+  formatDate,
+  moment,
+  rate,
+} from '../format';
 
 const tone = (c: AdminFinding['classification']) =>
   c.toLowerCase() as 'minor' | 'major' | 'critical';
@@ -78,9 +86,12 @@ function Body({ s }: { s: AdminSubmissionDetail }) {
     ['B-Grade', formatCount(s.qtyBGrade)],
     ['PASS RATE (RFT)', rate(s.rft, s.qtyInspection)],
     ['DEFECT RATE', rate(s.defectRate, s.qtyInspection)],
-    ['REWORK', formatCount(s.counts.rework)],
-    ['B-GRADE', formatCount(s.counts.bGrade)],
-    ['NO DEFECT', formatCount(s.counts.noDefect)],
+    ['Aturan hitung', countingRuleLabel(s.countingRule)],
+    ['REWORK (pasang)', formatCount(s.counts.rework)],
+    ['B-GRADE (pasang)', formatCount(s.counts.bGrade)],
+    ...(s.countingRule === 'ADR-008'
+      ? [['NO DEFECT', formatCount(s.counts.noDefect)] as [string, string]]
+      : []),
     ['Versi app', s.appVersion ?? '—'],
   ];
 

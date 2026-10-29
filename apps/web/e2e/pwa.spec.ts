@@ -1,3 +1,4 @@
+import { setQtyInspection } from './helpers';
 // The built app as a PWA: installable, and the whole Phase 1 flow with the network off after the first load
 // (T1.8; NFR-04, doc 03 §4.1, doc 05 §18). Runs against `vite preview` (project "pwa" in playwright.config.ts).
 import { type Page } from '@playwright/test';
@@ -145,15 +146,16 @@ test('after the first load, inspection, photos, results, export and SUBMIT PO wo
   await page.getByRole('button', { name: 'END INSPECTION' }).click();
   await bar(page, 'HOME').click();
 
+  await setQtyInspection(page, 30);
   // Home (S3): results and Top 5.
   await expectResults(page, {
     po: '10.002',
-    inspection: '1',
+    inspection: '30',
     defect: '2',
-    aGrade: '0',
+    aGrade: '28',
     bGrade: '0',
-    defectRate: '200,0%',
-    passRate: '0,0%',
+    defectRate: '6,7%',
+    passRate: '93,3%',
   });
   await expectTop5(page, [[DEFECT, 'MAJOR', 2]]);
 

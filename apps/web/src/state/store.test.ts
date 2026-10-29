@@ -186,7 +186,7 @@ describe('reload mid-inspection (AC-06.2)', () => {
     expect(session.active?.type).toBe('REWORK');
     expect(session.active?.defects).toHaveLength(2);
     expect(session.undo).toBe('DEFECT');
-    expect(totals(session)).toMatchObject({ qtyInspection: 1, qtyDefect: 2, qtyBGrade: 0 });
+    expect(totals(session)).toMatchObject({ qtyInspection: null, qtyDefect: 2, qtyBGrade: 0 });
   });
 
   it('restores a log with an ended inspection, UNDO and an active B-GRADE', async () => {
@@ -195,7 +195,7 @@ describe('reload mid-inspection (AC-06.2)', () => {
     await tap(PO.po, { type: 'START', inspection: 'REWORK' });
     await tap(PO.po, { type: 'DEFECT', entry: TOE });
     await tap(PO.po, { type: 'END' });
-    await tap(PO.po, { type: 'NO_DEFECT' });
+    await tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 30 });
     await tap(PO.po, { type: 'UNDO' });
     await tap(PO.po, { type: 'START', inspection: 'B-GRADE' });
     await tap(PO.po, { type: 'DEFECT', entry: HEEL });
@@ -207,8 +207,8 @@ describe('reload mid-inspection (AC-06.2)', () => {
     expect(after).toEqual(store.getState().sessions[PO.po]!.state);
     expect(after.active?.type).toBe('B-GRADE');
     expect(totals(after)).toMatchObject({
-      qtyInspection: 2,
-      qtyAGrade: 0,
+      qtyInspection: 30,
+      qtyAGrade: 28,
       qtyDefect: 2,
       qtyBGrade: 1,
     });
@@ -610,7 +610,7 @@ describe('submitPo (FR-11, doc 03 §4.6)', () => {
   const mapping = defaultMapping();
   const jpeg = (sha256: string) => ({ blob: new Blob([sha256], { type: 'image/jpeg' }), sha256 });
 
-  /** PSI lv.2 with REWORK: D001 ×2, then B-GRADE: D049, then NO DEFECT; D001 photographed. */
+  /** PSI lv.2 with REWORK: D001 ×2, then B-GRADE: D049, Qty Inspection 30; D001 photographed. */
   async function readyToSubmit(): Promise<AppStore> {
     const store = await loggedInWithPo();
     const { tap, savePhoto } = store.getState();
@@ -621,7 +621,7 @@ describe('submitPo (FR-11, doc 03 §4.6)', () => {
     await tap(PO.po, { type: 'START', inspection: 'B-GRADE' });
     await tap(PO.po, { type: 'DEFECT', entry: HEEL });
     await tap(PO.po, { type: 'END' });
-    await tap(PO.po, { type: 'NO_DEFECT' });
+    await tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 30 });
     await savePhoto(PO.po, 'D001', jpeg('sha-toe'));
     await savePhoto(PO.po, 'D049', jpeg('sha-heel'));
     return store;
@@ -664,7 +664,7 @@ describe('submitPo (FR-11, doc 03 §4.6)', () => {
     const next = after.sessions[PO.po]!;
     expect(next.session.id).not.toBe(sealed.id);
     expect(next).toMatchObject({ events: [], state: EMPTY_SESSION, photos: {} });
-    expect(totals(next.state)).toMatchObject({ qtyInspection: 0, qtyDefect: 0 });
+    expect(totals(next.state)).toMatchObject({ qtyInspection: null, qtyDefect: 0 });
     expect(after.pos[0]?.partial).toEqual({ number: 1, qty: 600 });
     expect((await db.sessions.get(sealed.id))?.status).toBe('closed');
     expect(
@@ -695,7 +695,7 @@ describe('submitPo (FR-11, doc 03 §4.6)', () => {
       cell: 'C01',
       po: PO.po,
       partial: { number: 1, qty: 600 },
-      counts: { rework: 1, bGrade: 1, noDefect: 1 },
+      counts: { rework: 1, bGrade: 1, qtyInspection: 30 },
     });
     expect(payload.findings.map((f) => [f.inspectionType, f.defectId, f.qty])).toEqual([
       ['REWORK', 'D001', 2],
@@ -743,6 +743,7 @@ describe('submitPo (FR-11, doc 03 §4.6)', () => {
     await blocked('ACTIVE');
     await tap(PO.po, { type: 'DEFECT', entry: TOE });
     await tap(PO.po, { type: 'END' });
+    await tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 30 });
     await blocked('PHOTOS_MISSING');
     await store.getState().savePhoto(PO.po, 'D001', jpeg('aa'));
     await removePhoto(PO.po, 'D001');
@@ -758,6 +759,7 @@ describe('submitPo (FR-11, doc 03 §4.6)', () => {
     await store.getState().tap(PO.po, { type: 'DEFECT', entry: TOE });
     await store.getState().tap(PO.po, { type: 'END' });
 
+    await store.getState().tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 30 });
     const item = await store.getState().submitPo(PO.po, mapping);
     const payload = JSON.parse(item.payloadJson) as SubmissionRequest;
     expect(payload.photos).toEqual([]);

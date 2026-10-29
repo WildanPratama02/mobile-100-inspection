@@ -40,7 +40,9 @@ export function runPgTool(
   if (password === undefined) delete env.PGPASSWORD;
   else env.PGPASSWORD = password;
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(pgToolPath(tool, pgBin), [...args, `--dbname=${withoutPassword}`], {
+    // PostgreSQL 16 on Windows stops parsing options at the positional dump
+    // filename. Keep connection options before it (pg_restore FILE).
+    const child = spawn(pgToolPath(tool, pgBin), [`--dbname=${withoutPassword}`, ...args], {
       env,
       stdio: ['ignore', 'ignore', 'pipe'],
       windowsHide: true,

@@ -150,10 +150,13 @@ export type SessionEvent = SessionEventBase &
   (
     | { type: 'START_REWORK' }
     | { type: 'START_BGRADE' }
+    /** Legacy (ADR-008): no longer written; one left in a session open during the update is ignored (ADR-019). */
     | { type: 'NO_DEFECT' }
     | ({ type: 'DEFECT' } & AreaMapEntry)
     | { type: 'END' }
     | { type: 'UNDO' }
+    /** SIMPAN in the QTY INSPECTION dialog (FR-15); the last one is the session's Qty Inspection. */
+    | { type: 'SET_QTY_INSPECTION'; qty: number }
   );
 
 export type SessionEventType = SessionEvent['type'];
@@ -173,12 +176,21 @@ export interface Finding extends AreaMapEntry {
   firstRecordedAt: string;
 }
 
-/** Number of inspections started, by type (ADR-008, doc 04 §4.1 `counts`). */
+/** REWORK and B-GRADE inspections started (pairs). Recorded and submitted, but in no formula (ADR-019). */
 export interface InspectionCounts {
   rework: number;
   bGrade: number;
-  noDefect: number;
 }
+
+/**
+ * `counts` of `POST /submissions` (doc 04 §4.1): exactly one of `qtyInspection` (ADR-019, entered by the PSI)
+ * and `noDefect` (ADR-008, only in a session sealed by an app version from before ADR-019).
+ */
+export type SubmissionCounts = InspectionCounts &
+  ({ qtyInspection: number; noDefect?: never } | { noDefect: number; qtyInspection?: never });
+
+/** Which rules a submission's totals follow (`submissions.counting_rule`, doc 02 §4.1). */
+export type CountingRule = 'ADR-008' | 'ADR-019';
 
 /** One photo part of a submission (doc 04 §4.1): PSI lv.2 only, at most one per defect (ADR-011). */
 export interface SubmissionPhoto {
@@ -190,7 +202,7 @@ export interface SubmissionPhoto {
 
 /**
  * The `submission` part of `POST /submissions` (doc 04 §4.1, `SubmissionRequest` in docs/04-openapi.yaml).
- * It says what happened, not totals: the API computes every total itself (ADR-008).
+ * It says what happened, not totals: the API computes every total itself (ADR-019).
  */
 export interface SubmissionRequest {
   submissionUuid: string;
@@ -202,7 +214,7 @@ export interface SubmissionRequest {
   cell: string;
   po: string;
   partial: PoPartial | null;
-  counts: InspectionCounts;
+  counts: SubmissionCounts;
   findings: Finding[];
   photos: SubmissionPhoto[];
 }

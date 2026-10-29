@@ -5,7 +5,14 @@
  * a session into the `submission` part of `POST /submissions` (doc 04 §4.1); the tablet serialises it once when
  * it seals the session and resends those bytes (doc 03 §4.6). Everything here is pure.
  */
-import { findings, type RankedDefect, type SessionState } from './counting';
+import {
+  findings,
+  totals,
+  type PoQuantities,
+  type QtyInspectionIssue,
+  type RankedDefect,
+  type SessionState,
+} from './counting';
 import type { Cell, DefectId, PoPartial, PsiLevel, SubmissionRequest, User } from './domain';
 import { toWibIso } from './format';
 import { missingPhotos, takesPhotos } from './photos';
@@ -13,11 +20,13 @@ import { missingPhotos, takesPhotos } from './photos';
 /** Why SUBMIT PO stops before the confirmation; each has its own dialog (doc 05 §13.1). */
 export type SubmitBlock =
   | { kind: 'ACTIVE' }
-  | { kind: 'EMPTY' }
+  /** BR-10, in the order of `checkQtyInspection`: IMPOSSIBLE, EMPTY, BELOW, ABOVE. */
+  | QtyInspectionIssue
   /** PSI lv.2: the Top 5 defects without a photo, in rank order (BR-04). */
   | { kind: 'PHOTOS_MISSING'; defects: RankedDefect[] };
 
 export interface SubmitCheckInput {
+  po: PoQuantities;
   state: SessionState;
   level: PsiLevel;
   /** TOP 5 DEFECT of the session (`top5`). */
@@ -32,10 +41,12 @@ export function checkSubmit({
   level,
   top,
   photographed,
+  po,
 }: SubmitCheckInput): SubmitBlock | null {
   if (state.active) return { kind: 'ACTIVE' };
-  const { rework, bGrade, noDefect } = state.counts;
-  if (rework + bGrade + noDefect === 0) return { kind: 'EMPTY' };
+  // One priority rule for Home, S5b and SUBMIT PO: impossible limits before an empty value.
+  const issue = totals(state, po).qtyInspectionIssue;
+  if (issue) return issue;
   if (takesPhotos(level)) {
     const defects = missingPhotos(top, photographed);
     if (defects.length > 0) return { kind: 'PHOTOS_MISSING', defects };
@@ -80,9 +91,14 @@ export interface SubmissionInput {
   photos: readonly PhotoRef[];
 }
 
-/** The `submission` part of `POST /submissions` (doc 04 §4.1). Times are sent in WIB. */
+/**
+ * The `submission` part of `POST /submissions` (doc 04 §4.1). Times are sent in WIB. Run `checkSubmit` first:
+ * a session without Qty Inspection can't be built.
+ */
 export function buildSubmission(input: SubmissionInput): SubmissionRequest {
   const { state, user } = input;
+  const { qtyInspection } = state;
+  if (qtyInspection === null) throw new Error('Qty Inspection is not entered');
   return {
     submissionUuid: input.submissionUuid,
     sealedAt: toWibIso(input.sealedAt),
@@ -92,7 +108,7 @@ export function buildSubmission(input: SubmissionInput): SubmissionRequest {
     cell: input.cell.cell,
     po: input.po,
     partial: input.partial ? { number: input.partial.number, qty: input.partial.qty } : null,
-    counts: { ...state.counts },
+    counts: { rework: state.counts.rework, bGrade: state.counts.bGrade, qtyInspection },
     findings: findings(state).map((f) => ({
       ...f,
       firstRecordedAt: toWibIso(f.firstRecordedAt),

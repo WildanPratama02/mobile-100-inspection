@@ -120,6 +120,7 @@ function main() {
   copy('apps/admin/dist', 'admin');
   copy('db/migrations', 'db/migrations');
   copy('reference/mapping', 'reference/mapping');
+  copy('docs/phase5-recovery-runbook.md', 'docs/phase5-recovery-runbook.md');
   for (const file of DEPLOY_FILES) copy(join('deploy', file), join('deploy', file));
   writeFileSync(join(out, 'VERSION'), `${version}\n`);
 

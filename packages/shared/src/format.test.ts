@@ -37,6 +37,10 @@ describe('formatCount', () => {
     expect(formatCount(10002)).toBe('10.002');
     expect(formatCount(0)).toBe('0');
   });
+
+  it('shows "—" for a Qty Inspection not entered yet (FR-04)', () => {
+    expect(formatCount(null)).toBe('—');
+  });
 });
 
 describe('formatPartial (doc 05 §15)', () => {

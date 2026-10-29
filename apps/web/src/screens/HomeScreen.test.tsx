@@ -114,7 +114,7 @@ describe('Home states (doc 05 §8.2)', () => {
     expect(infoValue('PO NUMBER')).toBe('-');
     expect(infoValue('FACTORY/CELL')).toBe('F3-10');
     expect(stat('Qty PO Order')).toBe('—');
-    expect(stat('Qty Inspection')).toBe('0');
+    expect(stat('Qty Inspection')).toBe('\u2014');
     expect(stat('Defect Rate')).toBe('—');
     for (const name of BOTTOM) expect(screen.getByRole('button', { name })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'PO PARTIAL' })).not.toBeInTheDocument();
@@ -130,8 +130,8 @@ describe('Home states (doc 05 §8.2)', () => {
     expect(infoValue('MODEL')).toBe(PO.model);
     expect(infoValue('DESTINATION')).toBe(PO.destination);
     expect(stat('Qty PO Order')).toBe('10.002');
-    expect(stat('Qty Inspection')).toBe('0');
-    expect(stat('Pass Rate (RFT)')).toBe('—');
+    expect(stat('Qty Inspection')).toBe('\u2014');
+    expect(stat('Pass Rate (RFT)')).toBe('0,0%');
     for (const name of BOTTOM) expect(screen.getByRole('button', { name })).toBeEnabled();
   });
 
@@ -153,29 +153,23 @@ describe('Home states (doc 05 §8.2)', () => {
 });
 
 describe('results panel (FR-04, AC-04.1)', () => {
-  it('follows every tap, with ADR-008 counts and id-ID rates', async () => {
+  it('uses the entered quantity and finding totals (ADR-019)', async () => {
     await store.getState().addPo(PO, null);
     renderHome();
     const a = entry('MINOR', 'A01');
-    const b = entry('MAJOR', 'A02');
-
-    await tap(PO.po, START_REWORK, defect(a), defect(b), END);
-    expect(stat('Qty Inspection')).toBe('1');
+    await tap(PO.po, START_REWORK, defect(a), defect(a), END);
+    expect(stat('Qty Inspection')).toBe('\u2014');
     expect(stat('Qty Defect')).toBe('2');
-    expect(stat('Defect Rate')).toBe('200,0%');
-    expect(stat('Pass Rate (RFT)')).toBe('0,0%');
-
-    await tap(PO.po, START_BGRADE, defect(a), END, { type: 'NO_DEFECT' });
-    expect(stat('Qty Inspection')).toBe('3');
-    expect(stat('Qty Defect')).toBe('3');
-    expect(stat('Qty A-Grade')).toBe('1');
-    expect(stat('Qty B-Grade')).toBe('1');
-    expect(stat('Defect Rate')).toBe('100,0%');
-    expect(stat('Pass Rate (RFT)')).toBe('33,3%');
-
-    await tap(PO.po, { type: 'UNDO' });
-    expect(stat('Qty Inspection')).toBe('2');
     expect(stat('Qty A-Grade')).toBe('0');
+    expect(stat('Defect Rate')).toBe('0,0%');
+    await tap(PO.po, START_BGRADE, defect(a), END, { type: 'SET_QTY_INSPECTION', qty: 30 });
+    expect(stat('Qty Inspection')).toBe('30');
+    expect(stat('Qty Defect')).toBe('3');
+    expect(stat('Qty A-Grade')).toBe('27');
+    expect(stat('Qty B-Grade')).toBe('1');
+    expect(stat('Defect Rate')).toBe('10,0%');
+    expect(stat('Pass Rate (RFT)')).toBe('90,0%');
+    expect(await store.getState().tap(PO.po, { type: 'UNDO' })).toBeNull();
   });
 
   it('marks Defect Rate above 5,0% only (U3)', async () => {
@@ -185,13 +179,13 @@ describe('results panel (FR-04, AC-04.1)', () => {
       within(screen.getByRole('region', { name: 'Hasil' }))
         .getByText('Defect Rate')
         .closest('.m100-stat');
-    for (let i = 0; i < 19; i++) await tap(PO.po, { type: 'NO_DEFECT' });
+    await tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 20 });
     await tap(PO.po, START_REWORK, defect(entry('MINOR', 'A01')), END);
     expect(stat('Defect Rate')).toBe('5,0%');
     expect(rate()).not.toHaveClass('m100-stat--bad');
 
     await tap(PO.po, START_REWORK, defect(entry('MINOR', 'A01')));
-    expect(stat('Defect Rate')).toBe('9,5%');
+    expect(stat('Defect Rate')).toBe('10,0%');
     expect(rate()).toHaveClass('m100-stat--bad');
   });
 });
@@ -264,11 +258,11 @@ describe('PO list (FR-03)', () => {
   it('selecting a PO switches the info strip and the results (AC-03.3)', async () => {
     await store.getState().addPo(PO, null);
     await store.getState().addPo(CX, null);
-    await tap(PO.po, { type: 'NO_DEFECT' });
+    await tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 30 });
     renderHome();
     expect(infoValue('PO NUMBER')).toBe('CX-0902368685');
     expect(stat('Qty PO Order')).toBe('2.400');
-    expect(stat('Qty Inspection')).toBe('0');
+    expect(stat('Qty Inspection')).toBe('\u2014');
 
     fireEvent.click(screen.getByRole('button', { name: /^0903359388/ }));
     await waitFor(() => expect(infoValue('PO NUMBER')).toBe('0903359388'));
@@ -277,7 +271,7 @@ describe('PO list (FR-03)', () => {
       'true',
     );
     expect(stat('Qty PO Order')).toBe('10.002');
-    expect(stat('Qty Inspection')).toBe('1');
+    expect(stat('Qty Inspection')).toBe('30');
   });
 
   it('shows the partial with UBAH PARTIAL, or PO PARTIAL without one (U9)', async () => {
@@ -519,7 +513,10 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
   it('makes each file, says its name, and changes nothing (AC-12.3, AC-12.4)', async () => {
     await asLv1();
     await store.getState().addPo(PO, null);
-    await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')), END, { type: 'NO_DEFECT' });
+    await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')), END, {
+      type: 'SET_QTY_INSPECTION',
+      qty: 30,
+    });
     renderHome(LV1);
     const sessions = store.getState().sessions;
     const before = await snapshot();
@@ -532,7 +529,7 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
       await waitFor(() => expect(saveFile).toHaveBeenCalledTimes(format === 'pdf' ? 1 : 2));
       const [usedFormat, report] = vi.mocked(exportFile).mock.lastCall!;
       expect(usedFormat).toBe(format);
-      expect(report.results.find((r) => r.label === 'Qty Inspection')?.value).toBe(2);
+      expect(report.results.find((r) => r.label === 'Qty Inspection')?.value).toBe(30);
       const name = vi.mocked(saveFile).mock.lastCall![0];
       expect(name).toMatch(FILE);
       expect(name.endsWith(`.${format}`)).toBe(true);
@@ -541,7 +538,7 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
 
     expect(store.getState().sessions).toBe(sessions);
     expect(await snapshot()).toBe(before);
-    expect(stat('Qty Inspection')).toBe('2');
+    expect(stat('Qty Inspection')).toBe('30');
   });
 
   it('exports an empty session (doc 05 §8.5)', async () => {
@@ -626,7 +623,7 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
 describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
   const LV1: Auth = { ...AUTH, username: 'ANDI CONTOH', level: 'PSI lv.1' };
   const jpeg = { blob: new Blob(['j'], { type: 'image/jpeg' }), sha256: 'h' };
-  const NO_DEFECT: TapCommand = { type: 'NO_DEFECT' };
+  const QTY: TapCommand = { type: 'SET_QTY_INSPECTION', qty: 30 };
   const submit = () => fireEvent.click(screen.getByRole('button', { name: 'SUBMIT PO' }));
   const summary = (label: string) =>
     within(screen.getByRole('dialog', { name: 'Submit PO' }))
@@ -669,9 +666,9 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
     await store.getState().addPo(PO, null);
     renderHome();
     submit();
-    const dialog = screen.getByRole('alertdialog', { name: 'Belum ada inspeksi' });
-    expect(dialog).toHaveTextContent('Belum ada inspeksi untuk PO ini. Mulai dari ADD DEFECT.');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Mengerti' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'QTY INSPECTION belum diisi' });
+    expect(dialog).toHaveTextContent('Isi jumlah pasang yang diinspeksi sebelum SUBMIT PO.');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Isi QTY INSPECTION' }));
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(await db.outbox.count()).toBe(0);
   });
@@ -680,7 +677,10 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
     const a = entry('MAJOR', 'A01');
     const b = entry('MINOR', 'A01');
     await store.getState().addPo(PO, null);
-    await tap(PO.po, START_REWORK, defect(a), defect(b), defect(b), END);
+    await tap(PO.po, START_REWORK, defect(a), defect(b), defect(b), END, {
+      type: 'SET_QTY_INSPECTION',
+      qty: 30,
+    });
     await act(() => store.getState().savePhoto(PO.po, a.defectId, jpeg));
     renderHome();
     submit();
@@ -698,7 +698,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
   it('confirms with the summary; BATAL, the close button and the scrim change nothing', async () => {
     const a = entry('MAJOR', 'A01');
     await store.getState().addPo(PO, { number: 1, qty: 1200 });
-    await tap(PO.po, START_BGRADE, defect(a), END, NO_DEFECT, NO_DEFECT, NO_DEFECT);
+    await tap(PO.po, START_BGRADE, defect(a), END, QTY);
     await act(() => store.getState().savePhoto(PO.po, a.defectId, jpeg));
     renderHome();
     const before = await stored();
@@ -706,12 +706,12 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
     submit();
     expect(summary('PO')).toBe(PO.po);
     expect(summary('Partial')).toBe(formatPartial({ number: 1, qty: 1200 }, PO.orderQty));
-    expect(summary('Qty Inspection')).toBe('4');
+    expect(summary('Qty Inspection')).toBe('30');
     expect(summary('Qty Defect')).toBe('1');
-    expect(summary('Qty A-Grade')).toBe('3');
+    expect(summary('Qty A-Grade')).toBe('29');
     expect(summary('Qty B-Grade')).toBe('1');
-    expect(summary('Defect Rate')).toBe('25,0%');
-    expect(summary('Pass Rate (RFT)')).toBe('75,0%');
+    expect(summary('Defect Rate')).toBe('3,3%');
+    expect(summary('Pass Rate (RFT)')).toBe('96,7%');
     expect(summary('Foto')).toBe('1');
 
     const dialog = () => screen.queryByRole('dialog', { name: 'Submit PO' });
@@ -729,7 +729,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
   it('KIRIM seals the session: Home shows zeros, the toast and the waiting count (AC-04.2, AC-11.3)', async () => {
     const a = entry('MAJOR', 'A01');
     await store.getState().addPo(PO, { number: 2, qty: 300 });
-    await tap(PO.po, START_REWORK, defect(a), END);
+    await tap(PO.po, START_REWORK, defect(a), END, { type: 'SET_QTY_INSPECTION', qty: 30 });
     await act(() => store.getState().savePhoto(PO.po, a.defectId, jpeg));
     renderHome();
     expect(screen.queryByLabelText(/pengiriman menunggu/)).not.toBeInTheDocument();
@@ -740,9 +740,9 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
     expect(await screen.findByText('Tersimpan. Menunggu koneksi.')).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByLabelText('1 pengiriman menunggu')).toHaveTextContent('1');
-    expect(stat('Qty Inspection')).toBe('0');
+    expect(stat('Qty Inspection')).toBe('\u2014');
     expect(stat('Qty Defect')).toBe('0');
-    expect(stat('Defect Rate')).toBe('—');
+    expect(stat('Defect Rate')).toBe('0,0%');
     expect(screen.getByText('Belum ada defect')).toBeInTheDocument();
     // U10: the partial stays on the PO.
     expect(infoValue('PARTIAL')).toBe(formatPartial({ number: 2, qty: 300 }, PO.orderQty));
@@ -764,7 +764,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
 
     async function kirim(sender: OutboxSender) {
       await store.getState().addPo(PO, null);
-      await tap(PO.po, NO_DEFECT);
+      await tap(PO.po, QTY);
       render(
         <AppStoreContext.Provider value={store}>
           <OutboxSenderContext.Provider value={sender}>
@@ -790,7 +790,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
       await kirim(sender);
       expect(await screen.findByText('Sedang dikirim.')).toBeInTheDocument();
       // Home does not wait for the answer: the next round can start (doc 05 §13.3).
-      expect(stat('Qty Inspection')).toBe('0');
+      expect(stat('Qty Inspection')).toBe('\u2014');
       const [item] = await db.outbox.toArray();
       expect(sender.send).toHaveBeenCalledWith(item!.submissionUuid);
       await act(async () => {
@@ -827,7 +827,10 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
       await store.getState().login(LV1);
     });
     await store.getState().addPo(PO, null);
-    await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')), END);
+    await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')), END, {
+      type: 'SET_QTY_INSPECTION',
+      qty: 30,
+    });
     renderHome(LV1);
     submit();
     expect(screen.queryByText('Foto')).not.toBeInTheDocument();
@@ -841,7 +844,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
   it('says so when sealing fails on the tablet, and keeps the session', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await store.getState().addPo(PO, null);
-    await tap(PO.po, NO_DEFECT);
+    await tap(PO.po, QTY);
     renderHome();
     const before = await stored();
     vi.spyOn(db.outbox, 'add').mockRejectedValueOnce(new Error('QuotaExceededError'));
@@ -850,7 +853,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'KIRIM' }));
 
     expect(await screen.findByText('PO gagal disimpan. Coba lagi.')).toBeInTheDocument();
-    expect(stat('Qty Inspection')).toBe('1');
+    expect(stat('Qty Inspection')).toBe('30');
     expect(await stored()).toEqual(before);
     expect(screen.queryByLabelText(/pengiriman menunggu/)).not.toBeInTheDocument();
   });

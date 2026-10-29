@@ -271,7 +271,7 @@ The steps and their invariants are in doc 02 §6; this document adds only:
 | `computeTotals(counts, findings)` | doc 04 §4.1 table → Qty Inspection, A-Grade (`qtyInspection − Qty Defect`; ADR-008 payloads: `noDefect`), Qty Defect, B-Grade, RFT, Defect Rate. The submitted totals; the API's and the outbox's |
 | `countingRule(counts)` | `ADR-019` when `counts.qtyInspection` is present, `ADR-008` for a `noDefect` payload |
 | `qtyInspectionLimits(qtyDefect, partial, orderQty)` | BR-10 → `{ min: max(1, qtyDefect), max: partial?.qty ?? orderQty }`; the same function feeds the tablet's number pad, the Submit PO check and the API's validation |
-| `checkQtyInspection(qty, limits)` | `null` (valid) or `EMPTY`, `IMPOSSIBLE{min, max}` (min > max: no value is valid), `BELOW{min}`, `ABOVE{max}` |
+| `checkQtyInspection(qty, limits)` | `null` (valid) or, in this order of precedence, `IMPOSSIBLE{min, max}` (min > max: no value is valid, also when Qty Inspection is empty), `EMPTY`, `BELOW{min}`, `ABOVE{max}`. The single priority rule: `totals` and `checkSubmit` report its result, so Home, S5b and SUBMIT PO agree (doc 05 §13.1) |
 | `totals(state, po)` | the session's figures for Home and exports: Qty Defect and Qty B-Grade always; Qty A-Grade, Defect Rate and Pass Rate `null` while Qty Inspection is empty or not valid (the screen shows `0` / `0,0%`, ADR-019 decision 7), plus the `checkQtyInspection` result |
 | `top5(findings, defects)` | order by quantity, severity, first recorded (AC-05.1); the same function on tablet and server |
 | `photoKey(uuid, defectId, sealedAt)` | `submissions/<yyyy>/<MM>/<uuid>/<defectId>.jpg` (month from `sealedAt` in WIB) |

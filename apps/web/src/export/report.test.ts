@@ -53,8 +53,8 @@ class Taps {
   bGrade() {
     return this.push({ type: 'START_BGRADE' });
   }
-  noDefect() {
-    return this.push({ type: 'NO_DEFECT' });
+  qtyInspection() {
+    return this.push({ type: 'SET_QTY_INSPECTION', qty: 30 });
   }
   end() {
     return this.push({ type: 'END' });
@@ -136,8 +136,8 @@ describe('exportReport (FR-12)', () => {
     ]);
   });
 
-  it('has the results panel values (ADR-008)', () => {
-    // REWORK pair with 2 defects, B-GRADE pair with 1, one NO DEFECT: 3 inspected, 3 defects, 1 B-Grade.
+  it('has the results panel values (ADR-019)', () => {
+    // Qty Inspection 30 with three findings, including one B-Grade finding.
     const taps = new Taps()
       .rework()
       .defect('D005')
@@ -146,21 +146,21 @@ describe('exportReport (FR-12)', () => {
       .bGrade()
       .defect('D035')
       .end()
-      .noDefect();
+      .qtyInspection();
     expect(exportReport(input(taps)).results).toEqual([
       { label: 'Qty PO Order', kind: 'count', value: 10002 },
-      { label: 'Qty Inspection', kind: 'count', value: 3 },
+      { label: 'Qty Inspection', kind: 'count', value: 30 },
       { label: 'Qty Defect', kind: 'count', value: 3 },
-      { label: 'Qty A-Grade', kind: 'count', value: 1 },
+      { label: 'Qty A-Grade', kind: 'count', value: 27 },
       { label: 'Qty B-Grade', kind: 'count', value: 1 },
-      { label: 'Defect Rate', kind: 'rate', value: 1 },
-      { label: 'Pass Rate (RFT)', kind: 'rate', value: 1 / 3 },
+      { label: 'Defect Rate', kind: 'rate', value: 0.1 },
+      { label: 'Pass Rate (RFT)', kind: 'rate', value: 0.9 },
     ]);
   });
 
-  it('exports an empty session with zeros and no rate (doc 05 §8.5)', () => {
+  it('exports an empty session with the Home display fallbacks (doc 05 §8.5)', () => {
     for (const report of [exportReport(input(undefined)), exportReport(input(new Taps()))]) {
-      expect(report.results.map((r) => r.value)).toEqual([10002, 0, 0, 0, 0, null, null]);
+      expect(report.results.map((r) => r.value)).toEqual([10002, null, 0, 0, 0, 0, 0]);
       expect(report.top5).toEqual([]);
       expect(report.defects).toEqual([]);
       expect(report.photos).toEqual([]);

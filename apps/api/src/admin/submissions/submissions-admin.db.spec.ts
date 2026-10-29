@@ -127,10 +127,10 @@ beforeAll(async () => {
     `INSERT INTO submissions (id, payload_sha256, sealed_at, inspection_date, username, level, factory, cell, po,
                               article, model, destination, order_qty, qty_rework, qty_bgrade_inspections,
                               qty_no_defect, qty_inspection, qty_a_grade, qty_b_grade, qty_defect, rft, defect_rate,
-                              photo_count)
+                              photo_count, counting_rule)
      SELECT gen_random_uuid(), sha256(n::text::bytea), '2026-08-01T01:00:00Z'::timestamptz + n * interval '1 second',
             '2026-08-01', 'BULK', 'PSI lv.1', 'F 3', 'F3-10', 'BULK' || n, '', '', '', 100, 0, 0, 1, 1, 1, 0, 0,
-            1, 0, 0
+            1, 0, 0, 'ADR-008'
        FROM generate_series(1, 1001) AS n`,
   );
 
@@ -222,6 +222,43 @@ describe('GET /v1/admin/submissions (doc 05 §20.3, A12)', () => {
 });
 
 describe('GET /v1/admin/submissions/{id} (doc 05 §20.3, A1b)', () => {
+  it('exposes ADR-019 counts and the stored rule in detail, list and CSV', async () => {
+    const id = await insertSubmission(
+      testDb.client,
+      submissionRow({
+        po: 'ADR019-REPORT',
+        inspection_date: '2026-07-01',
+        sealed_at: '2026-07-01T01:00:00Z',
+        counting_rule: 'ADR-019',
+        qty_no_defect: null,
+        qty_a_grade: 19,
+        rft: '0.63333',
+      }),
+    );
+    for (const f of FINDINGS) await insertFinding(testDb.client, id, f);
+    const res = await admin().get(`/v1/admin/submissions/${id}`);
+    expect(res.status).toBe(200);
+    expectMatchesSpec(res, 'get', '/admin/submissions/{id}');
+    expect(res.body).toMatchObject({
+      countingRule: 'ADR-019',
+      qtyInspection: 30,
+      qtyDefect: 11,
+      qtyAGrade: 19,
+      counts: { rework: 10, bGrade: 2, noDefect: null, qtyInspection: 30 },
+    });
+    const list = await admin().get('/v1/admin/submissions?po=ADR019-REPORT');
+    expect(list.status).toBe(200);
+    expectMatchesSpec(list, 'get', '/admin/submissions');
+    const page = list.body as AdminSubmissionPage;
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]).toMatchObject({ id, countingRule: 'ADR-019', qtyAGrade: 19 });
+    const { lines } = await csv('?po=ADR019-REPORT');
+    const cells = lines[1]!.split(',');
+    expect(cells[EXPORT_COLUMNS.indexOf('counting_rule')]).toBe('ADR-019');
+    expect(cells[EXPORT_COLUMNS.indexOf('qty_no_defect')]).toBe('');
+    expect(cells[EXPORT_COLUMNS.indexOf('qty_a_grade')]).toBe('19');
+  });
+
   it('returns the submission with its findings in tap order, the Top 5 and the photo ids', async () => {
     const res = await admin().get(`/v1/admin/submissions/${full}`);
     expect(res.status).toBe(200);
@@ -229,12 +266,13 @@ describe('GET /v1/admin/submissions/{id} (doc 05 §20.3, A1b)', () => {
     const detail = res.body as AdminSubmissionDetail;
     expect(detail).toMatchObject({
       id: full,
+      countingRule: 'ADR-008',
       article: 'IH1234',
       orderQty: 10002,
       podd: '2026-01-12',
       crd: null,
       partial: { number: 1, qty: 1200 },
-      counts: { rework: 10, bGrade: 2, noDefect: 18 },
+      counts: { rework: 10, bGrade: 2, noDefect: 18, qtyInspection: 30 },
       appVersion: '1.0.0',
       audit: [],
     });

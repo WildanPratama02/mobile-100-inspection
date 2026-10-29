@@ -13,6 +13,7 @@ import { createTestDatabase, type TestDatabase } from '../testing/database';
 import { registerDevice, type TestDevice } from '../testing/devices';
 import { testConfig, testJwtKey } from '../testing/env';
 import { expectMatchesSpec, expectProblem } from '../testing/openapi';
+import { tamperSignature } from '../testing/tamper';
 import { createAdmin, deactivateAdmin, pgAdminAccountRepositories } from './admin-accounts';
 import { LOGIN_LOCK } from './admin-auth.service';
 import { AdminTokens, SESSION_LIFETIME_SECONDS } from './admin-session';
@@ -252,7 +253,7 @@ describe('the admin session', () => {
     ).token;
     for (const cookie of [
       undefined,
-      `m100_admin=${valid.slice(0, -2)}xx`,
+      `m100_admin=${tamperSignature(valid)}`,
       `m100_admin=${expired}`,
       `m100_admin=${tabletAudience}`,
       `other=${valid}`,

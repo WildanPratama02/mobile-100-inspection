@@ -1,6 +1,6 @@
 // Mobile 100% Inspection components (window.M100). Plain React 18 function components; styling comes from bundle.css + tokens.css.
 type Classification = 'minor' | 'major' | 'critical' | 1 | 2 | 3;
-export type IconName = 'plus' | 'chevron-down' | 'chevron-right' | 'back' | 'home' | 'undo' | 'check' | 'close' | 'camera' | 'download' | 'gear';
+export type IconName = 'edit' | 'plus' | 'chevron-down' | 'chevron-right' | 'back' | 'home' | 'undo' | 'check' | 'close' | 'camera' | 'download' | 'gear';
 export interface IconProps { name: IconName; size?: number | string; label?: string; className?: string }
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> { variant?: 'primary' | 'secondary' | 'danger'; size?: 'sm' | 'md' | 'lg'; icon?: IconName; block?: boolean }
 export interface CommandButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> { mode: 'rework' | 'bgrade' | 'nodefect' | 'end'; state?: 'idle' | 'active' | 'disabled' }
@@ -14,7 +14,7 @@ export interface ToastProps { tone?: 'neutral' | 'error'; floating?: boolean; ch
 export interface NoticeProps { tone?: 'warning' | 'danger'; title?: string; children?: React.ReactNode; className?: string }
 export interface OutboxItemProps { po: string; time?: string; status: 'waiting' | 'sending' | 'sent' | 'failed'; reason?: string; detail?: string; className?: string }
 export interface POListItemProps { po: string; sub?: string; count?: number; live?: string; selected?: boolean; onClick?: () => void; className?: string }
-export interface StatRowProps { label: string; value?: string | number | null; unit?: string; tone?: 'bad' | 'good'; className?: string }
+export interface StatRowProps { onClick?: () => void; label: string; value?: string | number | null; unit?: string; tone?: 'bad' | 'good'; className?: string }
 export interface PhotoButtonProps { state?: 'add' | 'required' | 'attached'; src?: string; label?: string; onClick?: () => void; className?: string }
 export interface Top5RowProps { no: number; name: string; classification: Classification; areas?: string; qty: number; photo?: PhotoButtonProps | null; flag?: string; className?: string }
 export interface OptionRowProps { kind?: 'nav' | 'defect'; title: string; sub?: string; count?: number; classification?: Classification; qty?: number; flash?: boolean; disabled?: boolean; onClick?: () => void; className?: string }
@@ -28,7 +28,7 @@ export interface ShoeMapArea { id: string; lines: string[]; anchor: [number, num
 export interface ShoeMapProps { src: string; areas?: Record<string, ShoeMapAreaState>; disabled?: boolean; onSelect?: (areaId: string) => void; imageBox?: [number, number, number, number]; layout?: ShoeMapArea[]; label?: string; className?: string }
 export interface CheckboxRowProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>,'onChange'> { checked: boolean; label: string; sub?: string; onChange?: (checked: boolean) => void; className?: string }
 export interface StepperProps { label?: string; value: number; min?: number; max?: number; format?: (v: number) => string; disabled?: boolean; onChange?: (v: number) => void; className?: string }
-export interface NumberPadProps { label?: string; value: string; max?: number; unit?: string; placeholder?: string; hint?: string; onChange?: (digits: string) => void; className?: string }
+export interface NumberPadProps { label?: string; value: string; min?: number; max?: number; unit?: string; placeholder?: string; hint?: string; onChange?: (digits: string) => void; className?: string }
 export declare const CheckboxRow: React.FC<CheckboxRowProps>;
 export declare const Stepper: React.FC<StepperProps>;
 export declare const NumberPad: React.FC<NumberPadProps>;
