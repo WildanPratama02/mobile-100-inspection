@@ -1,15 +1,15 @@
-# Mobile 100% Inspection — Data Design (PostgreSQL and object storage)
+# PSI Inspection Report — Data Design (PostgreSQL and object storage)
 
 | | |
 |---|---|
-| Version | 2.2 — 29 Oct 2026: PSI lv.2 rows are `counting_rule = 'ADR-008'` again (ADR-021, §4.1); no schema change. 2.1 — 27–28 Oct 2026: Qty Inspection entered by the PSI, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026): `counting_rule` column, `qty_no_defect` nullable, checks per rule (§4.1, §6.3, §9). v2.0 rewritten 20 Oct 2026 for ADR-018 (v1.0, the Google Sheets design, is superseded) |
-| Date | 27 Oct 2026 |
+| Version | 2.3 — 30 Oct 2026 (ADR-022): `qty_rework_approved`, `photo_rule`, migration 0007, photo per defect and report fields. v2.2 — 29 Oct 2026: PSI lv.2 rows are `counting_rule = 'ADR-008'` again (ADR-021, §4.1); no schema change. 2.1 — 27–28 Oct 2026: Qty Inspection entered by the PSI, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026): `counting_rule` column, `qty_no_defect` nullable, checks per rule (§4.1, §6.3, §9). v2.0 rewritten 20 Oct 2026 for ADR-018 (v1.0, the Google Sheets design, is superseded) |
+| Date | 30 Oct 2026 |
 | Database | PostgreSQL 16, database `m100`, schema `public`, time zone `Asia/Jakarta` for sessions, all timestamps stored as `timestamptz` |
 | Photos | An object store behind the `PhotoStore` interface (S3 API; MinIO or another S3-compatible store, or a plain folder), bucket `m100-photos` |
 | Based on | A full read of the old spreadsheet on 16 Oct 2026 (its findings are kept in §2 where they still matter) and ADR-018 |
-| Related | ADR-003, 006, 008, 009, 013, 018, 019 in [07 Decision Log](07-decision-log.md); FR-01…FR-14 in [01 PRD](01-prd.md); [03 TDD](03-tdd.md) §5 |
+| Related | ADR-003, 006, 008, 009, 013, 018, 019, 021, 022 in [07 Decision Log](07-decision-log.md); FR-01…FR-16 in [01 PRD](01-prd.md); [03 TDD](03-tdd.md) §5 |
 
-This document says what is stored, where, and how a submission is written. Mobile 100% Inspection no longer reads or writes the "100%INLINE IMPACTIVA" spreadsheet or any Google service (ADR-018). Historical AppSheet data stays in that spreadsheet and is not migrated.
+This document says what is stored, where, and how a submission is written. PSI Inspection Report no longer reads or writes the "100%INLINE IMPACTIVA" spreadsheet or any Google service (ADR-018). Historical AppSheet data stays in that spreadsheet and is not migrated.
 
 ## 1. Overview
 
@@ -46,9 +46,9 @@ These findings from the old spreadsheet still shape the rules below.
 | D1 | A PSI session has 0–24 distinct defects (median 10); one pair can carry several defects. | No slot limit any more: findings are rows (§4). |
 | D2 | `QTY INSPECTION` ≠ `A-GRADE` + `TOTAL DEFECT` under ADR-008, so RFT + Defect Rate ≠ 100%. | Stored as computed by the row's `counting_rule` (ADR-008 or ADR-019; §6.3, §9). |
 | D3 | PO fields (`MODEL`, `DESTINATION`) carried non-breaking spaces copied from the PO master. | Master text is stored **as imported**, never trimmed or normalised by the import; the search ignores them (§3.3). |
-| D4 | 132 historical slots held hand-typed defect names outside `DEFECT_LIST`. | Mobile 100% Inspection writes only defects that exist in `defects`. |
+| D4 | 132 historical slots held hand-typed defect names outside `DEFECT_LIST`. | PSI Inspection Report writes only defects that exist in `defects`. |
 | D5 | `PARTIAL OF QTY PO` was free text (`1`, `1200`, `P1 1200`). | Two structured numbers (§4.1); the text form `P1 1.200 OF 10.002` is a derived display value (§4.1). |
-| D6 | 99% of old slots had photos, at both levels. | Decided: one photo per Top 5 defect, PSI lv.2 only (FR-10, §4.3). |
+| D6 | 99% of old slots had photos, at both levels. | ADR-022: one photo per defect with a finding, PSI lv.2 only; older payloads retain Top 5 (§4.3). |
 
 ## 3. Master data
 
@@ -138,8 +138,10 @@ One row of `submissions` is one Submit PO (ADR-003).
 | `podd`, `crd` | `date` null | Snapshot |
 | `partial_no` | `smallint` null | 1–99; null when the PO is not partial (ADR-013) |
 | `partial_qty` | `integer` null | 1 … `order_qty`; null when not partial. Check: both null or both set |
-| `counting_rule` | `text` not null | `'ADR-019'` for every new submission; `'ADR-008'` for rows written before migration 0006 (check: one of the two) |
+| `counting_rule` | `text` not null | `'ADR-019'` for entered counts (PSI lv.1); `'ADR-008'` for tapped counts (PSI lv.2 since ADR-021 and older payloads); CHECK: one of the two |
 | `qty_rework`, `qty_bgrade_inspections` | `integer` not null | REWORK and B-GRADE inspections started (the tablet's `counts`); in ADR-019 rows informational only, in no formula |
+| `qty_rework_approved` | `integer` null | `counts.reworkApproved`: pairs repaired, re-inspected and passed; 0 for an empty new input, NULL when absent from a payload sealed before ADR-022; CHECK 0 ≤ value ≤ `qty_rework` (BR-11) |
+| `photo_rule` | `text` null | PSI lv.2: `'ALL'` when the payload has `photoRule: 'ALL'`, otherwise `'TOP5'`; PSI lv.1: NULL; existing PSI lv.2 rows also keep NULL (read as Top 5). Set at insert, immutable |
 | `qty_no_defect` | `integer` null | ADR-008 rows: NO DEFECT taps (not null). ADR-019 rows: null (NO DEFECT no longer exists) |
 | `qty_inspection` | `integer` not null | ≥ 1 (check). ADR-019: entered by the PSI (`counts.qtyInspection`). ADR-008: `rework + bgrade_inspections + no_defect` |
 | `qty_a_grade` | `integer` not null | ADR-019: `qty_inspection − qty_defect` (BR-01, findings-based). ADR-008: = `qty_no_defect` |
@@ -154,6 +156,8 @@ One row of `submissions` is one Submit PO (ADR-003).
 **Immutability.** A trigger rejects every `UPDATE` and `DELETE` on `submissions`, `submission_findings` and `submission_photos`; role `m100_app` also has no DELETE grant. There is no void in release 1.
 
 Constraints (database level, so a bug in the API cannot store inconsistent numbers):
+- `CHECK (qty_rework_approved IS NULL OR (qty_rework_approved >= 0 AND qty_rework_approved <= qty_rework))`; NULL preserves unknown older values, never converted to 0;
+- `CHECK (photo_rule IS NULL OR (level = 'PSI lv.2' AND photo_rule IN ('TOP5', 'ALL')))`; NULL means PSI lv.1 or an existing PSI lv.2 row sealed before ADR-022 (Top 5 rule);
 - every row: `qty_inspection >= 1`; `qty_b_grade <= qty_defect`; the check on `partial_*` above; `counting_rule IN ('ADR-008', 'ADR-019')`;
 - `counting_rule = 'ADR-019'`: `qty_no_defect IS NULL`; `qty_inspection >= qty_defect`; `qty_a_grade = qty_inspection - qty_defect`; `qty_inspection <= COALESCE(partial_qty, order_qty)` (BR-10);
 - `counting_rule = 'ADR-008'`: `qty_no_defect IS NOT NULL`; `qty_inspection = qty_rework + qty_bgrade_inspections + qty_no_defect`; `qty_a_grade = qty_no_defect`.
@@ -161,6 +165,8 @@ Constraints (database level, so a bug in the API cannot store inconsistent numbe
 **ADR-021 (29 Oct 2026).** PSI lv.2 submissions count their pairs with taps again and are stored as `counting_rule = 'ADR-008'` (`level = 'PSI lv.2'`), with the ADR-008 calculation; no migration. The upper limit (pairs ≤ `COALESCE(partial_qty, order_qty)`) is checked by the tablet and the API (doc 04 §4.2 rule 3), not by a database check: older `ADR-008` rows were written without it.
 
 **Migration 0006 (ADR-019).** Adds `counting_rule` with default `'ADR-008'` (so every existing row is marked by the add itself, without an `UPDATE`, which the immutability trigger would refuse), then drops the default so the API must name the rule; drops `NOT NULL` on `qty_no_defect`; replaces `submissions_qty_inspection_sum_check` and `submissions_qty_a_grade_check` by the per-rule checks above; makes the views read `s.counting_rule` instead of the constant `'ADR-008'`. Existing rows are not changed. The API computes all totals itself from the tablet's counts and findings (doc 04 §4.1); the database re-checks `qty_defect` and `qty_b_grade` against the findings in the same transaction (§6.3).
+
+**Migration 0007 (ADR-022).** Adds nullable `qty_rework_approved` and `photo_rule` and the CHECKs above. Existing rows keep both columns NULL: no backfill and no UPDATE (ADR-022 decision 4, amended 30 Oct 2026). The immutability trigger and grants stay unchanged. No existing counts, rates or payload hashes are recalculated. New inserts explicitly store the rule and approval value. Reporting views expose both columns (§8).
 
 ### 4.2 `submission_findings`
 
@@ -189,7 +195,7 @@ Unique on (`submission_id`, `inspection_type`, `area_id`, `sub_area_id`, `defect
 | `sha256` | `bytea` | Of the JPEG, matched against the tablet's value |
 | `size_bytes` | `integer` | ≤ 1 MB |
 
-Unique on (`submission_id`, `defect_id`): at most one photo per defect (AC-10.5). **Photo rule** (decided 16 Oct 2026, FR-10, BR-04): a PSI lv.2 submission has exactly one photo for each defect in its Top 5 (more photos only for defects that were photographed while in the Top 5 and later left it, AC-10.4); a PSI lv.1 submission has none.
+Unique on (`submission_id`, `defect_id`): at most one photo per defect (AC-10.5). **Photo rule** (ADR-022, FR-10, BR-04): a PSI lv.2 submission with `photo_rule = 'ALL'` has exactly one photo for each distinct defect with a finding. With `'TOP5'` or legacy NULL on PSI lv.2, the older Top 5 rule applies (extra photos of defects previously in the Top 5 remain allowed). A PSI lv.1 submission has none and `photo_rule IS NULL`. The API checks the selected rule before writing; at most 98 distinct defects/photos.
 
 ## 5. Master data: import and administration
 
@@ -263,6 +269,7 @@ sequenceDiagram
 
 1. **Look up the UUID.** If a row exists with the same `payload_sha256`, return its stored result (`200`); with a different hash, `409` (BR-06).
 2. **Validate** (doc 04 §4.2) using the master tables, in one read-only transaction at `REPEATABLE READ`, so a master edit during validation cannot produce a half-valid result.
+   Independently validate `counts.reworkApproved` when supplied (integer, 0…`counts.rework`) and photo coverage under `photoRule` (doc 04 §4.2); older payloads without the marker retain Top 5. Persist the approval value and derived stored photo rule in the same submission transaction; CHECKs enforce BR-11 and the marker's level.
 3. **Put photos** into the store under deterministic keys (§7). Putting the same key again overwrites it with identical bytes, so this step is safe to repeat. A row must never point to a missing object, so photos go first.
 4. **Write the rows** in **one transaction**: `INSERT INTO submissions … ON CONFLICT (id) DO NOTHING RETURNING …`; if nothing was returned a concurrent attempt won, so read it and answer as in step 1; otherwise insert the findings and photo rows with the snapshot columns filled from the master tables inside the same transaction, then re-check `qty_defect` and `qty_b_grade` against the findings (`SELECT sum(qty)`); a mismatch rolls back and returns `500 INTERNAL`.
 5. **Answer** `201` with `displayNo` and the totals.
@@ -282,6 +289,8 @@ Objects whose key has no `submission_photos` row and are older than 24 hours are
 
 Computed by the API from the tablet's `counts` and `findings` with the ADR-019 rules and **verified in the database** (§4.1). Formulas: Qty Inspection = `counts.qtyInspection` as entered by the PSI; Qty Defect = Σ `qty` (defect findings, not defective pairs); Qty B-Grade = Σ `qty` of B-GRADE findings; Qty A-Grade = Qty Inspection − Qty Defect; `rft` = A-Grade ÷ Qty Inspection; `defect_rate` = Qty Defect ÷ Qty Inspection (so `rft + defect_rate = 1`). Qty Inspection is at least 1 and at least Qty Defect, and at most the partial quantity or `order_qty` (BR-10), so the rates always have a denominator and A-Grade is never negative. The request carries no totals: the API computes them itself and the database checks them again in the same transaction, so neither the tablet nor a client can store totals that disagree. A payload with tapped counts (PSI lv.2 since ADR-021, or an older app version; `counts.noDefect` instead of `counts.qtyInspection`, doc 04 §4.1) is computed with the ADR-008 formulas (Qty Inspection = rework + B-GRADE inspections + NO DEFECT; Qty A-Grade = NO DEFECT) and stored with `counting_rule = 'ADR-008'`. Fractions are stored with 5 decimals; screens and exports show percentages with one decimal and an Indonesian decimal comma.
 
+The independent BR-11 CHECK verifies `qty_rework_approved` against `qty_rework` in this transaction; it does not alter Qty Inspection, Qty Defect, Qty A-Grade or either rate. Report-only figures use ADR-022 decision 7 (PRD FR-12). NULL approval values and dependent figures display "–" for older submissions; their NULL photo rule also displays "–" (CSV fields empty). Photo coverage follows the stored rule (§4.3), and `photo_count` equals the inserted photo rows.
+
 ### 6.4 Time
 
 `sealed_at` comes from the tablet and is rejected if more than 5 minutes in the future (R7). `received_at` is the server clock. `inspection_date` is the WIB date of `sealed_at`.
@@ -290,9 +299,9 @@ Computed by the API from the tablet's `counts` and `findings` with the ADR-019 r
 
 - **Interface.** `PhotoStore` (doc 03 §5.2): `put`, `get` (stream), `exists`, `delete`, `probe`, `list` (for the orphan sweep). Implementations: `S3PhotoStore` (any S3-compatible server, using `@aws-sdk/client-s3` with path-style addressing) and `DiskPhotoStore` (a folder, `PHOTO_DIR`).
 - **Bucket and key.** Bucket `m100-photos`, private, no public access. Key: `submissions/<yyyy>/<MM>/<submission uuid>/<defect id>.jpg`, for example `submissions/2026/10/0f6b6c1e-6a52-4c9f-9a3e-5d7a2b0c41f2/D035.jpg`. The year and month come from `inspection_date`.
-- **Content.** JPEG, ≤ 960 px on the long edge, ≤ 1 MB, about 100–200 KB (AC-10.1). The API checks the JPEG signature and SHA-256; it does not re-encode.
+- **Content.** JPEG, ≤ 960 px on the long edge; the tablet resizes to ≤ 500 KB (AC-10.1, ADR-022), the API accepts ≤ 1 MB per photo. The API checks the JPEG signature and SHA-256; it does not re-encode.
 - **Access.** Tablets never read photos back. Admins view a photo through `GET /v1/admin/photos/{id}`, which checks the admin session and streams the object; no pre-signed URLs and no public address are used.
-- **Volume.** About 5 photos × ~290 submissions a month ≈ 1,500 objects ≈ 225 MB a month ≈ 2.7 GB a year at today's PSI rate; plan for 3× that with 30+ tablets.
+- **Volume.** Up to 98 photos per PSI lv.2 submission (one per defect), plus one JSON part: 99 multipart parts, within the 100-part parser ceiling and 100 MB body limit (doc 04 §7). ADR-022 expects about 11 photos for a typical PO; capacity testing uses 15 photos per PSI lv.2 submission.
 - **Retention.** Kept indefinitely. Delete only through a reviewed script after a written decision.
 
 ## 8. Reporting
@@ -304,7 +313,7 @@ Leader Quality no longer reads `DATA_INSPECTION` for this data (ADR-018). Three 
 
 | View | One row per | Content |
 |---|---|---|
-| `v_submissions` | submission | `display_no`, `inspection_date`, `sealed_at` (WIB), `username`, `level`, `factory`, `cell`, PO fields, `partial_text`, all `qty_*`, `rft`, `defect_rate`, `photo_count`, `counting_rule` |
+| `v_submissions` | submission | `display_no`, `inspection_date`, `sealed_at` (WIB), `username`, `level`, `factory`, `cell`, PO fields, `partial_text`, all `qty_*` (including nullable `qty_rework_approved`), `rft`, `defect_rate`, `photo_count`, `counting_rule`, `photo_rule` |
 | `v_findings` | finding | submission keys plus area, sub-area, family, defect, severity, `inspection_type`, `qty` |
 | `v_defect_totals` | submission + defect | total `qty` over areas and types, `rank_in_submission` by the Top 5 order (quantity, then severity, then first recorded), `has_photo` |
 | `v_top5` | submission + rank ≤ 5 | `v_defect_totals` filtered |
