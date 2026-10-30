@@ -23,6 +23,7 @@ This file lists every planning document for Mobile 100% Inspection, what each on
 | 06 | Design System — claude.ai artifact "Mobile 100% Inspection" (Design System, namespace `M100`) | Tokens (light and dark), type, 25 components with live previews (including `ShoeMap` for the Defect page), responsive and touch rules; accent `#1D4ED8` | Done (v2, 16 Oct 2026: added CheckboxRow, Stepper, NumberPad) |
 | 07 | [Decision Log (ADRs)](07-decision-log.md) | Why each architectural choice was made, and what it costs | Done (ADR-001 to ADR-021; 018 Accepted, supersedes 001, 002, 007, 011, 012, 017; 019 Accepted 27 Oct 2026, supersedes 008; 020 approved in principle 29 Oct 2026, amends 018's PostgreSQL version; 021 Accepted 29 Oct 2026, PSI lv.2 counts with NO DEFECT again, data per factory and cell, amends 019) |
 | 08 | [Implementation Plan and Task Breakdown](08-implementation-plan.md) | Phases, ordered tasks with acceptance checks; the repo `CLAUDE.md` and `.claude/rules/` live in the starter kit | Draft v0.6 (27 Oct 2026; Phase 5 for ADR-019 added; Phases 2, 3, 3b rewritten for PostgreSQL and the admin app) |
+| 09 | [Agent Workflow (Orca)](09-agent-workflow.md) | How a phase is built by Claude (planner, integrator), a Codex builder and Codex / Claude reviewers through Orca; setup, gates, artifacts | Draft v0.1 (30 Oct 2026) |
 
 ### Reference material (inputs, not specs)
 
