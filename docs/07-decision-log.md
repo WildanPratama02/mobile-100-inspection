@@ -24,6 +24,7 @@ Each entry records one decision: the situation, what was decided, and what it co
 | 018 | PostgreSQL + object storage (MinIO or another S3-compatible store) replace Google Sheets and Drive | Accepted (photo store: plain folder for release 1; PostgreSQL version amended by 020) | 20 Oct 2026 |
 | 019 | Qty Inspection is entered by the PSI; NO DEFECT removed; Qty Defect counts findings; Qty A-Grade = Qty Inspection − Qty Defect | Accepted (revised 28 Oct 2026) | 27–28 Oct 2026 |
 | 020 | PostgreSQL 18 as the production version baseline (amends ADR-018 decision 1) | Approved in principle; in effect after its verification requirements pass | 29 Oct 2026 |
+| 022 | PSI Inspection Report: all-defect list and photos (PSI lv.2), Inspection Rework QTY and Rework and Approved, exports in the template layout (amends 010, 021) | Accepted | 30 Oct 2026 |
 
 ---
 
@@ -364,3 +365,52 @@ Defect Rate = Qty Defect ÷ Qty Inspection; Pass Rate (RFT) = Qty A-Grade ÷ Qty
 - Risk accepted: a payload sealed before ADR-019 whose pairs exceed the partial quantity or Qty Order is now refused by the API (`422`) and stays Gagal on its tablet. None is expected.
 - The tablet's IndexedDB goes to version 3 (tables `poList` and `views` replace `pos` and `view`); an older app version can't read the new tables, so the app is not downgraded after the update.
 - Work: doc 08 Phase 6 (T6.1–T6.5).
+
+## ADR-022 — PSI Inspection Report: all-defect list and photos, rework re-inspection, template exports
+
+**Status: Accepted** on 30 Oct 2026 (change request `docs/change-psi-feature-export.md`, settled question by question on 30 Oct 2026). Amends ADR-010 (product name), ADR-021 decision 7 (exports) and the photo rule of FR-10 / BR-04 (Top 5 → every defect) for PSI lv.2; amends AC-06.3 (END INSPECTION with no defect).
+
+**Situation.** The product owner asked (30 Oct 2026) for:
+1. The title "PSI Inspection Report" instead of "Mobile 100% Inspection", in the app and in the exports.
+2. Home: TOP 5 DEFECT replaced by all defects, each with a required photo; an "Inspection Rework QTY" figure; a new input "Rework and Approved".
+3. Defect screen: END INSPECTION disabled until a defect is tapped; the defect list starts empty for each new inspection.
+4. EXPORT EXCEL in the layout of `reference/excel-format/excel-template.xlsx` ("PSI - Daily Inspection Summary": Part I General Data, Part II KPI Summary, Part III Daily Inspection Summary, a findings list with quantity and severity); EXPORT PDF with the inspection date instead of DICETAK, all defects and all photos.
+
+**Decision.**
+1. **Name.** User-visible name "PSI Inspection Report" (`APP_NAME`): browser title, PWA manifest `name` (`short_name` "PSI Inspection"), login brand, PDF and Excel titles, PDF creator. The admin app is "PSI Inspection Admin". Repository, package names, the domain `m100.qdms.web.id`, cookie and database names stay. Export file name `PSI_<PO>_<yyyyMMdd>`, the date being the inspection date.
+2. **ALL DEFECT.** Home lists every defect of the session (English label `ALL DEFECT`, replaces TOP 5 DEFECT), in the existing ranking order (quantity, then CRITICAL > MAJOR > MINOR, then first recorded; grouped by `DEFECT_ID`, ADR-009), scrolling inside its pane. Both PSI levels.
+3. **Photos (PSI lv.2 only).** One photo is required for every defect with a finding, not only the Top 5. PSI lv.1 still takes no photos (ADR-019). SUBMIT PO and the exports are refused while a photo is missing. The tablet resizes photos to at most 500 KB (the API limit per photo stays 1 MB, never re-encoded); the API body limit rises from 8 MB to 100 MB (98 photos + the JSON part, 99 parts ≤ 100).
+4. **Photo rule marker.** A new payload carries `photoRule: 'ALL'`; the API applies the every-defect rule only then and the Top 5 rule without it, so payloads sealed by an older app in an outbox are still accepted. Stored as `submissions.photo_rule` (`'TOP5'` / `'ALL'`, NULL for PSI lv.1), set at insert; existing PSI lv.2 rows are backfilled `'TOP5'`.
+5. **Inspection Rework QTY** = the existing `counts.rework` (`submissions.qty_rework`): REWORK inspections started, UNDO of the start takes one off. Shown read-only on Home, in the exports and in the admin app. It still enters none of the ADR-019 / ADR-021 formulas for Qty Inspection, Qty Defect, Qty A-Grade or the rates.
+6. **Rework and Approved** (new input): pairs that went to REWORK, were repaired, re-inspected and passed. Entered by the PSI on Home with the app's number pad (both levels); disabled while Inspection Rework QTY is 0; empty is sent as 0. Limit 0 ≤ value ≤ Inspection Rework QTY, checked by tablet, API and database independently. When UNDO lowers Inspection Rework QTY below the value, the app keeps the value, marks it not valid and refuses SUBMIT PO (as BR-10: the app never changes an entered number). Payload `counts.reworkApproved`, column `submissions.qty_rework_approved` (NULL for rows sealed before this ADR), immutable like every submission field (BR-07).
+7. **Report figures** (exports, Home where listed):
+
+| Figure | Rule |
+|---|---|
+| Date | Inspection date of the session (WIB); `inspection_date` once sealed |
+| PSI Name | username (+ level) |
+| Inspected Qty | QTY INSPECTION |
+| Inspected Qty (Including Rework) | PSI lv.1: QTY INSPECTION + Inspection Rework QTY (the PSI enters QTY INSPECTION without rework pairs); PSI lv.2: QTY INSPECTION (already includes ended REWORK pairs, ADR-021) |
+| Rejected Qty | QTY INSPECTION − Qty A-Grade |
+| RFT % | Pass Rate (RFT) |
+| Defect % | Defect Rate |
+| Not Reworkable Defect Qty | Qty B-Grade (findings-based for PSI lv.1, ADR-019) |
+| Not Reworkable Defect % | Qty B-Grade ÷ QTY INSPECTION (`0,0%` while QTY INSPECTION is empty or 0) |
+| Approved Qty | Qty A-Grade |
+| Total Approved Qty | Qty A-Grade + Rework and Approved |
+| Offered Lot Qty | the partial quantity, else Qty Order (as BR-10) |
+| Balance Qty | Offered Lot Qty − QTY INSPECTION |
+| Balance Rework | Inspection Rework QTY − Rework and Approved |
+
+Submissions sealed before this ADR show "–" for Rework and Approved and the figures that need it, and only the photos they have; their stored counts are never recalculated.
+8. **Defect screen.** END INSPECTION is disabled until the current inspection has at least one defect; UNDO of its last defect disables it again; a REWORK / B-GRADE started by mistake is removed with UNDO of the start (no new button). The defect list on the Defect screen shows only the current inspection and starts empty at each REWORK / B-GRADE start; session totals stay on Home.
+9. **Exports** stay on the tablet, one PO session per file (a multi-PO daily report would be a later change).
+   - **Excel**, one sheet, values only (`write-excel-file`, no formulas): title, Part I (Date, PSI Name), Part II (KPI Summary), Part III (one row: PO No., Model Name, Qty Order, Destination, Offered Lot Qty, Inspected Qty, Inspected Qty (Including Rework), Approved Qty, Reject Qty, Rework and Approved, Pairs Not Reworkable & Not Shippable (B&C Grade), Balance Qty, Balance Rework), then the Defect Findings List (No / Defect / Severity MINOR, MAJOR, CRITICAL / Qty / % of QTY INSPECTION). Labels and order follow the template; no defect code (the old `ctq_code` is not unique and not on the tablet).
+   - **PDF**: title "PSI INSPECTION REPORT", "DATE INSPECTION" instead of "DICETAK", the results with Inspection Rework QTY and Rework and Approved, an all-defect table (No / Defect / Severity / Area / Qty / %), all photos.
+   - Supersedes ADR-021 decision 7.
+
+**Consequences.**
+- One database migration (`qty_rework_approved`, `photo_rule`, CHECK 0 ≤ approved ≤ `qty_rework`) and an API contract change (doc 04 v2.3); docs 01, 02, 03, 04, 05 and the UI label list in `CLAUDE.md` / `AGENTS.md` (`ALL DEFECT` replaces `TOP 5 DEFECT`) are updated before code.
+- PSI lv.2 takes more photos per PO; submissions grow (about 11 photos for a typical PO). The T3.7 load test is rerun with 15 photos per PSI lv.2 submission.
+- AC-06.3 (an inspection may end with no defect) no longer holds for new sessions.
+- Work: doc 08 Phase 7 (T7.1–T7.8).

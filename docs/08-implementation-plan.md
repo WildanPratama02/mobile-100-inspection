@@ -276,3 +276,57 @@ A change request of 29 Oct 2026 to code that is already built (Phase 5). Specs: 
 
 ### T6.5 Admin reload
 - [x] The tablet service worker leaves `/admin`, `/admin/` and `/admin/…` to the server (Playwright `pwa.spec.ts`, which fails without the denylist).
+
+## Phase 7 — PSI Inspection Report: all defects, rework re-inspection, template exports (ADR-022) · Planned
+
+A change request of 30 Oct 2026 (`docs/change-psi-feature-export.md`) to code that is already built (Phase 6). Spec: ADR-022; the PRD, doc 02, doc 03, doc 04 and doc 05 sections are written in T7.1 before any code. One branch (`phase-7-psi-report`, in a worktree), one PR, one release; one database migration (`0007`). Order: T7.1 → T7.2 → T7.3 → T7.4 / T7.5 → T7.6 → T7.7 → T7.8.
+
+### T7.1 Docs (ADR-022)
+Bring every spec in line with ADR-022 before code; no code in this task.
+- [ ] PRD: FR-04 (Inspection Rework QTY, Rework and Approved on Home), FR-05 (ALL DEFECT instead of TOP 5 DEFECT), FR-06 / AC-06.3 (END INSPECTION needs a defect; Defect screen list per inspection), FR-10 / BR-04 (a photo per defect for PSI lv.2), FR-12 (exports in the template layout, report figures of ADR-022 decision 7), BR-01 (Inspection Rework QTY shown, still outside the formulas), a new BR for the Rework and Approved limit, §12 glossary (PSI Inspection Report, Inspection Rework QTY, Rework and Approved, Offered Lot Qty, Balance Qty, Balance Rework, Total Approved Qty).
+- [ ] Doc 02 v2.3: `submissions.qty_rework_approved`, `submissions.photo_rule`, their CHECKs and backfill, §7 photo sizes; reporting views if they list submission columns.
+- [ ] Doc 04 v2.3 + `04-openapi.yaml`: `counts.reworkApproved`, `photoRule`, validation and error codes (limit, photo missing per defect when `photoRule = 'ALL'`), body limit 100 MB, the admin detail and CSV fields.
+- [ ] Doc 03: the export section (tablet, one PO session, PDF and Excel contents), the photo resize target 500 KB, the multipart limits.
+- [ ] Doc 05: Home (ALL DEFECT list, the two rework rows, the number pad for Rework and Approved and its states), S6 (END INSPECTION state, list per inspection), the export layouts, admin A-screens (title, new fields).
+- [ ] `CLAUDE.md` and `AGENTS.md`: UI label `ALL DEFECT` replaces `TOP 5 DEFECT`; hard rule 6 and the counting notes follow ADR-022; ADR range up to 022.
+
+### T7.2 Shared rules (`packages/shared`)
+`APP_NAME` "PSI Inspection Report"; event `SET_REWORK_APPROVED`; `totals()` adds Inspection Rework QTY, Rework and Approved, Inspected Qty (Including Rework) per PSI level, Rejected Qty, Total Approved Qty, Not Reworkable Defect %, Offered Lot Qty, Balance Qty, Balance Rework; `allDefects()` (the ranked list, `top5` kept for `photoRule` TOP5 checks); `missingPhotos` by photo rule; `checkSubmit` refuses a Rework and Approved above Inspection Rework QTY; `buildSubmission` sends `counts.reworkApproved` (empty → 0) and `photoRule: 'ALL'` for PSI lv.2.
+- [ ] Unit tests reproduce the ADR-022 decision 7 table for PSI lv.1 and PSI lv.2 (the lv.2 Including Rework equals QTY INSPECTION; the lv.1 one adds the REWORK pairs).
+- [ ] Rework and Approved: 0 ≤ value ≤ Inspection Rework QTY; UNDO of a REWORK start below the value leaves the value and makes it not valid (SUBMIT refused), never changed by the app.
+- [ ] PSI lv.2 with 7 defects: `missingPhotos` lists all 7 under `ALL`, the Top 5 under `TOP5`; PSI lv.1 never needs a photo.
+- [ ] `APP_NAME` tests in `packages/shared` and `apps/api` updated.
+
+### T7.3 Database and API
+Migration `0007`: `submissions.qty_rework_approved` (NULL allowed, CHECK 0 ≤ value ≤ `qty_rework`), `submissions.photo_rule` (`'TOP5'` / `'ALL'` / NULL), backfill `'TOP5'` for existing PSI lv.2 rows; the immutability trigger and grants unchanged. `POST /submissions` reads `reworkApproved` and `photoRule`; multipart body limit 100 MB.
+- [ ] `pnpm db:migrate` applies `0007` once; a second run applies nothing; an UPDATE of the new columns is refused like every submission column.
+- [ ] A payload with `photoRule: 'ALL'` and a defect without photo → `422 PHOTO_MISSING` for that defect; without the marker (older app) only the Top 5 need a photo and the payload is accepted (`201`).
+- [ ] `reworkApproved` above `counts.rework` → `422` on `counts.reworkApproved`; the database CHECK refuses it too.
+- [ ] A submission with 98 photos of 1 MB is accepted; 100 MB + 1 byte → `413 PAYLOAD_TOO_LARGE`.
+- [ ] Admin detail and CSV carry Rework and Approved and the photo rule; old rows show them empty.
+
+### T7.4 Tablet Home and name (web)
+- [ ] `index.html` title, manifest `name` "PSI Inspection Report" / `short_name` "PSI Inspection", login brand.
+- [ ] ALL DEFECT list: every defect in ranking order, scrolling inside its pane, photo status per row for PSI lv.2 ("Foto wajib" or the thumbnail); SUBMIT PO and EXPORT refused while one is missing (`MissingPhotosDialog` lists all).
+- [ ] Hasil pane: Inspection Rework QTY (read-only) and Rework and Approved (number pad, disabled at 0, not-valid state after UNDO); every change saved to IndexedDB before the screen confirms it (NFR-03).
+- [ ] Photo resize target 500 KB.
+- [ ] Playwright: PSI lv.2 with 7 defects needs 7 photos before SUBMIT PO; Rework and Approved entered, sent and shown; `smoke`, `pwa` and `export` title checks updated.
+
+### T7.5 Tablet Defect screen (web)
+- [ ] END INSPECTION disabled after REWORK / B-GRADE until a defect is tapped; UNDO of the only defect disables it again; UNDO of the start removes the inspection.
+- [ ] The defect list shows only the current inspection and is empty at each new start; Home totals unchanged.
+- [ ] Playwright for both flows (PSI lv.1 and PSI lv.2).
+
+### T7.6 Exports (web)
+- [ ] Excel: one sheet in the template's labels and order (title, Part I, Part II, Part III one row, Defect Findings List No / Defect / Severity / Qty / %), values only; figures equal the T7.2 totals.
+- [ ] PDF: "PSI INSPECTION REPORT", "DATE INSPECTION" (inspection date), results with the two rework figures, an all-defect table (No / Defect / Severity / Area / Qty / %), every photo.
+- [ ] File name `PSI_<PO>_<yyyyMMdd>`; PDF creator "PSI Inspection Report".
+- [ ] Vitest on the report model (PSI lv.1 and lv.2, a PO with and without partial quantity); Playwright `export.spec.ts` downloads both files.
+
+### T7.7 Admin app
+- [ ] Title "PSI Inspection Admin".
+- [ ] Submission detail: Inspection Rework QTY, Rework and Approved ("–" for older rows), photo rule, every photo.
+- [ ] Playwright admin detail test updated.
+
+### T7.8 Load test
+- [ ] `pnpm test:load` with 15 photos per PSI lv.2 submission (`LOAD_PHOTOS`, default 15) passes the T3.7 targets; figures recorded in the PR.
