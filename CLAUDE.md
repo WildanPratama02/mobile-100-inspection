@@ -16,6 +16,7 @@ Read the doc a task needs before writing code. Do not invent behaviour that a do
 | Screens, states, interactions, copy, layouts (tablet S0–S9, admin A0–A7 in §20) | `docs/05-ui-ux-spec.md` |
 | Why a choice was made (ADR-001 … ADR-021) | `docs/07-decision-log.md` |
 | Which docs exist and which are still Planned | `docs/00-document-map.md` |
+| How a phase is built with Orca (Claude planner and integrator, Codex builder, Codex / Claude reviewers) | `docs/09-agent-workflow.md`, skill `/orca-pipeline` |
 | Screen layout and interaction flow | `reference/prototype/app.html` (open in a browser). Its **colours and styling are outdated**; take layout and behaviour from it, never its look. |
 | Look, tokens, components | `design-system/README.md`, `design-system/tokens.json`, `design-system/components/*/README.md`, reference implementation in `design-system/components/bundle.js` + `bundle.css` |
 | Area → sub-area → family → defect mapping | `reference/mapping/mapping.json` (generated from `Footwear_Defect_Mapping_Database_v2.xlsx`) |
@@ -78,6 +79,7 @@ Tests: Vitest (unit), Playwright (web end-to-end), Jest (NestJS default; reposit
 Node 22 LTS ≥ 22.13 and pnpm 10 (`packageManager` in `package.json`; `engine-strict` is on). Packages: `web`, `admin`, `api`, `@m100/shared`, `deploy`.
 
 - `pnpm install`
+- `pnpm worktree:setup` (in a git worktree only; Orca runs it as the setup script, doc 09): `pnpm install`, then `apps/api/.env` with only `TEST_ADMIN_DATABASE_URL` (and `PG_BIN`) from the main checkout's `secrets/test-db.json`, which must point at localhost; never reads or copies the real `.env`, leaves an existing one and refuses the main checkout
 - `pnpm e2e:install` (once per machine: Playwright's Chromium)
 - `pnpm dev` (web on `http://localhost:5173`; dev-only UI kit catalogue at `/ui`; proxies `/v1` to the API at `M100_API_URL`, default `http://127.0.0.1:3000`, so run the API too; a new browser profile first opens `http://localhost:5173/setup#k=<key>` with a key from `pnpm device:add`, else the app shows only "Tablet ini belum terdaftar"), `pnpm --filter api start:dev` (api on `127.0.0.1:3000` under `/v1`, e.g. `/v1/health`; builds `@m100/shared` first). The API reads `.env` from its working directory (`apps/api` for `start:dev`) and stops, naming the variables, unless `DATABASE_URL`, `PHOTO_STORE` (`disk` needs `PHOTO_DIR`; `s3` needs `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`), `JWT_KEY_FILE` and `TZ=Asia/Jakarta` are set; optional `PORT`, `LOG_LEVEL`, `MASTER_CHECK_SECONDS`, `SUBMIT_TIMEOUT_SECONDS` (doc 03 §7.4)
 - `pnpm dev:admin` (admin app on `http://localhost:5175/admin/`, proxies `/v1` to `M100_API_URL` like `pnpm dev`, so run the API too; log in with an account from `pnpm admin:create`, e.g. `--dev-default`)

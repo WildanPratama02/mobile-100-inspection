@@ -28,7 +28,8 @@
     "sweep-photos": "pnpm --filter api sweep-photos",
     "backup": "pnpm --filter api backup",
     "backup:restore": "pnpm --filter api backup:restore",
-    "release": "pnpm --filter deploy release"
+    "release": "pnpm --filter deploy release",
+    "worktree:setup": "node scripts/worktree-setup.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
