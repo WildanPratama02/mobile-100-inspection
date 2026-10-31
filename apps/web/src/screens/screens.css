@@ -605,6 +605,14 @@
 .defect__map > .m100-shoemap {
   width: min(100cqw, 100cqh * 1000 / 720);
 }
+/* AC-06.3: why END INSPECTION is disabled, right under it (doc 05 §15). */
+.defect__end-hint {
+  margin: 0;
+  padding: 0 var(--space-2);
+  text-align: center;
+  color: var(--ink-3);
+  font-size: var(--fs-meta);
+}
 .defect__side {
   min-width: 0;
   min-height: 0;
@@ -868,7 +876,8 @@
     padding: var(--space-2);
   }
   .defect__cmds > .m100-cmd,
-  .defect__end {
+  .defect__end,
+  .defect__end-hint {
     font-size: 21px;
   }
   .defect__ctx {

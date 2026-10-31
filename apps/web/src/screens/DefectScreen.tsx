@@ -1,7 +1,8 @@
 /**
  * S6 Defect screen (doc 05 §11): REWORK / B-GRADE (and NO DEFECT for PSI lv.2, ADR-021) above the shoe map and
  * END INSPECTION below it; on
- * the right the context line, breadcrumb, drill-down list, the session's history and BACK / HOME / UNDO.
+ * the right the context line, breadcrumb, drill-down list, the current inspection's history and BACK / HOME /
+ * UNDO. END INSPECTION is disabled until the current inspection has at least one defect (AC-06.3).
  *
  * Every tap goes through `store.tap`, which writes to IndexedDB before the state changes (NFR-05); counting comes
  * from `@m100/shared` (BR-01). A defect row flashes in the frame of the tap (AC-07.2, NFR-03); counts, history and
@@ -12,7 +13,7 @@ import {
   canAddPair,
   countingMode,
   emptySession,
-  findings,
+  findingsOf,
   formatCount,
   type AreaId,
   type AreaMapEntry,
@@ -131,7 +132,8 @@ export function DefectScreen({ po }: DefectScreenProps) {
   const state = session?.state ?? emptySession(countingMode(level));
   const active = state.active;
   const defects = active?.defects ?? [];
-  const history = findings(state);
+  /** AC-06.3: only the current inspection is listed; ended ones stay on Home and in the export. */
+  const history = active ? findingsOf(active.defects) : [];
 
   const go = (defectPath: DefectPath) => {
     // A flash belongs to the list it was tapped in; it must not replay when that list is opened again.
@@ -184,8 +186,7 @@ export function DefectScreen({ po }: DefectScreenProps) {
   const end = () =>
     run({ type: 'END' }, ({ before }) => {
       go(NO_PATH);
-      const n = before.active?.defects.length ?? 0;
-      toast(n > 0 ? `Inspeksi selesai. ${n} defect tercatat` : 'Inspeksi selesai tanpa defect');
+      toast(`Inspeksi selesai. ${before.active?.defects.length ?? 0} defect tercatat`);
     });
 
   const undo = () =>
@@ -193,7 +194,10 @@ export function DefectScreen({ po }: DefectScreenProps) {
       vibrate();
       if (before.undo === 'DEFECT') {
         const last = before.active?.defects.at(-1);
-        if (last && findings(after).some((f) => historyKey(f) === historyKey(last))) {
+        if (
+          last &&
+          findingsOf(after.active?.defects ?? []).some((f) => historyKey(f) === historyKey(last))
+        ) {
           flashHistory(historyKey(last));
         }
         toast('Defect terakhir dibatalkan');
@@ -269,10 +273,14 @@ export function DefectScreen({ po }: DefectScreenProps) {
         </div>
         <CommandButton
           mode="end"
-          state={active ? 'idle' : 'disabled'}
+          // AC-06.3: a UI state only — `endInspection()` itself still accepts an empty inspection.
+          state={active && defects.length > 0 ? 'idle' : 'disabled'}
           className="defect__end"
           onClick={end}
         />
+        {active && defects.length === 0 ? (
+          <p className="defect__end-hint">Catat minimal 1 defect sebelum END INSPECTION.</p>
+        ) : null}
       </Pane>
 
       <section className="defect__side" aria-label="Input defect">
@@ -309,7 +317,7 @@ export function DefectScreen({ po }: DefectScreenProps) {
           <HistoryRow head />
           <div className="defect__hist-body" role="list" ref={historyRef}>
             {history.length === 0 ? (
-              <p className="defect__hist-empty">Belum ada defect tercatat untuk PO ini.</p>
+              <p className="defect__hist-empty">Belum ada defect tercatat untuk inspeksi ini.</p>
             ) : (
               history.map((f, i) => {
                 const key = historyKey(f);

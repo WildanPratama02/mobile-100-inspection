@@ -22,9 +22,9 @@ async function pick(page: Page, field: 'Nama' | 'Factory' | 'Cell', option: stri
 }
 
 /** Logs in, adds PO 0903359388 and opens the Defect screen. */
-async function openDefectScreen(page: Page) {
+async function openDefectScreen(page: Page, name = 'DEWI CONTOH') {
   await page.goto('/');
-  await pick(page, 'Nama', 'DEWI CONTOH');
+  await pick(page, 'Nama', name);
   await pick(page, 'Factory', 'F 3');
   await pick(page, 'Cell', 'F3-10');
   await page.getByRole('button', { name: 'LOGIN' }).click();
@@ -98,21 +98,30 @@ test('records a REWORK with two defects, survives a reload and updates Home (AC-
   await expect(toast(page)).toHaveText('Inspeksi selesai. 2 defect tercatat');
   await expect(page.getByText('Mulai inspeksi')).toBeVisible();
 
-  // AC-06.3: an inspection ended without defects still counts.
+  // AC-06.3: END INSPECTION needs a defect of the current inspection; the list is per inspection.
   await page.getByRole('button', { name: 'B-GRADE' }).click();
-  await page.getByRole('button', { name: 'END INSPECTION' }).click();
-  await expect(toast(page)).toHaveText('Inspeksi selesai tanpa defect');
+  const end = page.getByRole('button', { name: 'END INSPECTION' });
+  await expect(end).toBeDisabled();
+  await expect(page.getByText('Catat minimal 1 defect sebelum END INSPECTION.')).toBeVisible();
+  await expect(page.getByText('Belum ada defect tercatat untuk inspeksi ini.')).toBeVisible();
+  await openStitching(page);
+  await defectRow(page).click();
+  await expect(toast(page)).toHaveText('+1 Defect dan B-Grade');
+  await expect(end).toBeEnabled();
+  await end.click();
+  await expect(toast(page)).toHaveText('Inspeksi selesai. 1 defect tercatat');
 
   // PSI lv.2 (ADR-021): each ended pair counts, NO DEFECT adds an A-Grade pair.
   await page.getByRole('button', { name: 'NO DEFECT' }).click();
   await expect(toast(page)).toHaveText('No Defect tercatat. A-Grade +1');
 
   await bar(page, 'HOME').click();
+  // 3 ended pairs (REWORK 2 defects, B-GRADE 1 defect, NO DEFECT 1 pair); BR-01/BR-02.
   await expect(stat(page, 'Qty Inspection')).toHaveText('3');
-  await expect(stat(page, 'Qty Defect')).toHaveText('2');
+  await expect(stat(page, 'Qty Defect')).toHaveText('3');
   await expect(stat(page, 'Qty A-Grade')).toHaveText('1');
-  await expect(stat(page, 'Qty B-Grade')).toHaveText('0');
-  await expect(stat(page, 'Defect Rate')).toHaveText('66,7%');
+  await expect(stat(page, 'Qty B-Grade')).toHaveText('1');
+  await expect(stat(page, 'Defect Rate')).toHaveText('100,0%');
   await expect(stat(page, 'Pass Rate (RFT)')).toHaveText('33,3%');
 });
 
@@ -131,7 +140,9 @@ test('UNDO, BACK and the back gesture (FR-08)', async ({ page }) => {
   await expect(defectRow(page)).toContainText('1');
   await bar(page, 'UNDO').click();
   await expect(toast(page)).toHaveText('Defect terakhir dibatalkan');
-  await expect(page.getByText('Belum ada defect tercatat untuk PO ini.')).toBeVisible();
+  await expect(page.getByText('Belum ada defect tercatat untuk inspeksi ini.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'END INSPECTION' })).toBeDisabled();
+  await expect(page.getByText('Catat minimal 1 defect sebelum END INSPECTION.')).toBeVisible();
 
   // BACK and the Android back gesture (doc 05 §2) both go up: families, sub-areas, no area, then Home.
   await page.goBack();
@@ -195,6 +206,38 @@ test('a defect tap gives feedback within 100 ms (NFR-03, AC-07.2)', async ({ pag
   const median = [...count].sort((a, b) => a - b)[Math.floor(count.length / 2)]!;
   expect(median, report).toBeLessThan(100);
   console.log(`NFR-03 ${report}`);
+});
+
+test('PSI lv.1: END INSPECTION waits for a defect and the list is per inspection (AC-06.3, FR-06)', async ({
+  page,
+}) => {
+  await openDefectScreen(page, 'ANDI CONTOH');
+  await expect(page.getByRole('button', { name: 'NO DEFECT' })).toHaveCount(0);
+
+  const end = page.getByRole('button', { name: 'END INSPECTION' });
+  await page.getByRole('button', { name: 'REWORK' }).click();
+  await expect(toast(page)).toHaveText('Inspeksi REWORK dimulai');
+  await expect(end).toBeDisabled();
+  await expect(page.getByText('Catat minimal 1 defect sebelum END INSPECTION.')).toBeVisible();
+  await expect(page.getByText('Belum ada defect tercatat untuk inspeksi ini.')).toBeVisible();
+
+  await openStitching(page);
+  await defectRow(page).click();
+  await expect(toast(page)).toHaveText('+1 Defect');
+  const history = page.getByRole('region', { name: 'Riwayat defect' }).getByRole('listitem');
+  await expect(history).toHaveCount(1);
+  await expect(end).toBeEnabled();
+  await expect(page.getByText('Catat minimal 1 defect sebelum END INSPECTION.')).toHaveCount(0);
+
+  await end.click();
+  await expect(toast(page)).toHaveText('Inspeksi selesai. 1 defect tercatat');
+
+  // A new inspection starts with an empty list; the ended one stays on Home.
+  await page.getByRole('button', { name: 'B-GRADE' }).click();
+  await expect(toast(page)).toHaveText('Inspeksi B-GRADE dimulai');
+  await expect(history).toHaveCount(0);
+  await expect(page.getByText('Belum ada defect tercatat untuk inspeksi ini.')).toBeVisible();
+  await expect(end).toBeDisabled();
 });
 
 for (const viewport of VIEWPORTS) {

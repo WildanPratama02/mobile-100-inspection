@@ -12,6 +12,7 @@ import {
   emptySession,
   endInspection,
   findings,
+  findingsOf,
   noDefect,
   qtyInspectionLimits,
   rankDefects,
@@ -885,6 +886,42 @@ describe('findings', () => {
   it('keeps D049 and D071 apart although they share a name (ADR-009)', () => {
     const t = new Tablet().rework().defect('D049').defect('D071');
     expect(findings(t.state).map((f) => f.defectId)).toEqual(['D049', 'D071']);
+  });
+});
+
+describe('findingsOf', () => {
+  it('is empty for an empty list', () => {
+    expect(findingsOf([])).toEqual([]);
+  });
+
+  it('groups a passed defect list the same way as findings(state)', () => {
+    const t = new Tablet()
+      .rework()
+      .defect('D035', 'A01')
+      .defect('D035', 'A01')
+      .defect('D035', 'A02')
+      .end()
+      .bGrade()
+      .defect('D035', 'A01');
+    // Session-wide: every inspection, ended or not.
+    expect(findings(t.state).map((f) => [f.inspectionType, f.areaId, f.qty])).toEqual([
+      ['REWORK', 'A01', 2],
+      ['REWORK', 'A02', 1],
+      ['B-GRADE', 'A01', 1],
+    ]);
+    // Just the active inspection.
+    expect(
+      findingsOf(t.state.active!.defects).map((f) => [f.inspectionType, f.areaId, f.qty]),
+    ).toEqual([['B-GRADE', 'A01', 1]]);
+    expect(findingsOf(t.state.active!.defects)).toEqual(findings(t.state).slice(2));
+  });
+
+  it('keeps the family and first-tap time of the first defect of a row', () => {
+    const t = new Tablet().rework().defect('D035', 'A01').defect('D035', 'A01');
+    const [row] = findingsOf(t.state.active!.defects);
+    expect(row).toMatchObject({ defectId: 'D035', areaId: 'A01', qty: 2 });
+    expect(row?.familyId).toBe(t.state.active!.defects[0]!.familyId);
+    expect(row?.firstRecordedAt).toBe(t.state.active!.defects[0]!.at);
   });
 });
 

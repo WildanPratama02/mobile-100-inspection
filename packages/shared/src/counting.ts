@@ -322,11 +322,11 @@ export function replay(
 
 /**
  * Findings per inspection type + area + sub-area + defect (doc 04 §4.1, rule 5), in order of their first
- * tap.
+ * tap, for a list of recorded defects.
  */
-export function findings(state: SessionState): Finding[] {
+export function findingsOf(defects: readonly RecordedDefect[]): Finding[] {
   const byKey = new Map<string, Finding>();
-  for (const d of state.recorded) {
+  for (const d of defects) {
     const key = [d.inspectionType, d.areaId, d.subAreaId, d.defectId].join('|');
     const found = byKey.get(key);
     if (found) {
@@ -344,6 +344,14 @@ export function findings(state: SessionState): Finding[] {
     }
   }
   return [...byKey.values()];
+}
+
+/**
+ * Findings per inspection type + area + sub-area + defect (doc 04 §4.1, rule 5) of the whole session, in
+ * order of their first tap: what Home and the exports show.
+ */
+export function findings(state: SessionState): Finding[] {
+  return findingsOf(state.recorded);
 }
 
 /** Qty Defect counts defect findings, not defective pairs; Qty B-Grade the B-GRADE ones (BR-01). */
