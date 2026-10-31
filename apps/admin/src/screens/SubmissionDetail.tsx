@@ -15,6 +15,7 @@ import {
   formatCount,
   formatDate,
   moment,
+  photoRuleLabel,
   rate,
 } from '../format';
 
@@ -87,8 +88,10 @@ function Body({ s }: { s: AdminSubmissionDetail }) {
     ['PASS RATE (RFT)', rate(s.rft, s.qtyInspection)],
     ['DEFECT RATE', rate(s.defectRate, s.qtyInspection)],
     ['Aturan hitung', countingRuleLabel(s.countingRule)],
-    ['REWORK (pasang)', formatCount(s.counts.rework)],
+    ['INSPECTION REWORK QTY', formatCount(s.counts.rework)],
+    ['REWORK AND APPROVED', formatCount(s.counts.reworkApproved)],
     ['B-GRADE (pasang)', formatCount(s.counts.bGrade)],
+    ['Aturan foto', photoRuleLabel(s.photoRule)],
     ...(s.countingRule === 'ADR-008'
       ? [['NO DEFECT', formatCount(s.counts.noDefect)] as [string, string]]
       : []),

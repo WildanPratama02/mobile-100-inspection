@@ -44,7 +44,7 @@ export function Login({ expired }: { expired: boolean }) {
     <div className="adm-center">
       <Pane label="Login admin" className="adm-login">
         <img src={logoUrl} alt="PT Parkland World Indonesia" className="adm-logo adm-logo--login" />
-        <h1 className="adm-title">M100 Admin</h1>
+        <h1 className="adm-title">PSI Inspection Admin</h1>
         {expired && !error ? <Notice tone="warning">{SESSION_ENDED_TEXT}</Notice> : null}
         <form className="adm-form" onSubmit={(e) => void submit(e)} noValidate>
           <TextField

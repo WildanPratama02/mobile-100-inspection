@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actorName, auditSummary, moment, rate, todayWib } from './format';
+import { actorName, auditSummary, moment, photoRuleLabel, rate, todayWib } from './format';
 import { filterFromQuery, filterQuery } from './screens/Submissions';
 import { countsText } from './screens/ImportFlow';
 
@@ -7,6 +7,16 @@ describe('rate', () => {
   it('formats a fraction id-ID with one decimal, "—" when Qty Inspection is 0 (BR-02)', () => {
     expect(rate(0.1875, 16)).toBe('18,8%');
     expect(rate(0, 0)).toBe('—');
+  });
+});
+
+describe('photoRuleLabel', () => {
+  it('shows the stored marker as ALL or TOP5', () => {
+    expect(photoRuleLabel('ALL')).toBe('ALL');
+    expect(photoRuleLabel('TOP5')).toBe('TOP5');
+  });
+  it('shows "-" for PSI lv.1 and PSI lv.2 rows sealed before ADR-022 (doc 04 A19)', () => {
+    expect(photoRuleLabel(null)).toBe('—');
   });
 });
 

@@ -116,6 +116,14 @@ export interface Sent {
   defects: string[];
 }
 
+/** ADR-022 fields and the level a payload may carry; the ADR-022 fields stay absent (legacy NULL rows) by default. */
+export interface SubmissionExtras {
+  /** `PSI lv.1` sends no photo and stores `photo_rule` NULL even without this field. */
+  level?: 'PSI lv.1';
+  reworkApproved?: number;
+  photoRule?: 'ALL';
+}
+
 /** WIB ISO 8601 of now minus `secondsAgo`, as the tablet sends its moments. */
 function wib(secondsAgo = 0): string {
   return new Date(Date.now() - secondsAgo * 1000 + 7 * 3600_000)
@@ -124,17 +132,25 @@ function wib(secondsAgo = 0): string {
 }
 
 /**
- * One PSI lv.2 submission of DEWI CONTOH on F 3 / F3-10, PO 0903359388, sealed now (today's default filter), with
- * two defects and their two photos, sent through the tablet API like the outbox does.
+ * One submission on F 3 / F3-10, PO 0903359388, sealed now (today's default filter), with two defects (and two
+ * photos), sent through the tablet API like the outbox does. PSI lv.2 of DEWI CONTOH by default; `extras.level`
+ * makes it a PSI lv.1 row of ANDI CONTOH with no photo at all (each level logs in from its own roster). The
+ * ADR-022 `extras` fields (doc 04 A19) stay absent by default, so the stored row keeps them NULL like a row
+ * sealed before migration 0007.
  */
-export async function sendSubmission(sql: Sql, rule: CountingRule = 'ADR-008'): Promise<Sent> {
+export async function sendSubmission(
+  sql: Sql,
+  rule: CountingRule = 'ADR-008',
+  extras: SubmissionExtras = {},
+): Promise<Sent> {
   const tablet = await addTablet(sql);
+  const lv1 = extras.level === 'PSI lv.1';
   const login = await fetch(`${api()}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Device-Key': tablet.key },
     body: JSON.stringify({
-      username: 'DEWI CONTOH',
-      level: 'PSI lv.2',
+      username: lv1 ? 'ANDI CONTOH' : 'DEWI CONTOH',
+      level: lv1 ? 'PSI lv.1' : 'PSI lv.2',
       factory: 'F 3',
       cell: 'F3-10',
     }),
@@ -143,22 +159,29 @@ export async function sendSubmission(sql: Sql, rule: CountingRule = 'ADR-008'): 
   const { token } = (await login.json()) as { token: string };
 
   const defects = ['D035', 'D027'];
-  const photos = defects.map((defectId) => ({ defectId, part: `photo_${defectId}`, jpeg: jpeg() }));
+  // PSI lv.1 sends no photo (AC-10.6), so its body carries an empty photos list and no photo parts.
+  const photos =
+    extras.level === 'PSI lv.1'
+      ? []
+      : defects.map((defectId) => ({ defectId, part: `photo_${defectId}`, jpeg: jpeg() }));
   const submissionUuid = randomUUID();
   const sealedAt = wib();
   const body = {
     submissionUuid,
     sealedAt,
     appVersion: '1.0.0',
-    user: { username: 'DEWI CONTOH', level: 'PSI lv.2' },
+    user: { username: lv1 ? 'ANDI CONTOH' : 'DEWI CONTOH', level: lv1 ? 'PSI lv.1' : 'PSI lv.2' },
     factory: 'F 3',
     cell: 'F3-10',
     po: '0903359388',
     partial: null,
-    counts:
-      rule === 'ADR-019'
+    counts: {
+      ...(rule === 'ADR-019'
         ? { rework: 2, bGrade: 1, qtyInspection: 30 }
-        : { rework: 2, bGrade: 1, noDefect: 3 },
+        : { rework: 2, bGrade: 1, noDefect: 3 }),
+      ...(extras.reworkApproved === undefined ? {} : { reworkApproved: extras.reworkApproved }),
+    },
+    ...(extras.photoRule === undefined ? {} : { photoRule: extras.photoRule }),
     findings: [
       {
         inspectionType: 'REWORK',

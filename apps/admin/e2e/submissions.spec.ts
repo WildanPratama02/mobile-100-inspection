@@ -59,8 +59,12 @@ for (const rule of ['ADR-008', 'ADR-019'] as const) {
       page.getByText(label, { exact: true }).locator('..').locator('dd');
     await expect(fact('Aturan hitung')).toHaveText(ruleLabel);
     await expect(fact('QTY INSPECTION')).toHaveText(manual ? '30' : '6');
-    await expect(fact('REWORK (pasang)')).toHaveText('2');
+    await expect(fact('INSPECTION REWORK QTY')).toHaveText('2');
+    await expect(fact('REWORK AND APPROVED')).toHaveText('—');
     await expect(fact('B-GRADE (pasang)')).toHaveText('1');
+    // A fresh PSI lv.2 payload without `photoRule` stores TOP5 (the legacy Top 5 rule); only rows
+    // sealed before migration 0007 have NULL and display "-" (doc 04 A19).
+    await expect(fact('Aturan foto')).toHaveText('TOP5');
     await expect(fact('A-Grade')).toHaveText(manual ? '27' : '3');
     if (manual) await expect(page.getByText('NO DEFECT', { exact: true })).toHaveCount(0);
     else await expect(fact('NO DEFECT')).toHaveText('3');
@@ -93,6 +97,52 @@ for (const rule of ['ADR-008', 'ADR-019'] as const) {
     await expect(page.getByLabel('PO', { exact: true })).toHaveValue(sent.po);
   });
 }
+
+test('ADR-022: an approved row shows REWORK AND APPROVED and its photo rule, the title is the app title', async ({
+  page,
+  account,
+  sql,
+}) => {
+  const sent = await sendSubmission(sql, 'ADR-019', { reworkApproved: 1, photoRule: 'ALL' });
+  // The lv.1 row stores reworkApproved and photo_rule NULL even though its payload marks neither.
+  const legacy = await sendSubmission(sql, 'ADR-019', { level: 'PSI lv.1' });
+  await signIn(page, account);
+  await expect(page).toHaveTitle('PSI Inspection Admin');
+  await expect(
+    page.getByRole('link', { name: 'PSI Inspection Admin, ke Submission' }),
+  ).toBeVisible();
+
+  await page.getByLabel('PO', { exact: true }).fill(sent.po);
+  await page.getByRole('button', { name: 'TAMPILKAN' }).click();
+  const fact = (label: string) =>
+    page.getByText(label, { exact: true }).locator('..').locator('dd');
+  const row = page.getByRole('row').filter({ hasText: sent.displayNo });
+  await row.getByRole('link', { name: sent.displayNo }).click();
+  await expect(page.getByRole('heading', { name: sent.displayNo })).toBeVisible();
+  await expect(fact('Aturan hitung')).toHaveText('Qty Inspection diisi PSI');
+  await expect(fact('INSPECTION REWORK QTY')).toHaveText('2');
+  await expect(fact('REWORK AND APPROVED')).toHaveText('1');
+  await expect(fact('B-GRADE (pasang)')).toHaveText('1');
+  await expect(fact('Aturan foto')).toHaveText('ALL');
+
+  // Every stored photo is still listed and opens the large view.
+  const thumbs = page.getByRole('button', { name: /^Foto D0/ });
+  await expect(thumbs).toHaveCount(2);
+  await thumbs.first().click();
+  await expect(page.getByRole('dialog', { name: /^Foto D0/ }).getByRole('img')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(thumbs.first()).toBeFocused();
+
+  // The PSI lv.1 row keeps both ADR-022 values at their "—" (stored NULL).
+  await page.goBack();
+  await expect(page.getByLabel('PO', { exact: true })).toHaveValue(sent.po);
+  const legacyRow = page.getByRole('row').filter({ hasText: legacy.displayNo });
+  await legacyRow.getByRole('link', { name: legacy.displayNo }).click();
+  await expect(page.getByRole('heading', { name: legacy.displayNo })).toBeVisible();
+  await expect(fact('REWORK AND APPROVED')).toHaveText('—');
+  await expect(fact('Aturan foto')).toHaveText('—');
+  await expect(page.getByRole('button', { name: /^Foto D0/ })).toHaveCount(0);
+});
 
 test('the same list distinguishes manual quantities from legacy tap counts', async ({
   page,

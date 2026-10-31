@@ -2,6 +2,9 @@
 import { expect, problem, signIn, test } from './fixtures';
 
 test('logs in to A1 and out again', async ({ page, account }) => {
+  await page.goto('/admin/');
+  await expect(page).toHaveTitle('PSI Inspection Admin');
+  await expect(page.getByRole('heading', { name: 'PSI Inspection Admin', level: 1 })).toBeVisible();
   await signIn(page, account);
   await expect(
     page.getByRole('button', { name: `${account.username}, ganti password` }),
