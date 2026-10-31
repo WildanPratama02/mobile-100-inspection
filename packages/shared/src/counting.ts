@@ -171,8 +171,13 @@ export function recordDefect(state: SessionState, entry: AreaMapEntry): SessionE
   return { type: 'DEFECT', areaId, subAreaId, familyId, defectId };
 }
 
+/**
+ * END INSPECTION: refused until the active inspection has a finding, also after UNDO of its last finding
+ * (AC-06.3, ADR-022 decision 8). `applyEvent` still folds a stored END of an empty inspection from an older
+ * session, so its replay never changes.
+ */
 export function endInspection(state: SessionState): SessionEventPayload | null {
-  if (!state.active) return null;
+  if (!state.active || state.active.defects.length === 0) return null;
   return { type: 'END' };
 }
 

@@ -121,6 +121,7 @@ describe('command states (doc 05 §11.2)', () => {
     expect(button('B-GRADE')).toBeDisabled();
     expect(button('END INSPECTION')).toBeDisabled();
     expect(screen.getByText(END_HINT)).toBeVisible();
+    expect(button('END INSPECTION')).toHaveAccessibleDescription(END_HINT);
     expect(pill('QUARTER')).toBeEnabled();
     expect(screen.getByText('Pilih area sepatu')).toBeVisible();
     expect(screen.getByText(/PO 0903359388/).closest('p')).toHaveTextContent('REWORK');
@@ -130,6 +131,7 @@ describe('command states (doc 05 §11.2)', () => {
     await toast('+1 Defect');
     expect(button('END INSPECTION')).toBeEnabled();
     expect(screen.queryByText(END_HINT)).not.toBeInTheDocument();
+    expect(button('END INSPECTION')).not.toHaveAttribute('aria-describedby');
   });
 
   it('B-GRADE starts a B-GRADE inspection and END waits for a defect (AC-06.3)', async () => {

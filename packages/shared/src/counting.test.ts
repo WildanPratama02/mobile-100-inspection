@@ -93,6 +93,10 @@ class Tablet {
   end() {
     return this.store(endInspection(this.state));
   }
+  /** An END of an inspection with no defect, stored by an older session before the guard (AC-06.3). */
+  legacyEnd() {
+    return this.push({ type: 'END' });
+  }
   undo() {
     return this.store(undo(this.state));
   }
@@ -116,7 +120,7 @@ describe('ADR-019 counting table', () => {
   it('starting REWORK or B-GRADE changes no figure (pairs enter no formula)', () => {
     const t = new Tablet().qty(40).rework();
     expect(quantities(t.totals)).toEqual([40, 40, 0, 0]);
-    t.end().bGrade();
+    t.legacyEnd().bGrade();
     expect(quantities(t.totals)).toEqual([40, 40, 0, 0]);
     expect(t.state.counts).toEqual({ rework: 1, bGrade: 1 });
   });
@@ -148,8 +152,9 @@ describe('ADR-019 counting table', () => {
     });
   });
 
-  it('ending an inspection without defects changes no figure (AC-06.3)', () => {
-    const t = new Tablet().qty(5).rework().end();
+  it('an END of an inspection without defects stored by an older session changes no figure', () => {
+    const t = new Tablet().qty(5).rework().legacyEnd();
+    expect(t.state.active).toBeNull();
     expect(t.state.counts).toEqual({ rework: 1, bGrade: 0 });
     expect(quantities(t.totals)).toEqual([5, 5, 0, 0]);
   });
@@ -186,7 +191,8 @@ describe('computeTotals: the doc 02 §9 example (doc 03 §5.5)', () => {
     const t = new Tablet().qty(30);
     for (let i = 0; i < 6; i++) t.rework().defect('D035').end();
     t.rework().defect('D035').defect('D049').end();
-    for (let i = 0; i < 3; i++) t.rework().end();
+    // Three REWORK pairs ended without a finding, as an older session stored them before the guard.
+    for (let i = 0; i < 3; i++) t.rework().legacyEnd();
     t.bGrade().defect('D082').defect('D005').end();
     t.bGrade().defect('D082').end();
     expect(t.state.counts).toEqual({ rework: 10, bGrade: 2 });
@@ -403,10 +409,55 @@ describe('one inspection at a time (BR-05, AC-06.1)', () => {
   });
 
   it('refuses defects and END INSPECTION without an active inspection', () => {
-    for (const { state } of [new Tablet(), new Tablet().qty(5), new Tablet().rework().end()]) {
+    for (const { state } of [
+      new Tablet(),
+      new Tablet().qty(5),
+      new Tablet().rework().defect('D035').end(),
+    ]) {
       expect(recordDefect(state, entry('D035'))).toBeNull();
       expect(endInspection(state)).toBeNull();
     }
+  });
+
+  describe('END INSPECTION guard (AC-06.3, ADR-022 decision 8, doc 03 §4.2)', () => {
+    const modes: CountingMode[] = ['ENTERED', 'TAPPED'];
+
+    it.each(modes)('%s: refused before any finding of the active inspection', (mode) => {
+      for (const type of ['REWORK', 'B-GRADE'] as const) {
+        const t = new Tablet(PO, mode).start(type);
+        expect(endInspection(t.state)).toBeNull();
+        expect(endInspection(t.defect('D035').state)).toEqual({ type: 'END' });
+      }
+    });
+
+    it.each(modes)('%s: refused again after UNDO of the last finding', (mode) => {
+      const t = new Tablet(PO, mode).rework().defect('D035').defect('D005').undo();
+      expect(endInspection(t.state)).toEqual({ type: 'END' });
+      t.undo();
+      expect(t.state.active?.defects).toEqual([]);
+      expect(endInspection(t.state)).toBeNull();
+      // UNDO of the start still removes the inspection.
+      t.undo();
+      expect(t.state.active).toBeNull();
+      expect(t.state.counts).toEqual({ rework: 0, bGrade: 0 });
+    });
+
+    it.each(modes)('%s: refused for a new inspection after one with findings ended', (mode) => {
+      const t = new Tablet(PO, mode).rework().defect('D035').end().bGrade();
+      expect(endInspection(t.state)).toBeNull();
+    });
+
+    it('a stored END of an empty inspection (older session) still replays the same, both levels', () => {
+      const lv1 = new Tablet().qty(5).rework().legacyEnd().bGrade().defect('D035').end();
+      expect(replay(lv1.events)).toEqual(lv1.state);
+      expect(lv1.state.counts).toEqual({ rework: 1, bGrade: 1 });
+      expect(quantities(lv1.totals)).toEqual([5, 4, 1, 1]);
+
+      const lv2 = new Tablet(PO, 'TAPPED').rework().legacyEnd().noDefect();
+      expect(replay(lv2.events, 'TAPPED')).toEqual(lv2.state);
+      expect(lv2.state.active).toBeNull();
+      expect(quantities(lv2.totals)).toEqual([2, 1, 0, 0]);
+    });
   });
 
   it('records the inspection type on each defect', () => {
@@ -435,7 +486,7 @@ describe('UNDO (FR-08)', () => {
   });
 
   it('with no defects, cancels the inspection and its pair', () => {
-    const t = new Tablet().qty(10).rework().end().bGrade();
+    const t = new Tablet().qty(10).rework().defect('D035').end().bGrade();
     expect(t.state.undo).toBe('INSPECTION');
     t.undo();
     expect(t.state.active).toBeNull();
@@ -455,13 +506,19 @@ describe('UNDO (FR-08)', () => {
     const cases: [string, () => Tablet][] = [
       ['on an empty session', () => new Tablet()],
       ['after only Qty Inspection was entered', () => new Tablet().qty(10)],
-      ['after END INSPECTION without defects', () => new Tablet().rework().end()],
+      [
+        'after an END without defects stored by an older session',
+        () => new Tablet().rework().legacyEnd(),
+      ],
       ['after END INSPECTION with defects', () => new Tablet().bGrade().defect('D035').end()],
       [
         'after END and a Qty Inspection change',
         () => new Tablet().rework().defect('D035').end().qty(9),
       ],
-      ['after UNDO cancelled an inspection', () => new Tablet().rework().end().rework().undo()],
+      [
+        'after UNDO cancelled an inspection',
+        () => new Tablet().rework().defect('D035').end().rework().undo(),
+      ],
     ];
     it.each(cases)('%s', (_, build) => {
       const t = build();
@@ -493,7 +550,12 @@ describe('legacy NO_DEFECT events (ADR-019 decision 9)', () => {
   });
 
   it('an UNDO after a legacy NO_DEFECT does nothing', () => {
-    const t = new Tablet().rework().end().push({ type: 'NO_DEFECT' }).push({ type: 'UNDO' });
+    const t = new Tablet()
+      .rework()
+      .defect('D035')
+      .end()
+      .push({ type: 'NO_DEFECT' })
+      .push({ type: 'UNDO' });
     expect(t.state.counts).toEqual({ rework: 1, bGrade: 0 });
     expect(t.state.undo).toBeNull();
   });
@@ -528,8 +590,8 @@ describe('PSI lv.2 counts Qty Inspection with taps (ADR-021)', () => {
     expect(quantities(t.totals)).toEqual([0, 0, 1, 0]);
     t.end();
     expect(quantities(t.totals)).toEqual([1, 0, 1, 0]);
-    t.bGrade().end();
-    expect(quantities(t.totals)).toEqual([2, 0, 1, 0]);
+    t.bGrade().defect('D005').end();
+    expect(quantities(t.totals)).toEqual([2, 0, 2, 1]);
   });
 
   it('each defect: Qty Defect +1; in B-GRADE also Qty B-Grade +1 (three findings add 3)', () => {
@@ -540,13 +602,14 @@ describe('PSI lv.2 counts Qty Inspection with taps (ADR-021)', () => {
   });
 
   it('Defect Rate = Qty Defect ÷ Qty Inspection, Pass Rate = NO DEFECT ÷ Qty Inspection', () => {
-    const t = lv2().noDefect(8).rework().defect('D035').defect('D005').end().bGrade().end();
+    const t = lv2().noDefect(8).rework().defect('D035').defect('D005').end();
+    t.bGrade().defect('D001').end();
     expect(t.totals).toMatchObject({
       qtyInspection: 10,
       qtyAGrade: 8,
-      qtyDefect: 2,
-      qtyBGrade: 0,
-      defectRate: 0.2,
+      qtyDefect: 3,
+      qtyBGrade: 1,
+      defectRate: 0.3,
       passRate: 0.8,
       qtyInspectionIssue: null,
     });
@@ -632,7 +695,19 @@ describe('PSI lv.2 counts Qty Inspection with taps (ADR-021)', () => {
 
     it('ENTERED sessions are never limited by taps', () => {
       expect(
-        canAddPair(new Tablet(small).rework().end().rework().end().rework().end().state, small),
+        canAddPair(
+          new Tablet(small)
+            .rework()
+            .defect('D035')
+            .end()
+            .rework()
+            .defect('D035')
+            .end()
+            .rework()
+            .defect('D035')
+            .end().state,
+          small,
+        ),
       ).toBe(true);
     });
   });
@@ -935,7 +1010,7 @@ describe('Top 5 (FR-05, AC-05.1, doc 02 §6.2)', () => {
   });
 
   it('is empty without defects', () => {
-    expect(top5(findings(new Tablet().qty(5).rework().end().state), mapping)).toEqual([]);
+    expect(top5(findings(new Tablet().qty(5).rework().state), mapping)).toEqual([]);
   });
 
   it('orders by total quantity first', () => {

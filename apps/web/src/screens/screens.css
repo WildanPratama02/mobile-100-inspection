@@ -876,8 +876,7 @@
     padding: var(--space-2);
   }
   .defect__cmds > .m100-cmd,
-  .defect__end,
-  .defect__end-hint {
+  .defect__end {
     font-size: 21px;
   }
   .defect__ctx {

@@ -162,6 +162,42 @@ describe('persistence rule (NFR-05)', () => {
   });
 });
 
+describe('END INSPECTION guard (AC-06.3, doc 03 §4.2)', () => {
+  it('refuses END of an inspection without a finding and stores nothing', async () => {
+    const store = await loggedInWithPo();
+    const { tap } = store.getState();
+    await tap(PO.po, { type: 'START', inspection: 'REWORK' });
+    expect(await tap(PO.po, { type: 'END' })).toBeNull();
+    const { events, state } = store.getState().sessions[PO.po]!;
+    expect(events.map((e) => e.type)).toEqual(['START_REWORK']);
+    expect(state.active?.type).toBe('REWORK');
+  });
+
+  it('refuses an END queued right after UNDO of the only defect (a fast double tap)', async () => {
+    const store = await loggedInWithPo();
+    const { tap } = store.getState();
+    await tap(PO.po, { type: 'START', inspection: 'REWORK' });
+    await tap(PO.po, { type: 'DEFECT', entry: TOE });
+    // Both taps arrive before the UNDO is in IndexedDB, as from a screen that still shows END enabled.
+    const [undone, ended] = await Promise.all([
+      tap(PO.po, { type: 'UNDO' }),
+      tap(PO.po, { type: 'END' }),
+    ]);
+    expect(undone).not.toBeNull();
+    expect(ended).toBeNull();
+    const { session, events, state } = store.getState().sessions[PO.po]!;
+    expect(events.map((e) => e.type)).toEqual(['START_REWORK', 'DEFECT', 'UNDO']);
+    expect((await repo.listEvents(db, A.username, session.id)).map((e) => e.type)).toEqual([
+      'START_REWORK',
+      'DEFECT',
+      'UNDO',
+    ]);
+    // PSI lv.2 (ADR-021): no pair is counted for the still active, empty inspection.
+    expect(state.active?.defects).toEqual([]);
+    expect(totals(state)).toMatchObject({ qtyInspection: 0, qtyDefect: 0 });
+  });
+});
+
 describe('reload mid-inspection (AC-06.2)', () => {
   it('restores an active REWORK with its defects and the screen', async () => {
     const store = await loggedInWithPo();
