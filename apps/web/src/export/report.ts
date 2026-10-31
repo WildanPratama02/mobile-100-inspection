@@ -62,7 +62,10 @@ export interface ExportReport {
   top5: Top5Line[];
   /** Every photo of a defect in the current findings, Top 5 first, each once (AC-12.2). */
   photos: ExportPhoto[];
-  /** PSI lv.2: Top 5 defect names without a photo. Exporting is refused while any is left (BR-04). */
+  /**
+   * PSI lv.2: every defect name without a photo, in ranking order. Exporting is refused while any is left (BR-04,
+   * ADR-022).
+   */
   missingPhotos: string[];
 }
 
@@ -139,7 +142,7 @@ export function exportReport({ po, session, auth, mapping, now }: ExportInput): 
         : [];
     }),
     missingPhotos: photos
-      ? missingPhotos(top, new Set(Object.keys(attached) as DefectId[])).map(
+      ? missingPhotos(ranked, new Set(Object.keys(attached) as DefectId[]), 'ALL').map(
           (row) => defectOf(row.defectId).name,
         )
       : [],

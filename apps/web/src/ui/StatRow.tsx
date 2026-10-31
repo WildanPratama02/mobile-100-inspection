@@ -20,7 +20,7 @@ export function StatRow({ label, value, unit, tone, className, onClick }: StatRo
       className={cx('m100-stat', tone && `m100-stat--${tone}`, className)}
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      aria-label={onClick ? 'Ubah Qty Inspection' : undefined}
+      aria-label={onClick ? `Ubah ${label}` : undefined}
     >
       <span>{label}</span>
       <b>

@@ -4,12 +4,13 @@
  * The persistence rule: every action writes to IndexedDB first and changes the state only after the write
  * has resolved, so the screen never shows something a reload would lose (NFR-05, AC-06.2). Actions run one
  * at a time, so each tap is judged against the state left by the tap before it. Only the logged-in PSI's
- * data is ever loaded (AC-02.3). Totals, Top 5 and findings are derived with `@m100/shared`, never stored.
+ * data is ever loaded (AC-02.3). Totals, the defect ranking and findings are derived with `@m100/shared`, never stored.
  */
 import { createContext, useContext } from 'react';
 import { useStore } from 'zustand';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import {
+  allDefects,
   applyEvent,
   buildSubmission,
   checkSubmit,
@@ -20,11 +21,11 @@ import {
   noDefect,
   recordDefect,
   setQtyInspection,
+  setReworkApproved,
   replay,
   startInspection,
   submissionPhotos,
   takesPhotos,
-  top5,
   undo,
   type AreaMapEntry,
   type DefectId,
@@ -63,6 +64,8 @@ export type TapCommand =
   /** PSI lv.2 only (ADR-021). */
   | { type: 'NO_DEFECT' }
   | { type: 'SET_QTY_INSPECTION'; qty: number }
+  /** SIMPAN in REWORK AND APPROVED (FR-16, both levels); `null` saves it empty. */
+  | { type: 'SET_REWORK_APPROVED'; qty: number | null }
   | { type: 'DEFECT'; entry: AreaMapEntry }
   | { type: 'END' }
   | { type: 'UNDO' };
@@ -82,8 +85,8 @@ export interface PoSession {
   events: readonly SessionEvent[];
   state: SessionState;
   /**
-   * One photo per defect (AC-10.5), PSI lv.2 only. A photo stays when its defect leaves the Top 5 (AC-10.4)
-   * or is undone; Home shows only those of Top 5 rows.
+   * One photo per defect (AC-10.5), PSI lv.2 only. A photo stays with its defect whatever its rank (AC-10.4),
+   * also when the defect is undone; Home shows those of the defects in ALL DEFECT.
    */
   photos: Readonly<Partial<Record<DefectId, PhotoRow>>>;
 }
@@ -161,7 +164,10 @@ export class SubmitBlockedError extends Error {
   }
 }
 
-/** The checks of doc 05 §13.1 for a PO's open session, in order; `null` when it can be submitted. */
+/**
+ * The checks of doc 05 §13.1 for a PO's open session, in order; `null` when it can be submitted. PSI lv.2 needs a
+ * photo of every defect in ALL DEFECT, as the payload's `photoRule: 'ALL'` promises (BR-04, ADR-022).
+ */
 export function submitBlock(
   level: Auth['level'],
   session: PoSession | undefined,
@@ -173,7 +179,8 @@ export function submitBlock(
     po,
     state,
     level,
-    top: top5(findings(state), mapping),
+    top: allDefects(findings(state), mapping),
+    photoRule: 'ALL',
     photographed: new Set(Object.keys(session?.photos ?? {}) as DefectId[]),
   });
 }
@@ -220,6 +227,8 @@ function toPayload(
       return noDefect(state, po);
     case 'SET_QTY_INSPECTION':
       return setQtyInspection(state, command.qty, po);
+    case 'SET_REWORK_APPROVED':
+      return setReworkApproved(state, command.qty);
     case 'DEFECT':
       return recordDefect(state, command.entry);
     case 'END':

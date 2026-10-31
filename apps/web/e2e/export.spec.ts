@@ -67,7 +67,7 @@ async function homeWithDefect(page: Page, name: string) {
     .getByRole('button', { name: 'HOME' })
     .click();
   if (!tapped) await setQtyInspection(page, 2);
-  await expect(page.getByRole('region', { name: 'TOP 5 DEFECT' })).toContainText(DEFECT);
+  await expect(page.getByRole('region', { name: 'ALL DEFECT' })).toContainText(DEFECT);
 }
 
 /** The results box as shown, label → value. */
@@ -108,6 +108,7 @@ test('PSI lv.1 exports Excel and PDF of the open session, which stays as it was 
     'F3-10',
     'WIB',
     'Qty Inspection',
+    'PSI INSPECTION REPORT',
     'TOP 5 DEFECT',
     DEFECT,
   ]) {
@@ -120,7 +121,7 @@ test('PSI lv.1 exports Excel and PDF of the open session, which stays as it was 
   await expect(page.getByText(`File dibuat: ${base}.pdf`)).toBeVisible();
   const text = (await bytes(pdf)).toString('latin1');
   expect(text.startsWith('%PDF-')).toBe(true);
-  for (const value of ['MOBILE 100% INSPECTION', '0903359388', 'BROKEN STITCHING']) {
+  for (const value of ['PSI INSPECTION REPORT', '0903359388', 'BROKEN STITCHING']) {
     expect(text).toContain(value);
   }
   expect(text).not.toContain('DAFTAR DEFECT');
@@ -130,11 +131,11 @@ test('PSI lv.1 exports Excel and PDF of the open session, which stays as it was 
   // AC-12.4: same numbers, and the same after a reload from IndexedDB.
   expect(await results(page)).toBe(before);
   await page.reload();
-  await expect(page.getByRole('region', { name: 'TOP 5 DEFECT' })).toContainText(DEFECT);
+  await expect(page.getByRole('region', { name: 'ALL DEFECT' })).toContainText(DEFECT);
   expect(await results(page)).toBe(before);
 });
 
-test('PSI lv.2 exports only with every Top 5 photo, and the PDF carries it (BR-04, AC-12.2)', async ({
+test('PSI lv.2 exports only with every defect photo, and the PDF carries it (BR-04, AC-12.2)', async ({
   page,
 }) => {
   await homeWithDefect(page, 'DEWI CONTOH');
@@ -163,7 +164,7 @@ test('PSI lv.2 exports only with every Top 5 photo, and the PDF carries it (BR-0
   );
   const chooser = page.waitForEvent('filechooser');
   await page
-    .getByRole('region', { name: 'TOP 5 DEFECT' })
+    .getByRole('region', { name: 'ALL DEFECT' })
     .getByRole('button', { name: 'Foto wajib' })
     .click();
   await (await chooser).setFiles({ name: 'camera.jpg', mimeType: 'image/jpeg', buffer: jpeg });

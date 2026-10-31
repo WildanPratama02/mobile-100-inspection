@@ -6,13 +6,13 @@ import {
   addPo,
   bar,
   expectResults,
-  expectTop5,
+  expectAllDefect,
   login,
   logout,
   openFamily,
   outbox,
   choice,
-  top5,
+  allDefect,
 } from './helpers';
 
 const PO = '0903359388';
@@ -42,8 +42,8 @@ test('is installable: manifest, icons and an active service worker', async ({ pa
   const { errors, data } = await cdp.send('Page.getAppManifest');
   expect(errors).toEqual([]);
   expect(JSON.parse(data!)).toMatchObject({
-    name: 'Mobile 100% Inspection',
-    short_name: 'M100',
+    name: 'PSI Inspection Report',
+    short_name: 'PSI Inspection',
     display: 'standalone',
     orientation: 'landscape',
     start_url: '/',
@@ -164,7 +164,7 @@ test('after the first load, inspection, photos, results, export and SUBMIT PO wo
   for (let i = 0; i < 29; i++) await page.getByRole('button', { name: 'NO DEFECT' }).click();
   await bar(page, 'HOME').click();
 
-  // Home (S3): results and Top 5.
+  // Home (S3): results and ALL DEFECT.
   await expectResults(page, {
     po: '10.002',
     inspection: '30',
@@ -175,7 +175,7 @@ test('after the first load, inspection, photos, results, export and SUBMIT PO wo
     defectRate: '6,7%',
     passRate: '96,7%',
   });
-  await expectTop5(page, [[DEFECT, 'MAJOR', 2]]);
+  await expectAllDefect(page, [[DEFECT, 'MAJOR', 2]]);
 
   // Photo (S7), PSI lv.2.
   const jpeg = await page.evaluate(() => {
@@ -188,7 +188,7 @@ test('after the first load, inspection, photos, results, export and SUBMIT PO wo
     return canvas.toDataURL('image/jpeg', 0.9).split(',')[1]!;
   });
   const chooser = page.waitForEvent('filechooser');
-  await top5(page).getByRole('button', { name: 'Foto wajib' }).click();
+  await allDefect(page).getByRole('button', { name: 'Foto wajib' }).click();
   await (
     await chooser
   ).setFiles({ name: 'camera.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpeg, 'base64') });

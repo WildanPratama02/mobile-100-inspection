@@ -18,6 +18,7 @@ import {
   hasOpenData,
   needsRenewal,
   selectedPo,
+  submitBlock,
   SubmitBlockedError,
   unsubmittedCount,
   waitingCount,
@@ -877,6 +878,105 @@ describe('submitPo (FR-11, doc 03 §4.6)', () => {
     await store.getState().logout();
     await store.getState().login(A);
     expect(store.getState().outbox).toHaveLength(1);
+  });
+});
+
+describe('REWORK AND APPROVED (FR-16, BR-11, doc 03 §4.2)', () => {
+  const mapping = defaultMapping();
+  const approved = (store: AppStore) => store.getState().sessions[PO.po]!.state.reworkApproved;
+
+  it('is refused at 0 rework and writes nothing', async () => {
+    const store = await loggedInWithPo();
+    const before = store.getState().sessions;
+    expect(await store.getState().tap(PO.po, { type: 'SET_REWORK_APPROVED', qty: 0 })).toBeNull();
+    expect(
+      await store.getState().tap(PO.po, { type: 'SET_REWORK_APPROVED', qty: null }),
+    ).toBeNull();
+    expect(store.getState().sessions).toBe(before);
+    expect(await db.events.count()).toBe(0);
+  });
+
+  it('is stored in IndexedDB before the state shows it, and survives a reload', async () => {
+    const store = await loggedInWithPo();
+    const { tap } = store.getState();
+    await tap(PO.po, { type: 'START', inspection: 'REWORK' });
+    await tap(PO.po, { type: 'DEFECT', entry: TOE });
+    await tap(PO.po, { type: 'END' });
+    const seenAtChange: Promise<number>[] = [];
+    const unsubscribe = store.subscribe(() => {
+      seenAtChange.push(db.events.filter((e) => e.type === 'SET_REWORK_APPROVED').count());
+    });
+    expect(await tap(PO.po, { type: 'SET_REWORK_APPROVED', qty: 2 })).toBeNull();
+    expect(await tap(PO.po, { type: 'SET_REWORK_APPROVED', qty: 1 })).not.toBeNull();
+    unsubscribe();
+    expect(await Promise.all(seenAtChange)).toEqual([1]);
+    expect(approved(store)).toBe(1);
+    expect((await reopen()).getState().sessions[PO.po]!.state.reworkApproved).toBe(1);
+
+    // Empty is saved too, and is sent as 0.
+    expect(await tap(PO.po, { type: 'SET_REWORK_APPROVED', qty: null })).not.toBeNull();
+    expect(approved(store)).toBeNull();
+    expect((await reopen()).getState().sessions[PO.po]!.state.reworkApproved).toBeNull();
+  });
+
+  it('keeps a value that UNDO makes too high, refuses SUBMIT PO, and takes the correction at 0 rework', async () => {
+    const store = await loggedInWithPo();
+    const { tap, submitPo } = store.getState();
+    await tap(PO.po, { type: 'NO_DEFECT' });
+    await tap(PO.po, { type: 'START', inspection: 'REWORK' });
+    expect(await tap(PO.po, { type: 'SET_REWORK_APPROVED', qty: 1 })).not.toBeNull();
+    // UNDO of the REWORK start: INSPECTION REWORK QTY 0, the entered 1 stays (never clamped).
+    await tap(PO.po, { type: 'UNDO' });
+    expect(store.getState().sessions[PO.po]!.state.counts.rework).toBe(0);
+    expect(approved(store)).toBe(1);
+    const error = await submitPo(PO.po, mapping).catch((e: unknown) => e);
+    expect((error as SubmitBlockedError).block).toEqual({ kind: 'REWORK_APPROVED_ABOVE', max: 0 });
+
+    expect(await tap(PO.po, { type: 'SET_REWORK_APPROVED', qty: 0 })).not.toBeNull();
+    // Valid again at 0 rework: the row is disabled, so a further change is refused.
+    expect(await tap(PO.po, { type: 'SET_REWORK_APPROVED', qty: null })).toBeNull();
+    const item = await submitPo(PO.po, mapping);
+    const payload = JSON.parse(item.payloadJson) as SubmissionRequest;
+    expect(payload.counts).toEqual({ rework: 0, bGrade: 0, reworkApproved: 0, noDefect: 1 });
+    expect(store.getState().sessions[PO.po]!.state.reworkApproved).toBeNull();
+  });
+});
+
+describe('submitBlock photos (BR-04, ADR-022)', () => {
+  const mapping = defaultMapping();
+  const jpeg = (sha256: string) => ({ blob: new Blob([sha256], { type: 'image/jpeg' }), sha256 });
+
+  it('PSI lv.2 with 7 defects and 5 photos: the other 2 are missing, in ranking order', async () => {
+    const store = await loggedInWithPo();
+    const { tap, savePhoto } = store.getState();
+    const seven = [...new Map(mapping.map.map((e) => [e.defectId, e])).values()].slice(0, 7);
+    await tap(PO.po, { type: 'START', inspection: 'REWORK' });
+    for (const entry of seven) await tap(PO.po, { type: 'DEFECT', entry });
+    await tap(PO.po, { type: 'END' });
+    for (const entry of seven.slice(0, 5))
+      await savePhoto(PO.po, entry.defectId, jpeg(entry.defectId));
+
+    const block = (session = store.getState().sessions[PO.po]) =>
+      submitBlock('PSI lv.2', session, mapping, store.getState().pos[0]!);
+    const missing = block();
+    expect(missing?.kind).toBe('PHOTOS_MISSING');
+    expect(
+      missing?.kind === 'PHOTOS_MISSING' ? missing.defects.map((d) => d.defectId).sort() : [],
+    ).toEqual(
+      seven
+        .slice(5)
+        .map((e) => e.defectId)
+        .sort(),
+    );
+
+    for (const entry of seven.slice(5))
+      await savePhoto(PO.po, entry.defectId, jpeg(entry.defectId));
+    expect(block()).toBeNull();
+    // PSI lv.1 never needs a photo (AC-10.6); here only the photo rule is checked, Qty Inspection blocks first.
+    expect(
+      submitBlock('PSI lv.1', store.getState().sessions[PO.po], mapping, store.getState().pos[0]!)
+        ?.kind,
+    ).not.toBe('PHOTOS_MISSING');
   });
 });
 

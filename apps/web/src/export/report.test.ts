@@ -250,6 +250,17 @@ describe('exportReport (FR-12)', () => {
       expect(report.missingPhotos).toEqual([name('D005')]);
     });
 
+    it('names a defect outside the Top 5 without a photo too, in ranking order (ADR-022)', () => {
+      // Seven defects, six photographed: D001 ranks 7th and is still required.
+      const taps = new Taps().rework().defect('D001');
+      for (const id of ['D002', 'D003', 'D004', 'D005', 'D006', 'D007'] as const) {
+        taps.defect(id, 2).photo(id);
+      }
+      expect(exportReport(input(taps)).missingPhotos).toEqual([name('D001')]);
+      taps.photo('D001');
+      expect(exportReport(input(taps)).missingPhotos).toEqual([]);
+    });
+
     it('PSI lv.1 never misses a photo (AC-10.6)', () => {
       const report = exportReport(input(new Taps().rework().defect('D005'), { auth: LV1 }));
       expect(report.missingPhotos).toEqual([]);

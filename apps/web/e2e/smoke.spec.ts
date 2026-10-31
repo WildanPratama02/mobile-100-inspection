@@ -1,7 +1,7 @@
 import { expect, test } from './fixtures';
 
-test('serves the app titled "Mobile 100% Inspection"', async ({ page }) => {
+test('serves the app titled "PSI Inspection Report" (ADR-022)', async ({ page }) => {
   await page.goto('/');
-  await expect(page).toHaveTitle('Mobile 100% Inspection');
+  await expect(page).toHaveTitle('PSI Inspection Report');
   await expect(page.getByRole('main')).toBeVisible();
 });
