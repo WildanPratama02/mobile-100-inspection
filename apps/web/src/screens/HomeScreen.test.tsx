@@ -649,7 +649,7 @@ describe('photos (FR-10, doc 05 §12)', () => {
 });
 
 describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
-  const FILE = /^M100_0903359388_\d{8}\.(pdf|xlsx)$/;
+  const FILE = /^PSI_0903359388_\d{8}\.(pdf|xlsx)$/;
 
   beforeEach(() => {
     vi.mocked(exportFile).mockReset();
@@ -690,6 +690,9 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
       const [usedFormat, report] = vi.mocked(exportFile).mock.lastCall!;
       expect(usedFormat).toBe(format);
       expect(report.results.find((r) => r.label === 'Qty Inspection')?.value).toBe(30);
+      // The date is the session's first event, not the clock now (ADR-022, 30 Oct 2026).
+      expect(report.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(report.psiName).toBe('ANDI CONTOH (PSI lv.1)');
       const name = vi.mocked(saveFile).mock.lastCall![0];
       expect(name).toMatch(FILE);
       expect(name.endsWith(`.${format}`)).toBe(true);
@@ -706,7 +709,7 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
     renderHome();
     fireEvent.click(screen.getByRole('button', { name: 'EXPORT EXCEL' }));
     await waitFor(() => expect(saveFile).toHaveBeenCalledOnce());
-    expect(vi.mocked(exportFile).mock.lastCall![1].top5).toEqual([]);
+    expect(vi.mocked(exportFile).mock.lastCall![1].defects).toEqual([]);
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 

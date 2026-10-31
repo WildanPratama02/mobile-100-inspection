@@ -1,6 +1,7 @@
 /**
  * EXPORT PDF (FR-12, doc 05 §8.5): an A4 report with the company mark and the title on every page header
- * (doc 05 §4a), then PO info, results, TOP 5 DEFECT and the photos (AC-12.2). No full defect list (ADR-021).
+ * (doc 05 §4a), then PO info and the inspection date, results, every defect finding and the photos
+ * (AC-12.1, AC-12.2).
  *
  * The page is printed, so it is drawn in black and greys only; the screen's colour tokens don't apply.
  */
@@ -94,7 +95,7 @@ export function toPdf(report: ExportReport, assets: PdfAssets): Blob {
 
   header();
 
-  // PO info, inspector, Factory/Cell and export time, two pairs to a row.
+  // PO info, inspector, Factory/Cell and the inspection date, two pairs to a row (AC-12.3).
   const info: RowInput[] = [];
   for (let i = 0; i < report.info.length; i += 2) {
     const [a, b] = [report.info[i]!, report.info[i + 1]];
@@ -106,11 +107,14 @@ export function toPdf(report: ExportReport, assets: PdfAssets): Blob {
     body: info,
     styles: { fontSize: 9, cellPadding: 1.2, textColor: INK },
     columnStyles: {
-      0: { fontStyle: 'bold', cellWidth: 30 },
-      2: { fontStyle: 'bold', cellWidth: 30 },
+      // Wide enough for the longest label, `DATE INSPECTION`, to stay on one line in either label column
+      // (it is the third pair without a partial row and the fourth with one).
+      0: { fontStyle: 'bold', cellWidth: 36 },
+      2: { fontStyle: 'bold', cellWidth: 34 },
     },
   });
 
+  // Nine figures, including both rework values (ADR-022 decision 7).
   table({
     startY: tableEnd(doc) + 4,
     head: [report.results.map((r) => r.label)],
@@ -121,17 +125,26 @@ export function toPdf(report: ExportReport, assets: PdfAssets): Blob {
     headStyles: { halign: 'center' },
   });
 
+  // Every defect in the findings, not just the first five (ADR-022).
   table({
-    startY: title('TOP 5 DEFECT', tableEnd(doc) + 8),
-    head: [['No', 'Defect', 'Klasifikasi', 'Area', 'Qty']],
+    startY: title('DEFECT FINDINGS', tableEnd(doc) + 8),
+    head: [['No', 'Defect', 'Severity', 'Area', 'Qty', '% of QTY INSPECTION']],
     body:
-      report.top5.length === 0
-        ? [[{ content: NO_DEFECT_TEXT, colSpan: 5 }]]
-        : report.top5.map((t) => [t.no, t.name, t.classification, t.areas, formatCount(t.qty)]),
+      report.defects.length === 0
+        ? [[{ content: NO_DEFECT_TEXT, colSpan: 6 }]]
+        : report.defects.map((d) => [
+            d.no,
+            d.name,
+            d.classification,
+            d.areas,
+            formatCount(d.qty),
+            formatRate(d.rate),
+          ]),
     columnStyles: {
       0: { cellWidth: 9, halign: 'center' },
       2: { cellWidth: 20 },
-      4: { cellWidth: 12, halign: 'right' },
+      4: { cellWidth: 14, halign: 'right' },
+      5: { cellWidth: 32, halign: 'right' },
     },
   });
 
@@ -166,8 +179,8 @@ export function toPdf(report: ExportReport, assets: PdfAssets): Blob {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(INK);
-      const caption = photo.top5No === null ? photo.name : `${photo.top5No}. ${photo.name}`;
-      const lines = doc.splitTextToSize(caption, PHOTO_W) as string[];
+      // Every listed defect has a number, so a photo always names its row (AC-10.4).
+      const lines = doc.splitTextToSize(`${photo.no}. ${photo.name}`, PHOTO_W) as string[];
       doc.text(lines.slice(0, 2), x, y + PHOTO_H + 3.5);
       x += PHOTO_W + PHOTO_GAP;
     }

@@ -158,12 +158,15 @@ export function HomeScreen({ auth }: HomeScreenProps) {
   // One export at a time: a second tap while the file is being made does nothing.
   const exporting = useRef(false);
 
-  /** Doc 05 §8.5. Reads the session only, so exporting never changes it (AC-12.4). */
+  /**
+   * Doc 05 §8.5. Reads the session only, so exporting never changes it (AC-12.4); the file carries the
+   * session's inspection date, never this moment (AC-12.3).
+   */
   const onExport = async (format: ExportFormat) => {
     if (!po || exporting.current) return;
     exporting.current = true;
     try {
-      const report = exportReport({ po, session, auth, mapping, now: new Date() });
+      const report = exportReport({ po, session, auth, mapping });
       if (report.missingPhotos.length > 0) {
         setOpen({ kind: 'missing-photos', names: report.missingPhotos });
         return;

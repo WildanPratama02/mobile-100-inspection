@@ -15,7 +15,7 @@ async function pdfText(report: ExportReport): Promise<string> {
 }
 
 describe('toPdf (FR-12)', () => {
-  it('is a PDF with the title, PO info, results and Top 5 (AC-12.1)', async () => {
+  it('is a PDF with the title, PO info, inspection date and nine results (AC-12.1)', async () => {
     const pdf = await pdfText(REPORT);
     expect(pdf.startsWith('%PDF-')).toBe(true);
     expect(pdf).toContain(`(${EXPORT_TITLE})`);
@@ -23,30 +23,61 @@ describe('toPdf (FR-12)', () => {
     for (const value of ['0903359388', 'RUNNER CONTOH 1', 'DEWI CONTOH \\(PSI lv.2\\)', 'F3-10']) {
       expect(pdf).toContain(value);
     }
-    expect(pdf).toContain('19 Okt 2026 14.05 WIB');
-    expect(pdf).toContain('Qty Inspection');
+    expect(pdf).toContain('DATE INSPECTION');
+    expect(pdf).toContain('(19 Okt 2026)');
+    expect(pdf).not.toContain('DICETAK');
+    // Nine headings; autoTable wraps each multi-word label to its column, so the words are separate strings.
+    for (const label of [
+      'Qty PO Order',
+      'Qty Inspection',
+      'Inspection Rework Qty',
+      'Qty Defect',
+      'Qty A-Grade',
+      'Qty B-Grade',
+      'Rework and Approved',
+      'Defect Rate',
+      'Pass Rate \\(RFT\\)',
+    ]) {
+      for (const word of label.split(' ')) expect(pdf).toContain(word);
+    }
     expect(pdf).toContain('(10.002)');
-    expect(pdf).toContain('18,8%');
-    expect(pdf).toContain('TOP 5 DEFECT');
-    for (const value of ['BOND GAP', 'VAMP, TOE BOX', 'CRITICAL']) expect(pdf).toContain(value);
+    expect(pdf).toContain('23,3%');
+    expect(pdf).toContain('76,7%');
     expect(pdf).toContain('Halaman 1 / ');
   });
 
-  it('has no Foto column and no DAFTAR DEFECT table (ADR-021)', async () => {
+  it('lists every defect in DEFECT FINDINGS, not only five (ADR-022)', async () => {
     const pdf = await pdfText(REPORT);
-    expect(pdf).not.toContain('(Foto)');
+    expect(pdf).toContain('DEFECT FINDINGS');
+    expect(pdf).not.toContain('TOP 5');
     expect(pdf).not.toContain('DAFTAR DEFECT');
-    expect(pdf).not.toContain('Sub Area');
+    // autoTable wraps the long heading to the column width.
+    expect(pdf).toContain('% of QTY');
+    expect(pdf).toContain('INSPECTION');
+    for (const value of [
+      'BOND GAP',
+      'WRINKLE',
+      'PAINT MARK',
+      'PAINT SMEAR',
+      'GLUE STAIN',
+      'STAIN OUTSIDE',
+      'VAMP, TOE BOX',
+      'CRITICAL',
+    ]) {
+      expect(pdf).toContain(value);
+    }
+    // A six-column table: the sixth is the per-defect share of QTY INSPECTION.
+    expect(pdf).toContain('(3,3%)');
   });
 
-  it('includes the attached photos with their defect names (AC-12.2)', async () => {
+  it('includes every attached photo with its ranking number (AC-12.2)', async () => {
     const pdf = await pdfText(REPORT);
     expect(pdf).toContain('FOTO DEFECT');
     expect(pdf).toContain('/DCTDecode');
     expect(pdf).toContain('(1. BOND GAP)');
     expect(pdf).toContain('(2. WRINKLE)');
-    // Outside the Top 5: the name only (AC-10.4).
-    expect(pdf).toContain('(STAIN OUTSIDE)');
+    // Ranked sixth: still listed, so it keeps its number too.
+    expect(pdf).toContain('(6. STAIN OUTSIDE)');
   });
 
   it('has the logo but no photo section for PSI lv.1', async () => {
@@ -56,12 +87,13 @@ describe('toPdf (FR-12)', () => {
     expect(pdf).not.toContain('FOTO DEFECT');
   });
 
-  it('an empty session shows "Belum ada defect." and "—" for the rates (doc 05 §8.5)', async () => {
+  it('an empty session shows "Belum ada defect." and 0,0% for the rates (doc 05 §8.5)', async () => {
     const pdf = await pdfText(REPORT_EMPTY);
     expect(pdf).toContain('Belum ada defect.');
-    // Helvetica is WinAnsi-encoded: "—" is byte 0x97 and "·" byte 0xB7. Node's "latin1" decoder above
-    // maps bytes to the same code points, so 0x97 reads back as U+0097.
-    expect(pdf).toContain('(\u0097) Tj');
+    // Every figure is printed, none is "—" any more (31 Oct 2026).
+    expect(pdf).toContain('(0,0%)');
+    expect(pdf).not.toContain('(\u0097) Tj');
+    // Helvetica is WinAnsi-encoded: "·" is byte 0xB7; Node's "latin1" decoder above maps it to the same point.
     expect(pdf).toContain('(P1 · 1.200 dari 10.002) Tj');
   });
 

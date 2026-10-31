@@ -198,7 +198,7 @@ test('after the first load, inspection, photos, results, export and SUBMIT PO wo
   for (const button of ['EXPORT PDF', 'EXPORT EXCEL'] as const) {
     const download = page.waitForEvent('download');
     await page.getByRole('button', { name: button }).click();
-    expect((await download).suggestedFilename()).toMatch(/^M100_0903359388_\d{8}\.(pdf|xlsx)$/);
+    expect((await download).suggestedFilename()).toMatch(/^PSI_0903359388_\d{8}\.(pdf|xlsx)$/);
   }
 
   // SUBMIT PO (S8) queues the submission.
