@@ -292,10 +292,10 @@ Bring every spec in line with ADR-022 before code; no code in this task.
 
 ### T7.2 Shared rules (`packages/shared`)
 `APP_NAME` "PSI Inspection Report"; event `SET_REWORK_APPROVED`; `totals()` adds Inspection Rework QTY, Rework and Approved, Inspected Qty (Including Rework) per PSI level, Rejected Qty, Total Approved Qty, Not Reworkable Defect %, Offered Lot Qty, Balance Qty, Balance Rework; `allDefects()` (the ranked list, `top5` kept for `photoRule` TOP5 checks); `missingPhotos` by photo rule; `checkSubmit` refuses a Rework and Approved above Inspection Rework QTY; `buildSubmission` sends `counts.reworkApproved` (empty → 0) and `photoRule: 'ALL'` for PSI lv.2.
-- [ ] Unit tests reproduce the ADR-022 decision 7 table for PSI lv.1 and PSI lv.2 (the lv.2 Including Rework equals QTY INSPECTION; the lv.1 one adds the REWORK pairs).
-- [ ] Rework and Approved: 0 ≤ value ≤ Inspection Rework QTY; UNDO of a REWORK start below the value leaves the value and makes it not valid (SUBMIT refused), never changed by the app.
-- [ ] PSI lv.2 with 7 defects: `missingPhotos` lists all 7 under `ALL`, the Top 5 under `TOP5`; PSI lv.1 never needs a photo.
-- [ ] `APP_NAME` tests in `packages/shared` and `apps/api` updated.
+- [x] Unit tests reproduce the ADR-022 decision 7 table for PSI lv.1 and PSI lv.2 (the lv.2 Including Rework equals QTY INSPECTION; the lv.1 one adds the REWORK pairs).
+- [x] Rework and Approved: 0 ≤ value ≤ Inspection Rework QTY; UNDO of a REWORK start below the value leaves the value and makes it not valid (SUBMIT refused), never changed by the app.
+- [x] PSI lv.2 with 7 defects: `missingPhotos` lists all 7 under `ALL`, the Top 5 under `TOP5`; PSI lv.1 never needs a photo.
+- [x] `APP_NAME` tests in `packages/shared` and `apps/api` updated.
 
 ### T7.3 Database and API
 Migration `0007`: `submissions.qty_rework_approved` (NULL allowed, CHECK 0 ≤ value ≤ `qty_rework`), `submissions.photo_rule` (`'TOP5'` / `'ALL'` / NULL), no backfill: existing rows keep NULL (Top 5 rule for PSI lv.2); the immutability trigger and grants unchanged. `POST /submissions` reads `reworkApproved` and `photoRule`; multipart body limit 100 MB.

@@ -1020,7 +1020,7 @@ components:
           type: string
           enum: ['ALL']
           description: |
-            New tablet sessions send ALL (both levels). PSI lv.2 requires one photo per distinct finding defect;
+            New PSI lv.2 tablet sessions send ALL; PSI lv.1 payloads carry no photoRule. PSI lv.2 requires one photo per distinct finding defect;
             each missing defect produces PHOTO_MISSING (422; top-level PHOTO_MISSING when these are the only errors).
             Omitted by older sealed payloads: apply the Top 5 photo rule for PSI lv.2.
             PSI lv.1 always sends no photos and stores a null photo rule. Invalid marker: 422 VALIDATION_FAILED.

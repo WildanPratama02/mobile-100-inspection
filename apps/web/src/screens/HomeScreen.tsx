@@ -183,7 +183,7 @@ export function HomeScreen({ auth }: HomeScreenProps) {
     else if (block.kind === 'EMPTY') setOpen({ kind: 'submit-empty' });
     else if (block.kind === 'BELOW' || block.kind === 'ABOVE' || block.kind === 'IMPOSSIBLE')
       setOpen({ kind: 'submit-qty', issue: block.kind });
-    else {
+    else if (block.kind === 'PHOTOS_MISSING') {
       const names = block.defects.map((d) => mapping.defect(d.defectId)?.name ?? d.defectId);
       setOpen({ kind: 'missing-photos', names });
     }

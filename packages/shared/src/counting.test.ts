@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   EMPTY_SESSION,
+  allDefects,
   applyEvent,
   canAddPair,
   checkQtyInspection,
+  checkReworkApproved,
   computeTotals,
   countingMode,
   countingRule,
@@ -16,6 +18,7 @@ import {
   recordDefect,
   replay,
   setQtyInspection,
+  setReworkApproved,
   startInspection,
   top5,
   totals,
@@ -226,7 +229,7 @@ describe('Qty Inspection empty or not valid (BR-10, ADR-019 decisions 6 and 7)',
 
   it('empty: A-Grade and rates are null, findings still counted', () => {
     const t = new Tablet().bGrade().defect('D035').defect('D005').end();
-    expect(t.totals).toEqual({
+    expect(t.totals).toMatchObject({
       qtyInspection: null,
       qtyDefect: 2,
       qtyBGrade: 2,
@@ -690,6 +693,172 @@ describe('reducer', () => {
     expect(state.qtyInspection).toBeNull();
     expect(state.recorded).toEqual([]);
     expect(state.active?.type).toBe('REWORK');
+  });
+});
+
+describe('rework approval and report figures (BR-11, ADR-022 decision 7)', () => {
+  const approve = (t: Tablet, qty: number | null) => {
+    const event = setReworkApproved(t.state, qty);
+    expect(event).toEqual({ type: 'SET_REWORK_APPROVED', qty });
+    return t.push(event!);
+  };
+
+  it.each(['ENTERED', 'TAPPED'] as const)(
+    'accepts 0, max and empty in %s, refusing invalid numbers',
+    (mode) => {
+      const t = new Tablet(PO, mode).rework();
+      expect(t.state.reworkApproved).toBeNull();
+      for (const qty of [0, 1, null]) {
+        approve(t, qty);
+        expect(t.state.reworkApproved).toBe(qty);
+        expect(checkReworkApproved(t.state)).toBeNull();
+        expect(t.state.undo).toBe('INSPECTION');
+      }
+      for (const qty of [-1, 2, 0.5, NaN, Infinity]) {
+        expect(setReworkApproved(t.state, qty)).toBeNull();
+      }
+      expect(replay(t.events, mode)).toEqual(t.state);
+    },
+  );
+
+  it.each(['ENTERED', 'TAPPED'] as const)(
+    'keeps approval on UNDO in %s, allowing correction at zero rework',
+    (mode) => {
+      const t = new Tablet(PO, mode).rework();
+      approve(t, 1).undo();
+      expect(t.state.reworkApproved).toBe(1);
+      expect(t.totals).toMatchObject({
+        inspectionReworkQty: 0,
+        reworkApprovedIssue: { kind: 'ABOVE', max: 0 },
+        totalApprovedQty: null,
+        balanceRework: null,
+      });
+      expect(replay(t.events, mode)).toEqual(t.state);
+      for (const qty of [0, null]) {
+        const corrected = setReworkApproved(t.state, qty);
+        expect(corrected).toEqual({ type: 'SET_REWORK_APPROVED', qty });
+        expect(
+          totals(
+            replay(
+              [...t.events, { ...corrected!, sessionId: 's1', seq: 4, at: t.events[0]!.at }],
+              mode,
+            ),
+          ),
+        ).toMatchObject({
+          reworkApproved: qty,
+          reworkApprovedIssue: null,
+          balanceRework: 0,
+        });
+      }
+      expect(setReworkApproved(t.state, 1)).toBeNull();
+      expect(setReworkApproved(emptySession(mode), 0)).toBeNull();
+      expect(setReworkApproved(emptySession(mode), null)).toBeNull();
+    },
+  );
+
+  it('leaves defect UNDO and all existing counting figures alone', () => {
+    const t = new Tablet().qty(10).rework().defect('D035');
+    const before = t.totals;
+    approve(t, 1);
+    expect(quantities(t.totals)).toEqual(quantities(before));
+    expect([t.totals.defectRate, t.totals.passRate]).toEqual([before.defectRate, before.passRate]);
+    expect(t.state.undo).toBe('DEFECT');
+    t.undo();
+    expect(t.state.reworkApproved).toBe(1);
+    expect(t.state.recorded).toEqual([]);
+    t.undo();
+    expect(t.totals.reworkApprovedIssue).toEqual({ kind: 'ABOVE', max: 0 });
+  });
+
+  it.each([
+    ['ENTERED', null, 100],
+    ['ENTERED', { number: 1, qty: 40 }, 40],
+    ['TAPPED', null, 100],
+    ['TAPPED', { number: 1, qty: 40 }, 40],
+  ] as const)(
+    'reproduces every numeric report figure for %s, partial %j',
+    (mode, partial, offeredLotQty) => {
+      const t = new Tablet({ orderQty: 100, partial }, mode);
+      if (mode === 'ENTERED') t.qty(30);
+      else t.noDefect(18);
+      for (let i = 0; i < 10; i++) t.rework().defect('D035').end();
+      t.bGrade().defect('D082').defect('D082').end().bGrade().defect('D082').end();
+      approve(t, 7);
+      const qtyAGrade = mode === 'ENTERED' ? 17 : 18;
+      expect(t.totals).toEqual({
+        qtyInspection: 30,
+        qtyDefect: 13,
+        qtyBGrade: 3,
+        qtyAGrade,
+        defectRate: 13 / 30,
+        passRate: qtyAGrade / 30,
+        qtyInspectionIssue: null,
+        inspectionReworkQty: 10,
+        reworkApproved: 7,
+        reworkApprovedIssue: null,
+        inspectedQtyInclRework: mode === 'ENTERED' ? 40 : 30,
+        rejectedQty: 30 - qtyAGrade,
+        totalApprovedQty: qtyAGrade + 7,
+        notReworkableRate: 3 / 30,
+        offeredLotQty,
+        balanceQty: offeredLotQty - 30,
+        balanceRework: 3,
+      });
+      approve(t, null);
+      expect(t.totals).toMatchObject({
+        reworkApproved: null,
+        totalApprovedQty: qtyAGrade,
+        balanceRework: 10,
+      });
+    },
+  );
+
+  it('returns null for figures depending on empty or invalid entered Qty Inspection', () => {
+    const states = [
+      new Tablet().rework().defect('D035').end().state,
+      new Tablet().qty(1).rework().defect('D035').defect('D035').end().state,
+      new Tablet().qty(101).state,
+    ];
+    for (const state of states) {
+      expect(totals(state, { orderQty: 100, partial: null })).toMatchObject({
+        inspectedQtyInclRework: null,
+        rejectedQty: null,
+        totalApprovedQty: null,
+        notReworkableRate: null,
+        balanceQty: null,
+        offeredLotQty: 100,
+      });
+    }
+  });
+
+  it('handles no PO and zero tapped quantity without inventing lot figures or dividing by zero', () => {
+    expect(totals(emptySession('TAPPED'))).toMatchObject({
+      inspectedQtyInclRework: 0,
+      rejectedQty: 0,
+      totalApprovedQty: 0,
+      notReworkableRate: null,
+      offeredLotQty: null,
+      balanceQty: null,
+      balanceRework: 0,
+    });
+    expect(totals(new Tablet().qty(10).state)).toMatchObject({
+      offeredLotQty: null,
+      balanceQty: null,
+    });
+  });
+
+  it('returns every ranked defect and preserves the Top 5 prefix', () => {
+    const ids: DefectId[] = ['D001', 'D005', 'D035', 'D049', 'D071', 'D082', 'D020'];
+    const t = new Tablet().rework();
+    ids.forEach((id, i) => {
+      for (let n = 0; n <= i; n++) t.defect(id);
+    });
+    const list = findings(t.state);
+    const all = allDefects(list, mapping);
+    expect(all.map((row) => row.defectId)).toEqual([...ids].reverse());
+    expect(top5(list, mapping)).toEqual(all.slice(0, 5));
+    expect(allDefects([], mapping)).toEqual([]);
+    expect(() => allDefects(list, { defect: () => undefined })).toThrow('Unknown defect');
   });
 });
 

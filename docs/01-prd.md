@@ -312,6 +312,8 @@ EXPORT PDF and EXPORT EXCEL create the selected PO's current session file on the
 | Balance Qty | Offered Lot Qty − QTY INSPECTION |
 | Balance Rework | INSPECTION REWORK QTY − REWORK AND APPROVED |
 
+For open sessions, empty REWORK AND APPROVED counts as 0; while PSI lv.1 QTY INSPECTION is empty or not valid the engine returns `null` for Inspected Qty (Including Rework), Rejected Qty, Total Approved Qty, Not Reworkable Defect % and Balance Qty, and while REWORK AND APPROVED is not valid it returns `null` for Total Approved Qty and Balance Rework; screens and exports display these null figures as `0` / `0,0%` (clarified 31 Oct 2026).
+
 Submissions sealed before ADR-022 show "–" for REWORK AND APPROVED and dependent figures (Total Approved Qty, Balance Rework), with only the photos they have. Stored counts are never recalculated. Export figures use this table, never the template's example numbers.
 
 ### FR-13 Master data on the tablet (M)
@@ -345,7 +347,7 @@ A separate web app at `/admin/` for the administrators, on a laptop or tablet br
 | BR-01 | Counting (ADR-019 for PSI lv.1, ADR-021 for PSI lv.2). **PSI lv.2** (ADR-021): Qty Inspection = NO DEFECT taps + ended REWORK and B-GRADE inspections; Qty A-Grade = NO DEFECT taps; Qty Defect and Qty B-Grade as below (the ADR-008 calculation). **PSI lv.1** (ADR-019): Qty Inspection is entered by the PSI (FR-15). **Qty Defect counts defect findings, not defective pairs**: each defect recorded in a REWORK or B-GRADE inspection adds 1 (one pair with three REWORK findings adds 3). Qty B-Grade = the findings recorded in B-GRADE inspections. Qty A-Grade = Qty Inspection − Qty Defect. REWORK and B-GRADE starts are recorded as pairs; for PSI lv.1 they enter no counting formula. INSPECTION REWORK QTY displays `counts.rework` read-only, decreases on UNDO of the start, and adds no new term to any ADR-019 / ADR-021 counting formula or rate (ADR-022). |
 | BR-02 | Defect Rate = Qty Defect ÷ Qty Inspection. Pass Rate (RFT) = Qty A-Grade ÷ Qty Inspection. Both are percentages with one decimal; for PSI lv.1 they add up to 100%, for PSI lv.2 not necessarily (A-Grade is the NO DEFECT taps, ADR-021). For PSI lv.1, Pass Rate (RFT) is a **findings-based operational metric**, not a pair-based first-time yield (ADR-019 decision 4). While Qty Inspection is empty or not valid (BR-10), both show `0,0%` and Qty A-Grade shows `0` as display fallbacks. |
 | BR-03 | A defect's classification (MINOR, MAJOR, CRITICAL) is fixed by the defect list. The user never sets it. |
-| BR-04 | For PSI lv.2, every defect with a finding must have one photo before SUBMIT PO or either export. PSI lv.1 takes no photos. New payloads carry `photoRule: 'ALL'`; older sealed payloads without it retain the Top 5 rule (ADR-022, doc 04). |
+| BR-04 | For PSI lv.2, every defect with a finding must have one photo before SUBMIT PO or either export. PSI lv.1 takes no photos. Only new PSI lv.2 payloads carry `photoRule: 'ALL'`; PSI lv.1 payloads carry none; older sealed payloads without it retain the Top 5 rule (ADR-022, doc 04). |
 | BR-05 | Only one inspection can be active per PO at a time. REWORK and B-GRADE are disabled while one is active. |
 | BR-06 | A sealed session is written at most once. Its UUID identifies it across retries. |
 | BR-07 | Submissions are immutable. Nobody edits, deletes or voids one through the app; the database rejects every UPDATE and DELETE. |

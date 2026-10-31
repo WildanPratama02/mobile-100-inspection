@@ -60,6 +60,8 @@ export interface SessionState {
   noDefect: number;
   /** Entered by the PSI (FR-15, `ENTERED`); `null` until the first SET_QTY_INSPECTION, always in `TAPPED`. */
   qtyInspection: number | null;
+  /** Entered approval for both PSI levels (FR-16); null is empty, counted as 0 in report figures. */
+  reworkApproved: number | null;
   active: ActiveInspection | null;
   /** Every defect tap that has not been undone, in tap order. */
   recorded: readonly RecordedDefect[];
@@ -73,6 +75,7 @@ export function emptySession(mode: CountingMode): SessionState {
     counts: { rework: 0, bGrade: 0 },
     noDefect: 0,
     qtyInspection: null,
+    reworkApproved: null,
     active: null,
     recorded: [],
     undo: null,
@@ -194,6 +197,25 @@ export function setQtyInspection(
   return { type: 'SET_QTY_INSPECTION', qty };
 }
 
+/** BR-11: a saved approval can become too high when UNDO cancels a REWORK start. */
+export type ReworkApprovedIssue = { kind: 'ABOVE'; max: number };
+
+export function checkReworkApproved(state: SessionState): ReworkApprovedIssue | null {
+  return (state.reworkApproved ?? 0) > state.counts.rework
+    ? { kind: 'ABOVE', max: state.counts.rework }
+    : null;
+}
+
+/** SIMPAN in REWORK AND APPROVED (FR-16). Empty is saved as null; UNDO history is untouched. */
+export function setReworkApproved(
+  state: SessionState,
+  qty: number | null,
+): SessionEventPayload | null {
+  if (qty !== null && (!Number.isInteger(qty) || qty < 0 || qty > state.counts.rework)) return null;
+  if (state.counts.rework === 0 && !checkReworkApproved(state)) return null;
+  return { type: 'SET_REWORK_APPROVED', qty };
+}
+
 // ---- Reducer ----
 
 /**
@@ -247,6 +269,9 @@ export function applyEvent(state: SessionState, event: SessionEvent): SessionSta
       // it from taps, so a value entered before ADR-021 is ignored there.
       if (state.mode !== 'ENTERED' || !Number.isInteger(event.qty) || event.qty < 1) return state;
       return { ...state, qtyInspection: event.qty };
+    case 'SET_REWORK_APPROVED':
+      if (event.qty !== null && (!Number.isInteger(event.qty) || event.qty < 0)) return state;
+      return { ...state, reworkApproved: event.qty };
   }
 }
 
@@ -381,7 +406,7 @@ export function computeTotals(counts: SubmissionCounts, list: readonly Finding[]
 }
 
 /** The session's figures on Home and in the exports (FR-04). */
-export interface SessionTotals {
+interface InspectionTotals {
   /**
    * `ENTERED`: entered by the PSI; `null` until entered (shown "—"). `TAPPED`: NO DEFECT taps + ended REWORK
    * and B-GRADE inspections (a pair counts at END INSPECTION, ADR-021).
@@ -404,8 +429,8 @@ export interface SessionTotals {
   qtyInspectionIssue: QtyInspectionIssue | null;
 }
 
-/** Without `po` the upper limit of BR-10 is not checked. */
-export function totals(state: SessionState, po?: PoQuantities): SessionTotals {
+/** Existing ADR-019 / ADR-021 counting figures, independent of report-only rework approval. */
+function inspectionTotals(state: SessionState, po?: PoQuantities): InspectionTotals {
   const { qtyDefect, qtyBGrade } = defectTotals(findings(state));
   if (state.mode === 'TAPPED') {
     const qtyInspection = tappedPairs(state) - (state.active ? 1 : 0);
@@ -448,6 +473,46 @@ export function totals(state: SessionState, po?: PoQuantities): SessionTotals {
     defectRate: qtyDefect / qtyInspection,
     passRate: qtyAGrade / qtyInspection,
     qtyInspectionIssue: null,
+  };
+}
+
+/** Report figures (ADR-022 decision 7). Null dependent figures display as 0 / 0,0%. */
+export interface SessionTotals extends InspectionTotals {
+  inspectionReworkQty: number;
+  reworkApproved: number | null;
+  reworkApprovedIssue: ReworkApprovedIssue | null;
+  inspectedQtyInclRework: number | null;
+  rejectedQty: number | null;
+  totalApprovedQty: number | null;
+  notReworkableRate: number | null;
+  /** Null without a PO; otherwise partial quantity, or Qty Order. */
+  offeredLotQty: number | null;
+  balanceQty: number | null;
+  balanceRework: number | null;
+}
+
+/** Without `po` the upper limit of BR-10 is not checked and lot-dependent figures are null. */
+export function totals(state: SessionState, po?: PoQuantities): SessionTotals {
+  const base = inspectionTotals(state, po);
+  const qty = state.mode === 'ENTERED' && base.qtyInspectionIssue ? null : base.qtyInspection;
+  const inspectionReworkQty = state.counts.rework;
+  const reworkApprovedIssue = checkReworkApproved(state);
+  const approved = reworkApprovedIssue ? null : (state.reworkApproved ?? 0);
+  const offeredLotQty = po ? (po.partial?.qty ?? po.orderQty) : null;
+  return {
+    ...base,
+    inspectionReworkQty,
+    reworkApproved: state.reworkApproved,
+    reworkApprovedIssue,
+    inspectedQtyInclRework:
+      qty === null ? null : qty + (state.mode === 'ENTERED' ? inspectionReworkQty : 0),
+    rejectedQty: qty === null || base.qtyAGrade === null ? null : qty - base.qtyAGrade,
+    totalApprovedQty:
+      base.qtyAGrade === null || approved === null ? null : base.qtyAGrade + approved,
+    notReworkableRate: qty === null || qty === 0 ? null : base.qtyBGrade / qty,
+    offeredLotQty,
+    balanceQty: offeredLotQty === null || qty === null ? null : offeredLotQty - qty,
+    balanceRework: approved === null ? null : inspectionReworkQty - approved,
   };
 }
 
@@ -501,14 +566,16 @@ export interface DefectLookup {
   defect(id: string): { classification: Classification } | undefined;
 }
 
-/**
- * TOP 5 DEFECT (FR-05, doc 03 §5.5): Home on the tablet, the photo check and Top 5 on the API, from the same
- * findings.
- */
-export function top5(list: readonly Finding[], defects: DefectLookup): RankedDefect[] {
+/** ALL DEFECT (FR-05, ADR-022): the full ranking, keyed by DEFECT_ID. */
+export function allDefects(list: readonly Finding[], defects: DefectLookup): RankedDefect[] {
   return rankDefects(list, (id) => {
     const defect = defects.defect(id);
     if (!defect) throw new Error(`Unknown defect ${id}`);
     return defect.classification;
-  }).slice(0, 5);
+  });
+}
+
+/** The first five ranked defects, retained for legacy photo rules and the admin Top 5. */
+export function top5(list: readonly Finding[], defects: DefectLookup): RankedDefect[] {
+  return allDefects(list, defects).slice(0, 5);
 }
