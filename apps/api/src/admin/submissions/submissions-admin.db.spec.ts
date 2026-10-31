@@ -259,6 +259,48 @@ describe('GET /v1/admin/submissions/{id} (doc 05 §20.3, A1b)', () => {
     expect(cells[EXPORT_COLUMNS.indexOf('qty_a_grade')]).toBe('19');
   });
 
+  it('carries Rework and Approved and the photo rule in detail and CSV; a row sealed before ADR-022 shows them empty', async () => {
+    const id = await insertSubmission(
+      testDb.client,
+      submissionRow({
+        po: 'ADR022-REPORT',
+        inspection_date: '2026-07-02',
+        sealed_at: '2026-07-02T01:00:00Z',
+        qty_rework_approved: 4,
+        photo_rule: 'ALL',
+      }),
+    );
+    const legacy = await insertSubmission(
+      testDb.client,
+      submissionRow({
+        po: 'ADR022-REPORT',
+        inspection_date: '2026-07-02',
+        sealed_at: '2026-07-02T00:00:00Z',
+      }),
+    );
+    for (const [submission, reworkApproved, photoRule] of [
+      [id, 4, 'ALL'],
+      [legacy, null, null],
+    ] as const) {
+      const res = await admin().get(`/v1/admin/submissions/${submission}`);
+      expect(res.status).toBe(200);
+      expectMatchesSpec(res, 'get', '/admin/submissions/{id}');
+      expect(res.body).toMatchObject({ counts: { rework: 10, reworkApproved }, photoRule });
+    }
+    const { lines } = await csv('?po=ADR022-REPORT');
+    const [header, newer, older] = lines.map((l) => l.split(','));
+    expect(header).toEqual([...EXPORT_COLUMNS]);
+    const cell = (cells: string[] | undefined, column: string) =>
+      cells![EXPORT_COLUMNS.indexOf(column)];
+    expect(cell(newer, 'id')).toBe(id);
+    expect(cell(newer, 'qty_rework')).toBe('10');
+    expect(cell(newer, 'qty_rework_approved')).toBe('4');
+    expect(cell(newer, 'photo_rule')).toBe('ALL');
+    expect(cell(older, 'id')).toBe(legacy);
+    expect(cell(older, 'qty_rework_approved')).toBe('');
+    expect(cell(older, 'photo_rule')).toBe('');
+  });
+
   it('returns the submission with its findings in tap order, the Top 5 and the photo ids', async () => {
     const res = await admin().get(`/v1/admin/submissions/${full}`);
     expect(res.status).toBe(200);
@@ -272,7 +314,8 @@ describe('GET /v1/admin/submissions/{id} (doc 05 §20.3, A1b)', () => {
       podd: '2026-01-12',
       crd: null,
       partial: { number: 1, qty: 1200 },
-      counts: { rework: 10, bGrade: 2, noDefect: 18, qtyInspection: 30 },
+      counts: { rework: 10, bGrade: 2, noDefect: 18, qtyInspection: 30, reworkApproved: null },
+      photoRule: null,
       appVersion: '1.0.0',
       audit: [],
     });

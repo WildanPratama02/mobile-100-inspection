@@ -7,6 +7,7 @@ import { countingRule } from '@m100/shared';
 import type {
   DefectId,
   Finding,
+  PhotoRule,
   PoPartial,
   PsiLevel,
   SubmissionCounts,
@@ -43,9 +44,12 @@ export interface NewSubmission {
   /** Article, model, destination, order quantity and dates are copied from `pos` inside the transaction. */
   po: string;
   partial: PoPartial | null;
+  /** `reworkApproved` absent (a payload sealed before ADR-022) is stored as NULL, never as 0. */
   counts: SubmissionCounts;
   /** From `computeTotals`; Qty Inspection ≥ 1, so both rates are numbers. */
   totals: Totals;
+  /** `photo_rule` (ADR-022): `ALL` / `TOP5` for PSI lv.2, `null` for PSI lv.1. */
+  photoRule: PhotoRule | null;
   /** Defect name and severity are copied from `defects` inside the transaction. */
   findings: readonly Finding[];
   photos: readonly StoredPhoto[];
@@ -166,13 +170,15 @@ export class PgSubmissionRepository implements SubmissionRepository {
            username, level, factory, cell,
            po, article, model, destination, order_qty, podd, crd, partial_no, partial_qty,
            qty_rework, qty_bgrade_inspections, qty_no_defect,
-           qty_inspection, qty_a_grade, qty_b_grade, qty_defect, rft, defect_rate, photo_count, counting_rule)
+           qty_inspection, qty_a_grade, qty_b_grade, qty_defect, rft, defect_rate, photo_count, counting_rule,
+           qty_rework_approved, photo_rule)
          SELECT $1::uuid, $2::bytea, $3::timestamptz, $4::date, $5::text, $6::uuid,
                 $7::text, $8::text, $9::text, $10::text,
                 p.po, p.article, p.model, p.destination, p.order_qty, p.podd, p.crd, $12::smallint, $13::integer,
                 $14::integer, $15::integer, $16::integer,
                 $17::integer, $18::integer, $19::integer, $20::integer, $21::numeric, $22::numeric, $23::smallint,
-                $24::text
+                $24::text,
+                $25::integer, $26::text
            FROM pos p WHERE p.po = $11
          ON CONFLICT (id) DO NOTHING
          RETURNING ${STORED}`,
@@ -201,6 +207,8 @@ export class PgSubmissionRepository implements SubmissionRepository {
           defectRate,
           s.photos.length,
           countingRule(s.counts),
+          s.counts.reworkApproved ?? null,
+          s.photoRule,
         ],
       );
       const row = inserted.rows[0];

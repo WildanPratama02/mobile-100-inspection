@@ -3,12 +3,13 @@
  * quantity, the photo rule and the tablet clock. Each returns every failure it finds; nothing here throws.
  */
 import {
+  allDefects,
   type Classification,
   type DefectId,
   missingPhotos,
+  type PhotoRule,
   type SubmissionRequest,
   takesPhotos,
-  top5,
 } from '@m100/shared';
 import type { Failure } from '../errors/validation';
 import { sha256Hex } from './multipart';
@@ -91,6 +92,14 @@ export function checkCounts(
       });
     }
   }
+  // BR-11 (ADR-022): Rework and Approved, when sent, is at most INSPECTION REWORK QTY; ≥ 0 is in the schema.
+  if (counts.reworkApproved !== undefined && counts.reworkApproved > counts.rework) {
+    failures.push({
+      path: 'counts.reworkApproved',
+      code: 'INVALID',
+      message: `REWORK AND APPROVED maksimal ${counts.rework} pasang (INSPECTION REWORK QTY).`,
+    });
+  }
   findings.forEach((f, i) => {
     const started = f.inspectionType === 'REWORK' ? counts.rework : counts.bGrade;
     if (started < 1) {
@@ -135,10 +144,21 @@ export function checkPartial({ partial }: SubmissionRequest, orderQty: number | 
 }
 
 /**
- * Rule 7 (FR-10, BR-04, doc 02 §4.3). PSI lv.1 sends no photo at all. PSI lv.2 sends one photo for each Top 5
- * defect, ranked with the tablet's own `top5`; another photo may belong to a defect that left the Top 5 (AC-10.4),
- * but only to a defect with a finding, and at most one per defect. Entries and parts match one to one; each part
- * is a JPEG with the entry's SHA-256.
+ * The photo rule a submission is checked and stored with (`submissions.photo_rule`, doc 02 §4.1, §4.3): PSI lv.2
+ * `ALL` when the payload carries `photoRule: 'ALL'`, else `TOP5` (payloads sealed by an older app); PSI lv.1
+ * `null`, also when its payload carries the marker, which is then ignored (doc 04 §4.1).
+ */
+export function storedPhotoRule({ user, photoRule }: SubmissionRequest): PhotoRule | null {
+  if (!takesPhotos(user.level)) return null;
+  return photoRule === 'ALL' ? 'ALL' : 'TOP5';
+}
+
+/**
+ * Rule 7 (FR-10, BR-04, ADR-022, doc 02 §4.3). PSI lv.1 sends no photo at all. PSI lv.2 sends one photo for each
+ * required defect, ranked with the tablet's own `allDefects`: every defect with a finding under `ALL`, the Top 5
+ * under `TOP5`, where another photo may belong to a defect that left the Top 5 (AC-10.4). A photo always belongs
+ * to a defect with a finding, at most one per defect. Entries and parts match one to one; each part is a JPEG
+ * with the entry's SHA-256.
  */
 export function checkPhotos(
   request: SubmissionRequest,
@@ -207,8 +227,8 @@ export function checkPhotos(
   }
 
   const known = request.findings.filter((f) => defects.has(f.defectId));
-  const top = top5(known, { defect: (id) => defects.get(id) });
-  for (const row of missingPhotos(top, photographed)) {
+  const ranked = allDefects(known, { defect: (id) => defects.get(id) });
+  for (const row of missingPhotos(ranked, photographed, storedPhotoRule(request) ?? 'TOP5')) {
     failures.push({
       path: 'photos',
       code: 'PHOTO_MISSING',

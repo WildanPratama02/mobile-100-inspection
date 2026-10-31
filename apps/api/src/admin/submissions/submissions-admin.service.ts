@@ -14,6 +14,7 @@ import {
   type Finding,
   formatDisplayNo,
   type InspectionType,
+  type PhotoRule,
   type PsiLevel,
   rankDefects,
   toWibIso,
@@ -127,7 +128,16 @@ export interface AdminSubmissionDetail extends AdminSubmissionSummary {
   podd: string | null;
   crd: string | null;
   partial: { number: number; qty: number } | null;
-  counts: { rework: number; bGrade: number; noDefect: number | null; qtyInspection: number };
+  /** `reworkApproved` is `null` for rows sealed before ADR-022; the admin app shows "–". */
+  counts: {
+    rework: number;
+    bGrade: number;
+    noDefect: number | null;
+    qtyInspection: number;
+    reworkApproved: number | null;
+  };
+  /** Stored `photo_rule`: `null` for PSI lv.1 and PSI lv.2 rows sealed before ADR-022 (Top 5 rule). */
+  photoRule: PhotoRule | null;
   findings: AdminFinding[];
   top5: AdminTop5Place[];
   photos: { id: number; defectId: string }[];
@@ -205,7 +215,9 @@ export class SubmissionsAdminService {
         bGrade: row.qtyBGradeInspections,
         noDefect: row.qtyNoDefect,
         qtyInspection: row.qtyInspection,
+        reworkApproved: row.qtyReworkApproved,
       },
+      photoRule: row.photoRule,
       findings: findings.map((f) => ({
         inspectionType: f.inspectionType,
         areaId: f.areaId,

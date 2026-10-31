@@ -299,11 +299,11 @@ Bring every spec in line with ADR-022 before code; no code in this task.
 
 ### T7.3 Database and API
 Migration `0007`: `submissions.qty_rework_approved` (NULL allowed, CHECK 0 ≤ value ≤ `qty_rework`), `submissions.photo_rule` (`'TOP5'` / `'ALL'` / NULL), no backfill: existing rows keep NULL (Top 5 rule for PSI lv.2); the immutability trigger and grants unchanged. `POST /submissions` reads `reworkApproved` and `photoRule`; multipart body limit 100 MB.
-- [ ] `pnpm db:migrate` applies `0007` once; a second run applies nothing; an UPDATE of the new columns is refused like every submission column.
-- [ ] A payload with `photoRule: 'ALL'` and a defect without photo → `422 PHOTO_MISSING` for that defect; without the marker (older app) only the Top 5 need a photo and the payload is accepted (`201`).
-- [ ] `reworkApproved` above `counts.rework` → `422` on `counts.reworkApproved`; the database CHECK refuses it too.
-- [ ] A submission with 98 photos of 1 MB is accepted; 100 MB + 1 byte → `413 PAYLOAD_TOO_LARGE`.
-- [ ] Admin detail and CSV carry Rework and Approved and the photo rule; old rows show them empty.
+- [x] `pnpm db:migrate` applies `0007` once; a second run applies nothing; an UPDATE of the new columns is refused like every submission column.
+- [x] A payload with `photoRule: 'ALL'` and a defect without photo → `422 PHOTO_MISSING` for that defect; without the marker (older app) only the Top 5 need a photo and the payload is accepted (`201`).
+- [x] `reworkApproved` above `counts.rework` → `422` on `counts.reworkApproved`; the database CHECK refuses it too.
+- [x] A submission with 98 photos of 1 MB is accepted; 100 MB + 1 byte → `413 PAYLOAD_TOO_LARGE`.
+- [x] Admin detail and CSV carry Rework and Approved and the photo rule; old rows show them empty.
 
 ### T7.4 Tablet Home and name (web)
 - [ ] `index.html` title, manifest `name` "PSI Inspection Report" / `short_name` "PSI Inspection", login brand.

@@ -37,6 +37,7 @@ function newSubmission(overrides: Partial<NewSubmission> = {}): NewSubmission {
     partial: { number: 1, qty: 1200 },
     counts,
     totals: computeTotals(counts, findings),
+    photoRule: overrides.level === 'PSI lv.1' ? null : 'TOP5',
     findings,
     photos: TOP5.map((defectId) => ({
       defectId,
@@ -202,6 +203,54 @@ describe('PgSubmissionRepository.write (doc 02 §6.1 step 4)', () => {
       defectRate: 0,
     });
     expect(await rowCounts(s.id)).toEqual({ submissions: 1, findings: 0, photos: 0 });
+  });
+
+  it('stores Rework and Approved and the photo rule in the same row (ADR-022)', async () => {
+    const marked = newSubmission({
+      counts: { rework: 10, bGrade: 2, noDefect: 18, reworkApproved: 4 },
+      photoRule: 'ALL',
+    });
+    const legacy = newSubmission();
+    const manual = newSubmission({
+      level: 'PSI lv.1',
+      counts: { rework: 10, bGrade: 2, qtyInspection: 30, reworkApproved: 0 },
+      photos: [],
+    });
+    for (const s of [marked, legacy, manual]) expect((await repo.write(s)).written).toBe(true);
+    const { rows } = await db.client.query<{ id: string }>(
+      `SELECT id, qty_rework_approved, photo_rule FROM submissions WHERE id = ANY($1::uuid[])`,
+      [[marked.id, legacy.id, manual.id]],
+    );
+    expect(new Map(rows.map((r) => [r.id, r]))).toEqual(
+      new Map([
+        [marked.id, { id: marked.id, qty_rework_approved: 4, photo_rule: 'ALL' }],
+        // Absent reworkApproved (a payload sealed before ADR-022) is NULL, never 0.
+        [legacy.id, { id: legacy.id, qty_rework_approved: null, photo_rule: 'TOP5' }],
+        [manual.id, { id: manual.id, qty_rework_approved: 0, photo_rule: null }],
+      ]),
+    );
+  });
+
+  it('is refused by the database CHECKs for Rework and Approved above rework and a PSI lv.1 photo rule', async () => {
+    const above = newSubmission({
+      counts: { rework: 10, bGrade: 2, noDefect: 18, reworkApproved: 11 },
+    });
+    await expect(repo.write(above)).rejects.toMatchObject({
+      code: '23514',
+      constraint: 'submissions_qty_rework_approved_check',
+    });
+    expect(await rowCounts(above.id)).toEqual({ submissions: 0, findings: 0, photos: 0 });
+    const lv1 = newSubmission({
+      level: 'PSI lv.1',
+      counts: { rework: 10, bGrade: 2, qtyInspection: 30 },
+      photos: [],
+      photoRule: 'ALL',
+    });
+    await expect(repo.write(lv1)).rejects.toMatchObject({
+      code: '23514',
+      constraint: 'submissions_photo_rule_check',
+    });
+    expect(await rowCounts(lv1.id)).toEqual({ submissions: 0, findings: 0, photos: 0 });
   });
 
   it('refuses a submission with Qty Inspection 0 and writes nothing', async () => {
