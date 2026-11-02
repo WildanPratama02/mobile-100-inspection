@@ -36,6 +36,11 @@ export interface LoadRun {
   tablets(count: number): Promise<Tablet[]>;
   /** `GET /v1/system/status` with a registered tablet's key. */
   submitEnabled(): Promise<boolean | null>;
+  /**
+   * The last answer `submitEnabled` got (status and the whole `SystemStatus` body: `checks[]` with messages,
+   * `checkedAt`) or its error, as one line for a timeout message.
+   */
+  lastStatus(): string;
   close(): Promise<void>;
 }
 
@@ -60,6 +65,7 @@ export async function startLoadRun(): Promise<LoadRun> {
   }
   const started = api;
   const probe = await registerDevice(db.client, 'Load probe');
+  let last = 'no answer yet';
 
   const run: LoadRun = {
     db,
@@ -87,16 +93,21 @@ export async function startLoadRun(): Promise<LoadRun> {
       return tablets;
     },
     async submitEnabled() {
+      const at = new Date().toISOString();
       try {
         const response = await fetch(`${started.baseUrl}/v1/system/status`, {
           headers: { 'X-Device-Key': probe.key },
         });
+        const text = await response.text();
+        last = `at ${at}: ${String(response.status)} ${text}`;
         if (!response.ok) return null;
-        return ((await response.json()) as { submitEnabled: boolean }).submitEnabled;
-      } catch {
+        return (JSON.parse(text) as { submitEnabled: boolean }).submitEnabled;
+      } catch (error) {
+        last = `at ${at}: no answer (${error instanceof Error ? error.message : String(error)})`;
         return null;
       }
     },
+    lastStatus: () => last,
     async close() {
       await db.allowConnections(true).catch(() => undefined);
       await started.stop();
@@ -106,17 +117,24 @@ export async function startLoadRun(): Promise<LoadRun> {
   return run;
 }
 
-/** Polls `until` every `everyMs` and resolves to the time it first held (ms since the epoch), or throws. */
+/**
+ * Polls `until` every `everyMs` and resolves to the time it first held (ms since the epoch), or throws; the error
+ * ends with `detail()` when given (e.g. the last `/v1/system/status` body).
+ */
 export async function waitFor(
   until: () => Promise<boolean>,
   timeoutMs: number,
   what: string,
   everyMs = 1_000,
+  detail?: () => string,
 ): Promise<number> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     if (await until()) return Date.now();
-    if (Date.now() > deadline) throw new Error(`Timed out after ${String(timeoutMs)} ms: ${what}`);
+    if (Date.now() > deadline) {
+      const tail = detail ? `; last: ${detail()}` : '';
+      throw new Error(`Timed out after ${String(timeoutMs)} ms: ${what}${tail}`);
+    }
     await new Promise((r) => setTimeout(r, everyMs));
   }
 }

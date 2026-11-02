@@ -4,6 +4,7 @@
  * process: all at once, and spread over `LOAD_WINDOW_SECONDS` (300). No loss, no duplicate; the p95 per submission
  * is printed and written as JSON. Runs only with `pnpm test:load`.
  */
+import { startResourceSampler } from '../testing/load-monitor';
 import { publishReport, summarise } from '../testing/load-report';
 import {
   checkStored,
@@ -24,7 +25,13 @@ let run: LoadRun;
 
 beforeAll(async () => {
   run = await startLoadRun();
-  await waitFor(async () => (await run.submitEnabled()) === true, 60_000, 'SUBMIT_ENABLED');
+  await waitFor(
+    async () => (await run.submitEnabled()) === true,
+    60_000,
+    'SUBMIT_ENABLED',
+    1_000,
+    () => run.lastStatus(),
+  );
 }, 120_000);
 
 afterAll(async () => {
@@ -36,6 +43,8 @@ async function scenario(name: string, startOffset: () => number): Promise<void> 
   const sealed = tablets.map(() => psiSubmission(PHOTO_BYTES, PHOTO_COUNT));
   const attempts: Attempt[] = [];
   const linesBefore = run.api.logLines().length;
+  // Memory and connections every 10 s, into the JSON report.
+  const sampler = startResourceSampler({ apiPid: run.api.pid, client: run.db.client });
   const t0 = Date.now();
 
   const items = (
@@ -69,6 +78,7 @@ async function scenario(name: string, startOffset: () => number): Promise<void> 
         linesBefore,
         attempts.filter((a) => a.status === 201).length,
       ),
+      resources: await sampler.stop(),
     }),
   );
 

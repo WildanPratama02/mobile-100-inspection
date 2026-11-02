@@ -206,10 +206,11 @@ function jpeg(bytes: number): Buffer {
 }
 
 /**
- * A PSI lv.2 submission of `TEST BUDI` on `F 1`/`F1-1` and PO `CX-0902368685` (the fixture master data) with
- * `photoCount` mapped defects, each photographed once (`photoCount` findings = `photoCount` photos, so the stored
- * Top 5 rule passes whatever the count is), and `photoCount` photos of `photoBytes` each. The load tests default
- * to 15 (`LOAD_PHOTOS`, T7.8); five is the old T3.7 shape.
+ * A PSI lv.2 submission of `TEST BUDI` on `F 1`/`F1-1` and PO `CX-0902368685` (the fixture master data) as a new
+ * PSI lv.2 tablet seals it (ADR-022, `buildSubmission` in `@m100/shared`): `photoRule: 'ALL'`,
+ * `counts.reworkApproved`, and `photoCount` mapped defects, each with one finding and one photo of `photoBytes`
+ * (every defect with a finding is photographed, so the ALL rule passes whatever the count is). The load tests
+ * default to 15 (`LOAD_PHOTOS`, T7.8); five is the old T3.7 shape.
  */
 export function psiSubmission(photoBytes: number, photoCount = 5): SealedSubmission {
   const submissionUuid = randomUUID();
@@ -246,8 +247,10 @@ export function psiSubmission(photoBytes: number, photoCount = 5): SealedSubmiss
     // the findings' quantities.
     po: 'CX-0902368685',
     partial: null,
-    // 15 defects: 12 during REWORK, 3 during B-GRADE (one pair); 30 inspected.
-    counts: { rework: 10, bGrade: 1, noDefect: 19 },
+    // `photoCount` findings of qty 1: the third (i = 2) during B-GRADE, the rest during REWORK. 30 pairs tapped:
+    // 10 REWORK (4 of them approved; BR-11 allows 0 to 10), 1 B-GRADE, 19 NO DEFECT.
+    counts: { rework: 10, bGrade: 1, reworkApproved: 4, noDefect: 19 },
+    photoRule: 'ALL',
     findings,
     photos: photos.map((p) => ({ defectId: p.defectId, part: p.part, sha256: sha256Hex(p.jpeg) })),
   };

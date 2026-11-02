@@ -110,6 +110,47 @@ describe('ReadinessService scheduling (doc 02 §10)', () => {
     readiness.onApplicationShutdown();
   });
 
+  it('failures reported more often than every 30 s never postpone the next run (doc 02 §10)', async () => {
+    dbUp = false;
+    const readiness = service();
+    readiness.onApplicationBootstrap();
+    await settle();
+    expect(runs).toBe(1);
+
+    // A failure every 10 s (tablets retrying during an outage): the runs still come every 30 s.
+    for (let second = 10; second <= 90; second += 10) {
+      jest.advanceTimersByTime(10_000);
+      await settle();
+      readiness.reportFailure('DB', new Error('connect ECONNREFUSED 127.0.0.1:5432'));
+      expect(runs).toBe(1 + Math.floor(second / 30));
+    }
+
+    // The database is back while failures still arrive: the next due run re-enables Submit PO.
+    dbUp = true;
+    readiness.reportFailure('DB', new Error('sorry, too many clients already'));
+    jest.advanceTimersByTime(RETRY_MS);
+    await settle();
+    expect(runs).toBe(5);
+    expect(readiness.current().submitEnabled).toBe(true);
+    readiness.onApplicationShutdown();
+  });
+
+  it('repeated failures while healthy bring the next run to 30 s after the first one, not later', async () => {
+    const readiness = service();
+    await readiness.check();
+    readiness.reportFailure('DB', new Error('Connection terminated unexpectedly'));
+    jest.advanceTimersByTime(20_000);
+    readiness.reportFailure('DB', new Error('Connection terminated unexpectedly'));
+    jest.advanceTimersByTime(RETRY_MS - 20_000 - 1);
+    await settle();
+    expect(runs).toBe(1);
+    jest.advanceTimersByTime(1);
+    await settle();
+    expect(runs).toBe(2);
+    expect(readiness.current().submitEnabled).toBe(true);
+    readiness.onApplicationShutdown();
+  });
+
   it('shares one run between concurrent callers and schedules nothing after shutdown', async () => {
     const readiness = service();
     const [a, b] = await Promise.all([readiness.check(), readiness.check()]);
