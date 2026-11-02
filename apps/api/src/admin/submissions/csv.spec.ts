@@ -41,6 +41,8 @@ const ROW: SubmissionRow = {
   defectRate: '0.36667',
   photoCount: 2,
   countingRule: 'ADR-008',
+  qtyReworkApproved: 4,
+  photoRule: 'ALL',
 };
 
 describe('CSV fields (RFC 4180)', () => {
@@ -98,6 +100,25 @@ describe('exportCells', () => {
       crd: null,
       counting_rule: 'ADR-008',
     });
+  });
+
+  it('carries Rework and Approved and the photo rule in the docs/04-openapi.yaml places (ADR-022)', () => {
+    const at = (column: string) => EXPORT_COLUMNS.indexOf(column);
+    expect(at('qty_rework_approved')).toBe(at('qty_rework') + 1);
+    expect(at('qty_bgrade_inspections')).toBe(at('qty_rework_approved') + 1);
+    expect(at('photo_rule')).toBe(at('counting_rule') + 1);
+    expect(at('top1_defect_id')).toBe(at('photo_rule') + 1);
+    expect(byColumn).toMatchObject({ qty_rework: 10, qty_rework_approved: 4, photo_rule: 'ALL' });
+  });
+
+  it('leaves both empty for a row sealed before ADR-022', () => {
+    const legacy = exportCells(
+      { ...ROW, model: 'RUNNER X', qtyReworkApproved: null, photoRule: null },
+      [],
+    );
+    const line = csvLine(legacy).split(',');
+    expect(line[EXPORT_COLUMNS.indexOf('qty_rework_approved')]).toBe('');
+    expect(line[EXPORT_COLUMNS.indexOf('photo_rule')]).toBe('');
   });
 
   it('keeps text exactly, non-breaking spaces included, and quotes it in the line', () => {

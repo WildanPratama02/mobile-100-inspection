@@ -1,4 +1,4 @@
-// Photos on Top 5 defects: camera, resize, viewer, GANTI FOTO, HAPUS (T1.5: FR-10, AC-10.1 … AC-10.6).
+// Photos on ALL DEFECT rows: camera, resize, viewer, GANTI FOTO, HAPUS (T1.5: FR-10, AC-10.1 … AC-10.6).
 import { type Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { undersized } from './tap';
@@ -52,12 +52,12 @@ async function homeWithDefect(page: Page, name: string) {
     .getByRole('navigation', { name: 'Navigasi input defect' })
     .getByRole('button', { name: 'HOME' })
     .click();
-  await expect(page.getByRole('region', { name: 'TOP 5 DEFECT' })).toContainText(DEFECT);
+  await expect(page.getByRole('region', { name: 'ALL DEFECT' })).toContainText(DEFECT);
 }
 
 /**
  * A camera-sized JPEG made in the page. A plain gradient keeps the suite light; the quality steps for a
- * photo that encodes above 1 MB are unit-tested (`encodeWithin`).
+ * photo that encodes above 500 KB are unit-tested (`encodeWithin`).
  */
 async function cameraJpeg(page: Page, width: number, height: number): Promise<Buffer> {
   const base64 = await page.evaluate(
@@ -129,18 +129,19 @@ function storedPhotos(page: Page): Promise<StoredPhoto[]> {
   });
 }
 
-const top5 = (page: Page) => page.getByRole('region', { name: 'TOP 5 DEFECT' });
-const required = (page: Page) => top5(page).getByRole('button', { name: 'Foto wajib' });
-const thumbnail = (page: Page) => top5(page).getByRole('button', { name: `Lihat foto ${DEFECT}` });
+const allDefect = (page: Page) => page.getByRole('region', { name: 'ALL DEFECT' });
+const required = (page: Page) => allDefect(page).getByRole('button', { name: 'Foto wajib' });
+const thumbnail = (page: Page) =>
+  allDefect(page).getByRole('button', { name: `Lihat foto ${DEFECT}` });
 
-test('PSI lv.2 takes, keeps, replaces and removes a Top 5 photo (AC-10.1 … AC-10.5)', async ({
+test('PSI lv.2 takes, keeps, replaces and removes a defect photo (AC-10.1 … AC-10.5)', async ({
   page,
 }) => {
   await homeWithDefect(page, 'DEWI CONTOH');
-  await expect(top5(page).getByText('Foto wajib', { exact: true })).toBeVisible();
+  await expect(allDefect(page).getByText('Foto wajib', { exact: true })).toBeVisible();
   await expect(page.getByText('1 foto belum ada.')).toBeVisible();
 
-  // S7a: a 3000 × 2000 camera photo is stored at 960 px, as JPEG of at most 1 MB (AC-10.1).
+  // S7a: a 3000 × 2000 camera photo is stored at 960 px, as JPEG of at most 500 KB (AC-10.1, ADR-022).
   const landscape = await cameraJpeg(page, 3000, 2000);
   await shoot(page, () => required(page).click(), landscape);
   await expect(page.getByText('Foto tersimpan')).toBeVisible();
@@ -155,7 +156,7 @@ test('PSI lv.2 takes, keeps, replaces and removes a Top 5 photo (AC-10.1 … AC-
     width: 960,
     height: 640,
   });
-  expect(first!.size).toBeLessThanOrEqual(1_000_000);
+  expect(first!.size).toBeLessThanOrEqual(500_000);
   expect(first!.sha256).toMatch(/^[0-9a-f]{64}$/);
 
   // AC-10.2: the photo stays with the session across a reload.
@@ -197,8 +198,8 @@ test('a cancelled camera changes nothing', async ({ page }) => {
 
 test('PSI lv.1 has no photo control and no camera (AC-10.6)', async ({ page }) => {
   await homeWithDefect(page, 'ANDI CONTOH');
-  await expect(top5(page).locator('.m100-t5--nophoto')).toHaveCount(1);
-  await expect(top5(page).getByRole('button')).toHaveCount(0);
+  await expect(allDefect(page).locator('.m100-t5--nophoto')).toHaveCount(1);
+  await expect(allDefect(page).getByRole('button')).toHaveCount(0);
   await expect(page.getByText('Foto wajib')).toHaveCount(0);
   await expect(page.locator('input[type="file"]')).toHaveCount(0);
 });

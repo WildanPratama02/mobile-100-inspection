@@ -1,6 +1,7 @@
 /**
  * EXPORT PDF (FR-12, doc 05 §8.5): an A4 report with the company mark and the title on every page header
- * (doc 05 §4a), then PO info, results, TOP 5 DEFECT and the photos (AC-12.2). No full defect list (ADR-021).
+ * (doc 05 §4a), then PO info and the inspection date, results, every defect finding and the photos
+ * (AC-12.1, AC-12.2).
  *
  * The page is printed, so it is drawn in black and greys only; the screen's colour tokens don't apply.
  */
@@ -18,11 +19,20 @@ const HEADER_BOTTOM = 22;
 const CONTENT_TOP = 28;
 const FOOTER_Y = PAGE_H - 8;
 
-/** Photos sit three in a row, each fitted in a 58 × 43 mm box with a two-line caption. */
+/**
+ * Photos sit three in a row, each fitted in a 58 × 43 mm box. The caption below holds the full defect name as in
+ * the mapping, on as many lines as it needs; a row is as high as its longest caption (at least two lines).
+ */
 const PHOTO_W = 58;
 const PHOTO_H = 43;
 const PHOTO_GAP = 4;
-const CAPTION_H = 9;
+const PER_ROW = 3;
+const CAPTION_PT = 7.5;
+/** The first caption baseline below the photo box, and the space kept under the last line. */
+const CAPTION_TOP = 3.5;
+const CAPTION_BOTTOM = 2.5;
+/** jsPDF's line height for a text array: the font size × its line height factor (1.15), in mm. */
+const CAPTION_LINE = (CAPTION_PT * 1.15 * 25.4) / 72;
 
 const INK = 0;
 const MUTED = 90;
@@ -94,7 +104,7 @@ export function toPdf(report: ExportReport, assets: PdfAssets): Blob {
 
   header();
 
-  // PO info, inspector, Factory/Cell and export time, two pairs to a row.
+  // PO info, inspector, Factory/Cell and the inspection date, two pairs to a row (AC-12.3).
   const info: RowInput[] = [];
   for (let i = 0; i < report.info.length; i += 2) {
     const [a, b] = [report.info[i]!, report.info[i + 1]];
@@ -106,11 +116,14 @@ export function toPdf(report: ExportReport, assets: PdfAssets): Blob {
     body: info,
     styles: { fontSize: 9, cellPadding: 1.2, textColor: INK },
     columnStyles: {
-      0: { fontStyle: 'bold', cellWidth: 30 },
-      2: { fontStyle: 'bold', cellWidth: 30 },
+      // Wide enough for the longest label, `DATE INSPECTION`, to stay on one line in either label column
+      // (it is the third pair without a partial row and the fourth with one).
+      0: { fontStyle: 'bold', cellWidth: 36 },
+      2: { fontStyle: 'bold', cellWidth: 34 },
     },
   });
 
+  // Nine figures, including both rework values (ADR-022 decision 7).
   table({
     startY: tableEnd(doc) + 4,
     head: [report.results.map((r) => r.label)],
@@ -121,55 +134,74 @@ export function toPdf(report: ExportReport, assets: PdfAssets): Blob {
     headStyles: { halign: 'center' },
   });
 
+  // Every defect in the findings, not just the first five (ADR-022).
   table({
-    startY: title('TOP 5 DEFECT', tableEnd(doc) + 8),
-    head: [['No', 'Defect', 'Klasifikasi', 'Area', 'Qty']],
+    startY: title('DEFECT FINDINGS', tableEnd(doc) + 8),
+    head: [['No', 'Defect', 'Severity', 'Area', 'Qty', '% of QTY INSPECTION']],
     body:
-      report.top5.length === 0
-        ? [[{ content: NO_DEFECT_TEXT, colSpan: 5 }]]
-        : report.top5.map((t) => [t.no, t.name, t.classification, t.areas, formatCount(t.qty)]),
+      report.defects.length === 0
+        ? [[{ content: NO_DEFECT_TEXT, colSpan: 6 }]]
+        : report.defects.map((d) => [
+            d.no,
+            d.name,
+            d.classification,
+            d.areas,
+            formatCount(d.qty),
+            formatRate(d.rate),
+          ]),
     columnStyles: {
       0: { cellWidth: 9, halign: 'center' },
       2: { cellWidth: 20 },
-      4: { cellWidth: 12, halign: 'right' },
+      4: { cellWidth: 14, halign: 'right' },
+      5: { cellWidth: 32, halign: 'right' },
     },
   });
 
   let y = tableEnd(doc) + 8;
   if (report.photos.length > 0) {
-    const rowH = PHOTO_H + CAPTION_H + PHOTO_GAP;
-    if (y + 4 + rowH > FOOTER_Y - 6) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(CAPTION_PT);
+    // Every listed defect has a number, so a photo always names its row (AC-10.4); the name is never cut.
+    const captioned = report.photos.map((photo) => ({
+      photo,
+      lines: doc.splitTextToSize(`${photo.no}. ${photo.name}`, PHOTO_W) as string[],
+    }));
+    const rows: (typeof captioned)[] = [];
+    for (let i = 0; i < captioned.length; i += PER_ROW) rows.push(captioned.slice(i, i + PER_ROW));
+    const heightOf = (row: typeof captioned) => {
+      const lines = Math.max(2, ...row.map((c) => c.lines.length));
+      return PHOTO_H + CAPTION_TOP + (lines - 1) * CAPTION_LINE + CAPTION_BOTTOM + PHOTO_GAP;
+    };
+
+    if (y + 4 + heightOf(rows[0]!) > FOOTER_Y - 6) {
       doc.addPage();
       header();
       y = CONTENT_TOP + 4;
     }
     y = title('FOTO DEFECT', y) + 2;
-    let x = MARGIN;
-    for (const photo of report.photos) {
-      if (x + PHOTO_W > PAGE_W - MARGIN + 0.5) {
-        x = MARGIN;
-        y += rowH;
-      }
+    for (const row of rows) {
+      const rowH = heightOf(row);
       if (y + rowH > FOOTER_Y - 6) {
         doc.addPage();
         header();
-        x = MARGIN;
         y = CONTENT_TOP;
       }
-      const bytes = assets.photos.get(photo.defectId);
-      if (bytes) {
-        const size = fit(doc, bytes, PHOTO_W, PHOTO_H);
-        doc.addImage(bytes, 'JPEG', x + (PHOTO_W - size.w) / 2, y, size.w, size.h);
+      let x = MARGIN;
+      for (const { photo, lines } of row) {
+        const bytes = assets.photos.get(photo.defectId);
+        if (bytes) {
+          const size = fit(doc, bytes, PHOTO_W, PHOTO_H);
+          doc.addImage(bytes, 'JPEG', x + (PHOTO_W - size.w) / 2, y, size.w, size.h);
+        }
+        doc.setDrawColor(LINE);
+        doc.rect(x, y, PHOTO_W, PHOTO_H);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(CAPTION_PT);
+        doc.setTextColor(INK);
+        doc.text(lines, x, y + PHOTO_H + CAPTION_TOP);
+        x += PHOTO_W + PHOTO_GAP;
       }
-      doc.setDrawColor(LINE);
-      doc.rect(x, y, PHOTO_W, PHOTO_H);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(INK);
-      const caption = photo.top5No === null ? photo.name : `${photo.top5No}. ${photo.name}`;
-      const lines = doc.splitTextToSize(caption, PHOTO_W) as string[];
-      doc.text(lines.slice(0, 2), x, y + PHOTO_H + 3.5);
-      x += PHOTO_W + PHOTO_GAP;
+      y += rowH;
     }
   }
 

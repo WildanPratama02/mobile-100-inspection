@@ -51,7 +51,7 @@ for (const { layout, width, height } of LAYOUTS) {
 
     // ---- Home (doc 05 §8.1) ----
     const poList = await box(page.getByRole('region', { name: 'PO LIST' }));
-    const top5 = await box(page.getByRole('region', { name: 'TOP 5 DEFECT' }));
+    const defects = await box(page.getByRole('region', { name: 'ALL DEFECT' }));
     const results = await box(page.getByRole('region', { name: 'Hasil' }));
     const add = await box(page.getByRole('button', { name: 'ADD DEFECT' }));
     const submit = await box(page.getByRole('button', { name: 'SUBMIT PO' }));
@@ -63,31 +63,31 @@ for (const { layout, width, height } of LAYOUTS) {
     const logo = page.locator('.home__header img');
 
     if (layout === 'Stacked') {
-      // Info strip, PO list as a horizontal strip, results, Top 5; ADD DEFECT and SUBMIT PO in a bar at the
+      // Info strip, PO list as a horizontal strip, results, ALL DEFECT; ADD DEFECT and SUBMIT PO in a bar at the
       // screen edge, the exports above the results.
       expect(po2.left, 'POs side by side').toBeGreaterThan(po1.right - 1);
       expect(Math.abs(po2.top - po1.top)).toBeLessThan(1);
       expect(poList.width).toBeGreaterThan(width * 0.9);
       expect(results.top).toBeGreaterThanOrEqual(poList.bottom - 1);
-      expect(top5.top).toBeGreaterThanOrEqual(results.bottom - 1);
+      expect(defects.top).toBeGreaterThanOrEqual(results.bottom - 1);
       expect(exportPdf.bottom).toBeLessThanOrEqual(results.top + 1);
       expect(Math.abs(add.top - submit.top)).toBeLessThan(1);
       expect(add.bottom).toBeGreaterThan(viewportHeight - 80);
       expect(add.bottom).toBeLessThanOrEqual(viewportHeight + 1);
     } else {
-      // PO column on the left, Top 5 in the middle, results on the right, the action row along the bottom.
+      // PO column on the left, ALL DEFECT in the middle, results on the right, the action row along the bottom.
       expect(po2.top, 'POs one under the other').toBeGreaterThan(po1.bottom - 1);
-      expect(top5.left).toBeGreaterThanOrEqual(poList.right - 1);
-      expect(results.left).toBeGreaterThanOrEqual(top5.right - 1);
+      expect(defects.left).toBeGreaterThanOrEqual(poList.right - 1);
+      expect(results.left).toBeGreaterThanOrEqual(defects.right - 1);
       expect(poList.width / width).toBeGreaterThan(0.15);
       expect(poList.width / width).toBeLessThan(0.3);
       for (const button of [add, exportPdf, submit]) {
-        expect(button.top).toBeGreaterThanOrEqual(Math.max(top5.bottom, results.bottom) - 1);
+        expect(button.top).toBeGreaterThanOrEqual(Math.max(defects.bottom, results.bottom) - 1);
         expect(Math.abs(button.top - add.top)).toBeLessThan(1);
       }
-      // ADD DEFECT is the wide one: under the PO column and into the Top 5 column.
+      // ADD DEFECT is the wide one: under the PO column and into the ALL DEFECT column.
       expect(Math.abs(add.left - poList.left)).toBeLessThan(1);
-      expect(add.right).toBeGreaterThan(top5.left);
+      expect(add.right).toBeGreaterThan(defects.left);
       expect(add.width).toBeGreaterThan(exportPdf.width);
       expect(await pageScrolls(page), 'Home fits the screen').toBe(false);
     }

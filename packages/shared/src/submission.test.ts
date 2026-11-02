@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  allDefects,
   findings,
   replay,
   top5,
@@ -51,7 +52,7 @@ function check(state: SessionState, level: PsiLevel, photographed: DefectId[] = 
     po: { partial: null, orderQty: 10002 },
     state,
     level,
-    top: top5(findings(state), mapping),
+    top: allDefects(findings(state), mapping),
     photographed: new Set(photographed),
   });
 }
@@ -209,7 +210,8 @@ describe('buildSubmission (doc 04 §4.1)', () => {
       cell: 'F3-10',
       po: '0903359388',
       partial: { number: 1, qty: 1200 },
-      counts: { rework: 1, bGrade: 1, qtyInspection: 30 },
+      counts: { rework: 1, bGrade: 1, qtyInspection: 30, reworkApproved: 0 },
+      photoRule: 'ALL',
       findings: [
         {
           inspectionType: 'REWORK',
@@ -289,8 +291,91 @@ describe('PSI lv.2 with tapped counts (ADR-021)', () => {
 
   it('sends the NO DEFECT taps, not a Qty Inspection (ADR-008 calculation on the API)', () => {
     const state = tapped(NO_DEFECT, NO_DEFECT, REWORK, defect('D035'), END, BGRADE, END, QTY(40));
-    expect(buildSubmission(input(state)).counts).toEqual({ rework: 1, bGrade: 1, noDefect: 2 });
+    expect(buildSubmission(input(state)).counts).toEqual({
+      rework: 1,
+      bGrade: 1,
+      noDefect: 2,
+      reworkApproved: 0,
+    });
   });
+});
+
+describe('ADR-022 submission rules', () => {
+  const approval = (qty: number | null): SessionEventPayload => ({
+    type: 'SET_REWORK_APPROVED',
+    qty,
+  });
+
+  it.each(['PSI lv.1', 'PSI lv.2'] as const)(
+    'blocks approval above rework after UNDO for %s',
+    (level) => {
+      const taps = [REWORK, defect('D035'), END, REWORK, approval(2), UNDO];
+      const state = level === 'PSI lv.1' ? session(QTY(10), ...taps) : tapped(...taps);
+      expect(check(state, level)).toEqual({ kind: 'REWORK_APPROVED_ABOVE', max: 1 });
+      expect(state.reworkApproved).toBe(2);
+      expect(check({ ...state, reworkApproved: 1 }, level, ['D035'])).toBeNull();
+    },
+  );
+
+  it('checks BR-10 before BR-11 and BR-11 before photos', () => {
+    const taps = [REWORK, defect('D035'), END, REWORK, approval(2), UNDO];
+    expect(check(session(...taps), 'PSI lv.1')).toEqual({ kind: 'EMPTY' });
+    expect(check(session(QTY(10), ...taps), 'PSI lv.2')).toEqual({
+      kind: 'REWORK_APPROVED_ABOVE',
+      max: 1,
+    });
+    expect(check(session(QTY(10), REWORK, approval(1), UNDO), 'PSI lv.1')).toEqual({
+      kind: 'REWORK_APPROVED_ABOVE',
+      max: 0,
+    });
+  });
+
+  it('checks all seven defects by default, Top 5 for legacy, and no photos for PSI lv.1', () => {
+    const ids = ['D001', 'D005', 'D035', 'D049', 'D071', 'D082', 'D020'];
+    const state = tapped(REWORK, ...ids.map(defect), END);
+    const top = allDefects(findings(state), mapping);
+    const base = {
+      state,
+      po: { orderQty: 100, partial: null },
+      top,
+      photographed: new Set<DefectId>(),
+    };
+    expect(checkSubmit({ ...base, level: 'PSI lv.2' })).toEqual({
+      kind: 'PHOTOS_MISSING',
+      defects: top,
+    });
+    expect(checkSubmit({ ...base, level: 'PSI lv.2', photoRule: 'TOP5' })).toEqual({
+      kind: 'PHOTOS_MISSING',
+      defects: top.slice(0, 5),
+    });
+    const photographed = new Set(top.slice(0, 5).map((row) => row.defectId));
+    expect(checkSubmit({ ...base, photographed, level: 'PSI lv.2' })).toEqual({
+      kind: 'PHOTOS_MISSING',
+      defects: top.slice(5),
+    });
+    expect(checkSubmit({ ...base, photographed, level: 'PSI lv.2', photoRule: 'TOP5' })).toBeNull();
+    expect(
+      checkSubmit({
+        ...base,
+        level: 'PSI lv.1',
+        state: session(QTY(10), REWORK, ...ids.map(defect), END),
+      }),
+    ).toBeNull();
+  });
+
+  it.each(['PSI lv.1', 'PSI lv.2'] as const)(
+    'sends approval (empty as 0) and the level-specific photo marker for %s',
+    (level) => {
+      for (const qty of [null, 0, 1]) {
+        const taps = [REWORK, defect('D035'), approval(qty), END];
+        const state = level === 'PSI lv.1' ? session(QTY(10), ...taps) : tapped(...taps);
+        const built = buildSubmission(input(state, { user: { username: 'PSI', level } }));
+        expect(built.counts.reworkApproved).toBe(qty ?? 0);
+        if (level === 'PSI lv.2') expect(built.photoRule).toBe('ALL');
+        else expect(built).not.toHaveProperty('photoRule');
+      }
+    },
+  );
 });
 
 describe('top5 on the API equals top5 on the tablet (doc 03 §5.5)', () => {

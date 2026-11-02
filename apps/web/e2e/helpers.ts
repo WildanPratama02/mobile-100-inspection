@@ -90,7 +90,7 @@ export const stat = (page: Page, label: string) =>
     .locator('.m100-stat', { has: page.getByText(label, { exact: true }) })
     .locator('b');
 
-export const top5 = (page: Page) => page.getByRole('region', { name: 'TOP 5 DEFECT' });
+export const allDefect = (page: Page) => page.getByRole('region', { name: 'ALL DEFECT' });
 
 /** Every value of the results box on Home, in order (FR-04). */
 export async function expectResults(
@@ -114,12 +114,12 @@ export async function expectResults(
   await expect(stat(page, 'Pass Rate (RFT)')).toHaveText(values.passRate);
 }
 
-/** Top 5 rows, best first: number, name, classification and quantity (FR-05). */
-export async function expectTop5(
+/** ALL DEFECT rows, best first: number, name, classification and quantity (FR-05). */
+export async function expectAllDefect(
   page: Page,
   rows: Array<[name: string, classification: 'MINOR' | 'MAJOR' | 'CRITICAL', qty: number]>,
 ) {
-  const items = top5(page).getByRole('listitem');
+  const items = allDefect(page).getByRole('listitem');
   await expect(items).toHaveCount(rows.length);
   for (const [i, [name, classification, qty]] of rows.entries()) {
     await expect(items.nth(i).locator('.m100-t5__no')).toHaveText(String(i + 1));

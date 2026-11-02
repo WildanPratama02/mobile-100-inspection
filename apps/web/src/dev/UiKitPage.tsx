@@ -322,7 +322,7 @@ export function UiKitPage() {
 
       <Section name="Notice">
         <div className="uikit__grid">
-          <Notice title="Foto wajib.">Tambah foto untuk setiap TOP 5 DEFECT.</Notice>
+          <Notice title="Foto wajib.">Tambah foto untuk setiap defect.</Notice>
           <Notice tone="warning" title="2 PO menunggu koneksi.">
             Data terkirim otomatis saat online.
           </Notice>

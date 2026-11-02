@@ -60,7 +60,7 @@ export type EventRow = SessionEvent & { username: string };
 export interface PhotoRow {
   sessionId: string;
   defectId: DefectId;
-  /** JPEG, ≤ 960 px on the long edge, ≤ 1 MB (doc 03 §4.5). */
+  /** JPEG, ≤ 960 px on the long edge, ≤ 500 KB (doc 03 §4.5, ADR-022 decision 3). */
   blob: Blob;
   sha256: string;
   takenAt: string;

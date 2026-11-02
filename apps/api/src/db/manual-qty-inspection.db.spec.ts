@@ -12,6 +12,8 @@ let db: TestDatabase;
 let oldId: string;
 let original: Record<string, unknown>;
 const migrations = listMigrations();
+// Up to this migration only, so a later one (0007) does not change the rows compared here.
+const throughThis = migrations.filter((m) => m.version < '0007');
 
 beforeAll(async () => {
   db = await createTestDatabase();
@@ -43,14 +45,14 @@ it('migrates immutable ADR-008 rows without recalculation and is idempotent', as
   // migrate owns its transactions, so run it directly under the owner's role.
   await db.client.query('SET ROLE m100_migrate');
   try {
-    expect((await migrate(db.client)).applied).toEqual(['0006_manual_qty_inspection']);
+    expect((await migrate(db.client, throughThis)).applied).toEqual(['0006_manual_qty_inspection']);
     const row = (
       await db.client.query<Record<string, unknown>>('SELECT * FROM submissions WHERE id = $1', [
         oldId,
       ])
     ).rows[0];
     expect(row).toEqual({ ...original, counting_rule: 'ADR-008' });
-    expect((await migrate(db.client)).applied).toEqual([]);
+    expect((await migrate(db.client, throughThis)).applied).toEqual([]);
   } finally {
     await db.client.query('RESET ROLE');
   }

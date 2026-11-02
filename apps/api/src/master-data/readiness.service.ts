@@ -57,6 +57,8 @@ export class ReadinessService implements OnApplicationBootstrap, OnApplicationSh
     checks: CHECK_IDS.map((id) => ({ id, ok: false, message: 'Not checked yet' })),
   };
   private timer: NodeJS.Timeout | undefined;
+  /** When `timer` fires (ms since the epoch); `undefined` while no run is scheduled. */
+  private dueAt: number | undefined;
   private running: Promise<SystemStatus> | undefined;
   private stopped = false;
 
@@ -98,7 +100,12 @@ export class ReadinessService implements OnApplicationBootstrap, OnApplicationSh
     return this.running;
   }
 
-  /** A database or photo store error met while serving a request: the check fails at once and is retried soon. */
+  /**
+   * A database or photo store error met while serving a request: the check fails at once and is retried within
+   * 30 s. A run already due by then is kept, so a stream of failures (every tablet retrying during an outage) never
+   * postpones it: the checks still run every 30 s while any is failing (doc 02 §10). A run in progress schedules
+   * the next one itself when it ends.
+   */
   reportFailure(id: 'DB' | 'PHOTO_STORE', error: unknown): void {
     const failed = this.failed(
       id,
@@ -107,7 +114,9 @@ export class ReadinessService implements OnApplicationBootstrap, OnApplicationSh
     );
     const checks = this.status.checks.map((c) => (c.id === id ? failed : c));
     this.publish({ ...this.status, checkedAt: new Date().toISOString(), checks });
-    this.schedule();
+    if (this.running) return;
+    if (this.dueAt !== undefined && this.dueAt <= Date.now() + RETRY_MS) return;
+    this.schedule(RETRY_MS);
   }
 
   /** The tablet sees `message`; the error itself, which may name hosts or paths, goes to the log only. */
@@ -116,10 +125,15 @@ export class ReadinessService implements OnApplicationBootstrap, OnApplicationSh
     return { id, ok: false, message };
   }
 
-  private schedule(): void {
+  private schedule(delayMs = this.nextDelayMs()): void {
     clearTimeout(this.timer);
+    this.dueAt = undefined;
     if (this.stopped) return;
-    this.timer = setTimeout(() => void this.check(), this.nextDelayMs());
+    this.dueAt = Date.now() + delayMs;
+    this.timer = setTimeout(() => {
+      this.dueAt = undefined;
+      void this.check();
+    }, delayMs);
     // The timer alone must not keep a test or a stopping process alive.
     this.timer.unref();
   }

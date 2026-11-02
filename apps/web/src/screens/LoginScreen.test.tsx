@@ -53,6 +53,14 @@ const loginButton = () => screen.getByRole('button', { name: 'LOGIN' });
 const HINT = 'Pilih nama, factory, dan cell.';
 
 describe('LoginScreen (doc 05 §7)', () => {
+  it('shows the brand "PSI Inspection Report" with its subtitle and the logo once (ADR-022)', () => {
+    renderLogin();
+    const brand = screen.getByRole('heading', { level: 1 });
+    expect(brand).toHaveTextContent(/^PSI Inspection ReportInput defect tanpa keyboard$/);
+    expect(screen.getByText('QIP Digital Team')).toBeInTheDocument();
+    expect(screen.getAllByRole('img', { name: 'PT Parkland World Indonesia' })).toHaveLength(1);
+  });
+
   it('enables LOGIN only when name, factory and cell are chosen, with a hint until then', () => {
     renderLogin();
     expect(loginButton()).toBeDisabled();

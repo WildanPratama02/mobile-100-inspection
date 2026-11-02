@@ -1,15 +1,18 @@
 /**
  * Turns a camera photo into the JPEG the tablet stores and submits (AC-10.1, doc 03 §4.5): at most 960 px
- * on the long edge, re-encoded as JPEG of at most 1 MB, with its SHA-256 for the submission (doc 04 §4.1).
- * Runs on the tablet only; the server never re-encodes.
+ * on the long edge, re-encoded as JPEG of at most 500 KB, with its SHA-256 for the submission (doc 04 §4.1).
+ * Runs on the tablet only; the server never re-encodes and accepts up to 1 MB per photo (ADR-022 decision 3).
  */
 import { sha256Hex } from '../app/sha256';
 import type { Jpeg } from '../state/store';
 
 /** AC-10.1. */
 export const MAX_EDGE = 960;
-/** AC-10.1 and the API's limit per photo part (doc 04 §4.2, §8). */
-export const MAX_BYTES = 1_000_000;
+/**
+ * AC-10.1, ADR-022 decision 3, doc 03 §4.5: at most 500 KB, counted as 500 000 bytes so it holds whether KB means
+ * 1 000 or 1 024 bytes; well inside the API's limit per photo part (doc 04 §4.2).
+ */
+export const MAX_BYTES = 500_000;
 /** Tried in order until the file fits; the first gives ≈ 100–200 KB at 960 px (doc 03 §4.5). */
 export const QUALITIES = [0.8, 0.7, 0.6, 0.5, 0.4, 0.3] as const;
 

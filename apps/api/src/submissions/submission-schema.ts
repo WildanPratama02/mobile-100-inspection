@@ -51,6 +51,11 @@ export const submissionSchema = z.strictObject({
       rework: count,
       bGrade: count,
       noDefect: count.optional(),
+      // BR-11 (ADR-022): absent in payloads sealed before it; the limit against `rework` is in submission-checks.
+      reworkApproved: z
+        .int('REWORK AND APPROVED harus bilangan bulat 0 atau lebih.')
+        .min(0, 'REWORK AND APPROVED harus bilangan bulat 0 atau lebih.')
+        .optional(),
       qtyInspection: z
         .int('Qty Inspection minimal 1.')
         .min(1, 'Qty Inspection minimal 1.')
@@ -65,11 +70,18 @@ export const submissionSchema = z.strictObject({
         });
       }
     })
-    .transform((counts): SubmissionCounts =>
-      counts.noDefect === undefined
-        ? { rework: counts.rework, bGrade: counts.bGrade, qtyInspection: counts.qtyInspection! }
-        : { rework: counts.rework, bGrade: counts.bGrade, noDefect: counts.noDefect },
-    ),
+    .transform((counts): SubmissionCounts => {
+      const base = {
+        rework: counts.rework,
+        bGrade: counts.bGrade,
+        ...(counts.reworkApproved === undefined ? {} : { reworkApproved: counts.reworkApproved }),
+      };
+      return counts.noDefect === undefined
+        ? { ...base, qtyInspection: counts.qtyInspection! }
+        : { ...base, noDefect: counts.noDefect };
+    }),
+  // ADR-022: new PSI lv.2 payloads send ALL; absent selects the Top 5 rule (`storedPhotoRule`).
+  photoRule: z.literal('ALL', 'photoRule hanya boleh ALL.').optional(),
   findings: z.array(finding).max(MAX_FINDINGS),
   photos: z
     .array(

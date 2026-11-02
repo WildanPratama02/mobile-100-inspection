@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: Mobile 100% Inspection API
-  version: 2.1.0
-  summary: Backend for the Mobile 100% Inspection PWA (PT Parkland World Indonesia, QIP Digital Team).
+  title: PSI Inspection Report API
+  version: 2.3.0
+  summary: Backend for the PSI Inspection Report PWA (PT Parkland World Indonesia, QIP Digital Team).
   description: |
     Contract between the tablet PWA and the NestJS API. Behaviour, rules and examples are in
     `04-api-contract.md`; database schema in `02-data-design.md` (PostgreSQL, ADR-018). Tablet endpoints
@@ -560,10 +560,11 @@ paths:
         The filters of `GET /admin/submissions`, without paging; rows in the list's order. UTF-8 with a BOM, a comma
         between fields, CRLF between rows, RFC 4180 quoting, one header row. Columns: display_no (`M100-000123`),
         id, inspection_date, sealed_at (ISO 8601 in WIB), username, level, factory, cell, po, article, model,
-        destination, order_qty, podd, crd, partial_no, partial_qty, partial_text, qty_rework,
+        destination, order_qty, podd, crd, partial_no, partial_qty, partial_text, qty_rework, qty_rework_approved,
         qty_bgrade_inspections, qty_no_defect, qty_inspection, qty_a_grade, qty_b_grade, qty_defect, rft,
-        defect_rate, photo_count, counting_rule, then top1_defect_id, top1_defect_name, top1_qty … top5_qty (empty
-        when the submission has fewer defects; qty_no_defect is empty when counting_rule is ADR-019). Numbers are raw: no thousands separator and a dot for decimals;
+        defect_rate, photo_count, counting_rule, photo_rule, then top1_defect_id, top1_defect_name, top1_qty … top5_qty (empty
+        when the submission has fewer defects; qty_no_defect is empty when counting_rule is ADR-019).
+        qty_rework_approved is empty for legacy NULL; photo_rule is ALL / TOP5 for new PSI lv.2 rows, empty for PSI lv.1 and existing PSI lv.2 NULL rows (legacy Top 5 rule). Numbers are raw: no thousands separator and a dot for decimals;
         rft and defect_rate are the stored fractions with 5 decimals (`0.60000` = 60,0%). Text typed by people that
         starts with `=`, `+`, `-`, `@`, a tab or CR gets a leading `'` so a spreadsheet does not run it.
       security: [{ adminCookie: [] }]
@@ -743,7 +744,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     TooLarge:
-      description: Code PAYLOAD_TOO_LARGE (request over 8 MB or a photo over 1 MB; an admin import file over 20 MB).
+      description: Code PAYLOAD_TOO_LARGE (submission request over 100 MB or a photo over 1 MB; an admin import file over 20 MB).
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -995,6 +996,7 @@ components:
             PO's ORDER QTY; Qty A-Grade = noDefect). `qtyInspection` must be at least 1, at least Qty Defect (the
             sum of `findings[].qty`), and at most `partial.qty` or the PO's ORDER QTY (BR-10, doc 04 section 4.2
             rule 3); Qty A-Grade = qtyInspection - Qty Defect and rework and bGrade enter no formula.
+          examples: [{ rework: 10, bGrade: 2, noDefect: 18, reworkApproved: 4 }]
           required: [rework, bGrade]
           oneOf:
             - required: [qtyInspection]
@@ -1002,16 +1004,33 @@ components:
             - required: [noDefect]
               not: { required: [qtyInspection] }
           properties:
-            rework: { type: integer, minimum: 0 }
+            rework: { type: integer, minimum: 0, description: 'INSPECTION REWORK QTY: REWORK inspections started.' }
+            reworkApproved:
+              type: integer
+              minimum: 0
+              description: |
+                Repaired, re-inspected and passed pairs (BR-11, ADR-022); must be at most counts.rework.
+                New sessions send 0 for an empty input; older sealed payloads omit it and store NULL.
+                Invalid integer or limit: 422 VALIDATION_FAILED, errors[].path counts.reworkApproved, code INVALID.
+                Checked independently by the tablet, API and database; changes no counting formula or rate.
             bGrade: { type: integer, minimum: 0 }
             qtyInspection: { type: integer, minimum: 1, description: 'Pairs inspected, entered by the PSI (FR-15).' }
-            noDefect: { type: integer, minimum: 0, deprecated: true, description: 'ADR-008 payloads sealed before the update only.' }
+            noDefect: { type: integer, minimum: 0, description: 'PSI lv.2 tapped counts (ADR-021) and older ADR-008 payloads.' }
+        photoRule:
+          type: string
+          enum: ['ALL']
+          description: |
+            New PSI lv.2 tablet sessions send ALL; PSI lv.1 payloads carry no photoRule. PSI lv.2 requires one photo per distinct finding defect;
+            each missing defect produces PHOTO_MISSING (422; top-level PHOTO_MISSING when these are the only errors).
+            Omitted by older sealed payloads: apply the Top 5 photo rule for PSI lv.2.
+            PSI lv.1 always sends no photos and stores a null photo rule. Invalid marker: 422 VALIDATION_FAILED.
         findings:
           type: array
           items: { $ref: '#/components/schemas/Finding' }
         photos:
           type: array
-          description: One entry per photo part. PSI lv.2 only, one per defect (ADR-011).
+          maxItems: 98
+          description: One entry per photo part. PSI lv.2 only, one per defect; ALL requires every finding defect, absent photoRule retains Top 5. Tablet JPEG target 500 KB, API limit 1 MB, body 100 MB, up to 99 parts (98 photos plus JSON), parser ceiling 100.
           items:
             type: object
             required: [defectId, part, sha256]
@@ -1216,7 +1235,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/AdminSubmissionSummary'
         - type: object
-          required: [receivedAt, appVersion, article, model, destination, orderQty, podd, crd, partial, counts, findings, top5, photos, audit]
+          required: [receivedAt, appVersion, article, model, destination, orderQty, podd, crd, partial, counts, photoRule, findings, top5, photos, audit]
           properties:
             receivedAt: { type: string, format: date-time }
             appVersion: { type: [string, 'null'] }
@@ -1230,11 +1249,20 @@ components:
               oneOf:
                 - { type: 'null' }
                 - { type: object, required: [number, qty], properties: { number: { type: integer }, qty: { type: integer } } }
+            photoRule:
+              type: [string, 'null']
+              enum: ['ALL', 'TOP5', null]
+              description: 'Stored photo_rule; null for PSI lv.1 and existing PSI lv.2 rows (legacy Top 5 rule, no backfill). TOP5 for unmarked PSI lv.2 payloads inserted after migration, ALL for marked submissions. Display null as —.'
             counts:
               type: object
               description: '`noDefect` is null for ADR-019 rows; `qtyInspection` is the stored qty_inspection (A17).'
-              required: [rework, bGrade, noDefect, qtyInspection]
-              properties: { rework: { type: integer }, bGrade: { type: integer }, noDefect: { type: [integer, 'null'] }, qtyInspection: { type: integer } }
+              required: [rework, bGrade, noDefect, qtyInspection, reworkApproved]
+              properties:
+                rework: { type: integer, description: 'INSPECTION REWORK QTY.' }
+                bGrade: { type: integer }
+                noDefect: { type: [integer, 'null'] }
+                qtyInspection: { type: integer }
+                reworkApproved: { type: [integer, 'null'], minimum: 0, description: 'Stored qty_rework_approved; at most rework. Legacy NULL displays — along with dependent figures; never recalculate stored counts.' }
             findings:
               type: array
               description: In the order the PSI first tapped them, like the tablet history (doc 05 section 20.3).

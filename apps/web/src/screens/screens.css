@@ -267,7 +267,7 @@
   justify-content: center;
 }
 
-/* ---- S3 Home body (doc 05 §8.1): PO list | Top 5 | results, then the bottom row ---- */
+/* ---- S3 Home body (doc 05 §8.1): PO list | ALL DEFECT | results, then the bottom row ---- */
 .home {
   height: 100dvh;
 }
@@ -280,7 +280,7 @@
   grid-template-columns: clamp(180px, 22%, 280px) minmax(0, 1fr) auto clamp(240px, 28%, 340px);
   grid-template-rows: minmax(0, 1fr) auto auto;
   grid-template-areas:
-    'polist top5 top5 stats'
+    'polist defects defects stats'
     'polist notice notice notice'
     'add add exports submit';
 }
@@ -326,13 +326,13 @@
   width: 30px;
   height: 30px;
 }
-.home__top5 {
-  grid-area: top5;
+.home__defects {
+  grid-area: defects;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-.home__t5 {
+.home__dlist {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -340,7 +340,7 @@
   border-radius: var(--radius-md);
   background: var(--surface);
 }
-.home__t5 > :last-child .m100-t5 {
+.home__dlist > :last-child .m100-t5 {
   border-bottom: 0;
 }
 .home__photo-notice {
@@ -370,7 +370,8 @@
 .home__results > :last-child {
   border-bottom: 0;
 }
-.home__results--off .m100-stat > b {
+.home__results--off .m100-stat > b,
+.home__stat--off > b {
   color: var(--ink-3);
 }
 .home__notice {
@@ -604,6 +605,14 @@
 .defect__map > .m100-shoemap {
   width: min(100cqw, 100cqh * 1000 / 720);
 }
+/* AC-06.3: why END INSPECTION is disabled, right under it (doc 05 §15). */
+.defect__end-hint {
+  margin: 0;
+  padding: 0 var(--space-2);
+  text-align: center;
+  color: var(--ink-3);
+  font-size: var(--fs-meta);
+}
 .defect__side {
   min-width: 0;
   min-height: 0;
@@ -749,19 +758,19 @@
     order: 3;
     padding: var(--space-2) var(--space-3) var(--space-2) 0;
   }
-  /* PO strip, exports, results, Top 5; ADD DEFECT and SUBMIT PO stay at the screen edge. */
+  /* PO strip, exports, results, ALL DEFECT; ADD DEFECT and SUBMIT PO stay at the screen edge. */
   .home {
     height: auto;
   }
   .home__body {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    /* Top 5 takes the spare height, so ADD DEFECT and SUBMIT PO sit at the bottom edge. */
+    /* ALL DEFECT takes the spare height, so ADD DEFECT and SUBMIT PO sit at the bottom edge. */
     grid-template-rows: auto auto auto 1fr auto auto;
     grid-template-areas:
       'polist polist'
       'exports exports'
       'stats stats'
-      'top5 top5'
+      'defects defects'
       'notice notice'
       'add submit';
     padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
@@ -804,7 +813,7 @@
   .home__results > :last-child {
     border-bottom: 1px solid var(--line);
   }
-  .home__t5 {
+  .home__dlist {
     overflow: visible;
   }
   .home__add,
@@ -836,7 +845,7 @@
     padding: var(--space-2);
   }
   .home__polist,
-  .m100-pane.home__top5,
+  .m100-pane.home__defects,
   .m100-pane.home__stats {
     padding: var(--space-2);
   }

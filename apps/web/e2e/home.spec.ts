@@ -1,4 +1,4 @@
-// Home: PO list, Add PO with PO PARTIAL, Partial dialog, results and Top 5 (T1.3: FR-03, FR-04, FR-05).
+// Home: PO list, Add PO with PO PARTIAL, Partial dialog, results and ALL DEFECT (T1.3: FR-03, FR-04, FR-05).
 import { type Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { undersized } from './tap';

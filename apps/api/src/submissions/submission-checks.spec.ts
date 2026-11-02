@@ -15,6 +15,7 @@ import {
   checkPhotos,
   checkSubmission,
   type KnownDefect,
+  storedPhotoRule,
 } from './submission-checks';
 
 const mapping = defaultMapping();
@@ -139,6 +140,34 @@ describe('rules 3 and 4: counts against findings (doc 04 §4.2; the request carr
   it('accepts findings of started types', () => {
     const r = request({ findings: [finding('D035', 5), finding('D082', 2, 'B-GRADE')] });
     expect(checkCounts(r)).toEqual([]);
+  });
+
+  it('refuses Rework and Approved above INSPECTION REWORK QTY on counts.reworkApproved (BR-11)', () => {
+    const above = request({ counts: { rework: 3, bGrade: 1, noDefect: 2, reworkApproved: 4 } });
+    expect(checkCounts(above)).toEqual([
+      {
+        path: 'counts.reworkApproved',
+        code: 'INVALID',
+        message: 'REWORK AND APPROVED maksimal 3 pasang (INSPECTION REWORK QTY).',
+      },
+    ]);
+    const manual = request({
+      user: { username: 'TEST ANDI', level: 'PSI lv.1' },
+      counts: { rework: 0, bGrade: 1, qtyInspection: 2, reworkApproved: 1 },
+    });
+    expect(codes(checkCounts(manual, 10))).toEqual([['counts.reworkApproved', 'INVALID']]);
+  });
+
+  it('accepts Rework and Approved from 0 up to INSPECTION REWORK QTY, and its absence', () => {
+    for (const reworkApproved of [0, 3]) {
+      expect(
+        checkCounts(request({ counts: { rework: 3, bGrade: 1, noDefect: 2, reworkApproved } })),
+      ).toEqual([]);
+    }
+    expect(
+      checkCounts(request({ counts: { rework: 0, bGrade: 1, noDefect: 2, reworkApproved: 0 } })),
+    ).toEqual([]);
+    expect(checkCounts(request({ counts: { rework: 3, bGrade: 1, noDefect: 2 } }))).toEqual([]);
   });
 });
 
@@ -272,6 +301,52 @@ describe('rule 7: photos (FR-10, BR-04)', () => {
       findings: [finding('D035', 1), { ...finding('D035', 9), defectId: 'D999' }],
     });
     expect(codes(checkPhotos(r, new Map(), defects))).toEqual([['photos', 'PHOTO_MISSING']]);
+  });
+
+  describe("photoRule 'ALL' (ADR-022)", () => {
+    const marked = (overrides: Partial<SubmissionRequest> = {}) =>
+      request({ findings: six, photoRule: 'ALL', ...overrides });
+
+    it('requires a photo for every defect, also the one outside the Top 5', () => {
+      const { request: r, parts } = withPhotos(marked(), TOP);
+      const failures = checkPhotos(r, parts, defects);
+      expect(codes(failures)).toEqual([['photos', 'PHOTO_MISSING']]);
+      expect(failures.map((f) => f.label)).toEqual([`D001 ${mapping.defect('D001')?.name}`]);
+    });
+
+    it('accepts one photo per defect', () => {
+      const { request: r, parts } = withPhotos(marked(), [...TOP, 'D001']);
+      expect(checkPhotos(r, parts, defects)).toEqual([]);
+    });
+
+    it('lists every missing defect in rank order', () => {
+      const { request: r, parts } = withPhotos(marked(), ['D082', 'D020']);
+      expect(checkPhotos(r, parts, defects).map((f) => f.message)).toEqual([
+        'Foto wajib untuk D035.',
+        'Foto wajib untuk D010.',
+        'Foto wajib untuk D030.',
+        'Foto wajib untuk D001.',
+      ]);
+    });
+
+    it('is ignored for PSI lv.1, which needs no photo', () => {
+      const lv1 = marked({ user: { username: 'TEST ANDI', level: 'PSI lv.1' } });
+      expect(checkPhotos(lv1, new Map(), defects)).toEqual([]);
+    });
+  });
+});
+
+describe('storedPhotoRule (doc 02 §4.1, doc 04 §4.1)', () => {
+  const lv1 = { username: 'TEST ANDI', level: 'PSI lv.1' } as const;
+
+  it('stores ALL for a marked PSI lv.2 payload and TOP5 for an unmarked one', () => {
+    expect(storedPhotoRule(request({ photoRule: 'ALL' }))).toBe('ALL');
+    expect(storedPhotoRule(request())).toBe('TOP5');
+  });
+
+  it('stores null for PSI lv.1, also when its payload carries the marker', () => {
+    expect(storedPhotoRule(request({ user: lv1 }))).toBeNull();
+    expect(storedPhotoRule(request({ user: lv1, photoRule: 'ALL' }))).toBeNull();
   });
 });
 

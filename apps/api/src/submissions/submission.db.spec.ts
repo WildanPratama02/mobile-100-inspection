@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import {
+  allDefects,
   defaultMapping,
   type DefectId,
   type Finding,
@@ -231,6 +232,11 @@ const EXTRA = [...new Set(mapping.map.map((e) => e.defectId))]
   .filter((id) => !['D035', 'D049', 'D071', 'D082'].includes(id))
   .slice(0, 2);
 
+/** Four more mapped defects, so a body can carry seven (ADR-022: a photo for each). */
+const EXTRA4 = [...new Set(mapping.map.map((e) => e.defectId))]
+  .filter((id) => !['D035', 'D049', 'D071', 'D082'].includes(id))
+  .slice(0, 4);
+
 function fiveDefects(): { body: Body; photos: DefectId[] } {
   const b = body();
   b.findings.push(finding(EXTRA[0]!, 1, 'REWORK', 4), finding(EXTRA[1]!, 1, 'REWORK', 5));
@@ -453,6 +459,173 @@ describe('POST /v1/submissions (doc 02 §6.1, doc 03 §5.4)', () => {
     expectWritten(await post(prepare(b), t), 201, b.submissionUuid);
     expect(await photoRows(b.submissionUuid)).toBe(0);
     expect(filesOf(b.submissionUuid)).toEqual([]);
+  });
+
+  describe('Rework and Approved and the photo rule (ADR-022, doc 04 §4.1, §4.2)', () => {
+    const storedOf = async (id: string) =>
+      (
+        await testDb.client.query<Row>(
+          'SELECT qty_rework_approved, photo_rule FROM submissions WHERE id = $1',
+          [id],
+        )
+      ).rows[0];
+
+    /**
+     * The doc 02 §9 example with four more defects: seven, ranked with the shared ranking. Quantities 5, 4, 3, 3,
+     * 2 | 1, 1, so the Top 5 is the same set whatever the severities of the fixture defects.
+     */
+    function sevenDefects(photoRule?: 'ALL'): { body: Body; ranked: DefectId[] } {
+      const b = body(photoRule ? { photoRule } : {});
+      [4, 2, 1, 1].forEach((qty, i) => b.findings.push(finding(EXTRA4[i]!, qty, 'REWORK', 4 + i)));
+      const ranked = allDefects(b.findings as Finding[], mapping).map((r) => r.defectId);
+      expect(ranked).toHaveLength(7);
+      return { body: b, ranked };
+    }
+
+    it("refuses photoRule 'ALL' with a defect without photo: 422 PHOTO_MISSING for that defect", async () => {
+      const t = await tablet();
+      const { body: b, ranked } = sevenDefects('ALL');
+      const missing = ranked[6]!;
+      const res = await post(prepare(b, ranked.slice(0, 6)), t);
+      const problem = expectProblem(res, 422, 'PHOTO_MISSING');
+      expect(problem.errors).toEqual([
+        { path: 'photos', code: 'PHOTO_MISSING', message: `Foto wajib untuk ${missing}.` },
+      ]);
+      expect(problem.detail).toBe(
+        `Foto wajib untuk: ${missing} ${mapping.defect(missing)?.name ?? ''}`.trim(),
+      );
+      expect(await submissionRows(b.submissionUuid)).toBe(0);
+      expect(filesOf(b.submissionUuid)).toEqual([]);
+    });
+
+    it("writes photoRule 'ALL' with a photo for every defect and stores photo_rule ALL", async () => {
+      const t = await tablet();
+      const { body: b, ranked } = sevenDefects('ALL');
+      const res = await post(prepare(b, ranked), t);
+      expectWritten(res, 201, b.submissionUuid);
+      expect(await storedOf(b.submissionUuid)).toEqual({
+        qty_rework_approved: null,
+        photo_rule: 'ALL',
+      });
+      expect(await photoRows(b.submissionUuid)).toBe(7);
+    });
+
+    it('accepts an unmarked payload (older app) with the Top 5 photos only and stores TOP5', async () => {
+      const t = await tablet();
+      const { body: b, ranked } = sevenDefects();
+      const res = await post(prepare(b, ranked.slice(0, 5)), t);
+      expectWritten(res, 201, b.submissionUuid);
+      expect(await storedOf(b.submissionUuid)).toEqual({
+        qty_rework_approved: null,
+        photo_rule: 'TOP5',
+      });
+    });
+
+    it('accepts a PSI lv.1 payload carrying the marker, ignores it and stores photo_rule NULL', async () => {
+      const t = await tablet(ANDI);
+      const b = body({
+        user: ANDI,
+        counts: { rework: 10, bGrade: 2, qtyInspection: 30, reworkApproved: 0 },
+        photoRule: 'ALL',
+      });
+      const res = await post(prepare(b), t);
+      expectWritten(res, 201, b.submissionUuid);
+      expect(await storedOf(b.submissionUuid)).toEqual({
+        qty_rework_approved: 0,
+        photo_rule: null,
+      });
+    });
+
+    it('refuses any other photoRule with 422 VALIDATION_FAILED on photoRule', async () => {
+      const t = await tablet();
+      const b = body();
+      const sent = prepare(b, TOP);
+      sent.json = JSON.stringify({ ...JSON.parse(sent.json), photoRule: 'TOP5' });
+      const problem = expectProblem(await post(sent, t), 422, 'VALIDATION_FAILED');
+      expect(problem.errors).toEqual([
+        expect.objectContaining({ path: 'photoRule', code: 'INVALID' }),
+      ]);
+      expect(await submissionRows(b.submissionUuid)).toBe(0);
+    });
+
+    it('stores Rework and Approved as sent, 0 included', async () => {
+      const t = await tablet();
+      for (const reworkApproved of [4, 0, 10]) {
+        const b = body({ counts: { rework: 10, bGrade: 2, noDefect: 18, reworkApproved } });
+        expectWritten(await post(prepare(b, TOP), t), 201, b.submissionUuid);
+        expect(await storedOf(b.submissionUuid)).toEqual({
+          qty_rework_approved: reworkApproved,
+          photo_rule: 'TOP5',
+        });
+      }
+    });
+
+    it.each([
+      [
+        'above counts.rework',
+        11,
+        'REWORK AND APPROVED maksimal 10 pasang (INSPECTION REWORK QTY).',
+      ],
+      ['negative', -1, 'REWORK AND APPROVED harus bilangan bulat 0 atau lebih.'],
+      ['a fraction', 1.5, 'REWORK AND APPROVED harus bilangan bulat 0 atau lebih.'],
+      ['a string', '4', 'REWORK AND APPROVED harus bilangan bulat 0 atau lebih.'],
+    ])(
+      'refuses Rework and Approved %s: 422 VALIDATION_FAILED on counts.reworkApproved',
+      async (_label, reworkApproved, message) => {
+        const t = await tablet();
+        const b = body();
+        const sent = prepare(b, TOP);
+        // Deliberately malformed wire input: do not constrain it to the domain type.
+        const wire = JSON.parse(sent.json) as Record<string, unknown>;
+        sent.json = JSON.stringify({
+          ...wire,
+          counts: { ...(wire.counts as object), reworkApproved },
+        });
+        const problem = expectProblem(await post(sent, t), 422, 'VALIDATION_FAILED');
+        expect(problem.errors).toEqual([
+          { path: 'counts.reworkApproved', code: 'INVALID', message },
+        ]);
+        expect(await submissionRows(b.submissionUuid)).toBe(0);
+        expect(filesOf(b.submissionUuid)).toEqual([]);
+      },
+    );
+
+    it('accepts 98 photos of 1 MB, one per defect (doc 04 §7)', async () => {
+      const t = await tablet();
+      const ids = [...new Set(mapping.map.map((e) => e.defectId))];
+      expect(ids).toHaveLength(98);
+      const b = body({
+        partial: null,
+        counts: { rework: 98, bGrade: 0, noDefect: 0, reworkApproved: 0 },
+        photoRule: 'ALL',
+        findings: ids.map((id, i) => ({
+          ...finding(id, 1),
+          firstRecordedAt: `2026-10-16T13:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}.250+07:00`,
+        })),
+      });
+      const sent = prepare(b, ids);
+      for (const [id, bytes] of sent.photos) {
+        const big = Buffer.alloc(1024 * 1024, id);
+        big.set(bytes);
+        sent.photos.set(id, big);
+      }
+      sent.json = JSON.stringify({
+        ...b,
+        photos: ids.map((id) => ({
+          defectId: id,
+          part: `photo_${id}`,
+          sha256: sha256Hex(sent.photos.get(id)!),
+        })),
+      });
+      const res = await post(sent, t);
+      expectWritten(res, 201, b.submissionUuid);
+      expect(await photoRows(b.submissionUuid)).toBe(98);
+      expect(filesOf(b.submissionUuid)).toHaveLength(98);
+      expect(await storedOf(b.submissionUuid)).toEqual({
+        qty_rework_approved: 0,
+        photo_rule: 'ALL',
+      });
+    }, 120_000);
   });
 
   describe('idempotency (doc 04 §4.3, BR-06)', () => {

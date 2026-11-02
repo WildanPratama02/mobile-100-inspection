@@ -1,11 +1,11 @@
-# Mobile 100% Inspection — Technical Design (TDD)
+# PSI Inspection Report — Technical Design (TDD)
 
 | | |
 |---|---|
-| Version | 0.5 — 29 Oct 2026 (ADR-021): counting mode per PSI level, `NO_DEFECT` events for PSI lv.2, Dexie version 3 with POs, sessions and screen per factory and cell (§4.2, §4.4), `/admin` out of the service worker (§4.1). 0.4 — Qty Inspection entered by the PSI (ADR-019: §3, §4.2, §5.5, §5.7, §8). v0.3 — PostgreSQL + photo store + admin app (ADR-018) |
-| Date | 27 Oct 2026 |
+| Version | 0.6 — 30 Oct 2026 (ADR-022): PSI Inspection Report, SET_REWORK_APPROVED, all-defect photos, multipart limits and template exports. v0.5 — 29 Oct 2026 (ADR-021): counting mode per PSI level, `NO_DEFECT` events for PSI lv.2, Dexie version 3 with POs, sessions and screen per factory and cell (§4.2, §4.4), `/admin` out of the service worker (§4.1). 0.4 — Qty Inspection entered by the PSI (ADR-019: §3, §4.2, §5.5, §5.7, §8). v0.3 — PostgreSQL + photo store + admin app (ADR-018) |
+| Date | 30 Oct 2026 |
 | Status | Replaces v0.2, which was built on Google Sheets and Drive. Everything here can be built now. The HTTPS method is decided (option A, `m100.qdms.web.id`, §7.2, ADR-016); the server is known (Windows, operated by QIP Digital). Photo store decided: a plain folder for release 1 (§5.2). Open: the server pre-checks of §7.3. |
-| Related | [01 PRD](01-prd.md); [02 Data Design](02-data-design.md) v2.1; [04 API Contract](04-api-contract.md) v2.1; ADR-004, 005, 014, 015, 016, **018**, **019** in [07 Decision Log](07-decision-log.md) |
+| Related | [01 PRD](01-prd.md); [02 Data Design](02-data-design.md) v2.3; [04 API Contract](04-api-contract.md) v2.3; ADR-004, 005, 014, 015, 016, **018**, **019**, **021**, **022** in [07 Decision Log](07-decision-log.md) |
 
 This document says how the pieces are built and run: what is on the tablet, what is on the server, how a Submit PO travels from one to the other without loss or duplication, and what the server needs from PWI IT. Behaviour that is already specified (tables, endpoints, error codes) is referenced, not repeated.
 
@@ -80,7 +80,7 @@ reference/       prototype and mapping inputs (read only)
 docs/
 ```
 
-`packages/shared` is used by the PWA and the API for the things that must never disagree: the counting rules (ADR-019, and ADR-008 for payloads sealed before it), the Qty Inspection limits (BR-10), the Top 5 order (AC-05.1) and the formatters. The request carries no totals except the Qty Inspection the PSI entered (doc 04 §4.1): the API computes the rest from the counts and findings and rejects counts that disagree with the findings or break BR-10 (doc 04 §4.2 rules 3–4).
+`packages/shared` is used by the PWA and the API for the things that must never disagree: the counting rules (ADR-019 for PSI lv.1, ADR-008 for PSI lv.2 and older sealed payloads), the Qty Inspection limits (BR-10), the rework approval limit (BR-11), the all-defect ranking order (AC-05.1; Top 5 for older photo rules) and the formatters. The request carries no totals except the Qty Inspection the PSI entered (doc 04 §4.1): the API computes the rest from the counts and findings and rejects counts that disagree with the findings or break BR-10 (doc 04 §4.2 rules 3–4).
 
 ## 4. The PWA
 
@@ -88,7 +88,8 @@ docs/
 
 - Vite + `vite-plugin-pwa` (Workbox, `generateSW`). The service worker **precaches the whole app shell**: HTML, JS, CSS, self-hosted fonts, the shoe image, the mapping fallback. Navigation requests fall back to the cached `index.html`, except under `/v1/` and `/admin` (`navigateFallbackDenylist`): the admin app has no service worker, and without the denylist a reload of `/admin/…` in a browser that once opened the tablet app would show the tablet app (ADR-021).
 - **API calls are never cached by the service worker.** Offline data lives in IndexedDB, written by app code, so it can be versioned, scoped per user and cleared deliberately.
-- Web app manifest: `display: standalone`, `orientation: landscape` (portrait and phone widths still work, NFR-01), name "Mobile 100% Inspection", icon from the company logo.
+- Web app manifest: `display: standalone`, `orientation: landscape` (portrait and phone widths still work, NFR-01), name "PSI Inspection Report", `short_name: "PSI Inspection"`, icon from the company logo.
+- `APP_NAME` is "PSI Inspection Report": browser title, manifest name, login brand and export creator/title; admin title "PSI Inspection Admin" (ADR-022). Repository, packages, domain, cookies and database names stay unchanged.
 - Requires a secure context (§7.2). On `http://localhost` it works for development.
 
 ### 4.2 Local database (Dexie / IndexedDB)
@@ -100,17 +101,19 @@ docs/
 | `auth` | `'current'` | username, level, factory, cell, token, token expiry |
 | `poList` | `[username, factory, cell, po]` | PO details from `/pos`, partial `{number, qty}` or none, `addedAt`, and the factory and cell of the login (ADR-021) |
 | `sessions` | `id` | `username`, `factory`, `cell`, `po`, `status: open`, `createdAt`; indexed by `[username+factory+cell(+po+status)]` |
-| `events` | `[sessionId, seq]` | one row per tap: `START_REWORK`, `START_BGRADE`, `DEFECT{areaId, subAreaId, familyId, defectId}`, `END`, `UNDO`, `SET_QTY_INSPECTION{qty}` (SIMPAN in the QTY INSPECTION dialog, FR-15, PSI lv.1), `NO_DEFECT` (PSI lv.2, ADR-021), with a timestamp |
-| `photos` | `[sessionId, defectId]` | JPEG blob (≤ 960 px, ≤ 1 MB), SHA-256, taken-at |
+| `events` | `[sessionId, seq]` | one row per tap: `START_REWORK`, `START_BGRADE`, `DEFECT{areaId, subAreaId, familyId, defectId}`, `END`, `UNDO`, `SET_QTY_INSPECTION{qty}` (SIMPAN in the QTY INSPECTION dialog, FR-15, PSI lv.1), `NO_DEFECT` (PSI lv.2, ADR-021), `SET_REWORK_APPROVED{qty}` (both levels, FR-16), with a timestamp |
+| `photos` | `[sessionId, defectId]` | JPEG blob (≤ 960 px, ≤ 500 KB), SHA-256, taken-at |
 | `outbox` | `submissionUuid` | sealed submission (§4.6) |
 | `outboxPhotos` | `[submissionUuid, defectId]` | the photo blobs of a sealed session |
 | `views` | `[username, factory, cell]` | the screen (Home or Defect), the selected PO and the Defect drill-down path, so a restart returns to the same place (doc 05 §4, §8.4, §11.5, AC-06.2); per user and per factory and cell because tablets are shared (BR-09, ADR-021) |
 
 **Schema versions.** Version 1 had `pos` keyed `[username, po]` and `view` keyed `username`. A primary key can't change in IndexedDB, so version 2 (ADR-021) adds `poList` and `views`, copies every old row into them with `factory` and `cell` set to `''` (unscoped), and gives every `sessions` row `factory = cell = ''`; version 3 drops `pos` and `view`. An unscoped row belongs to no login until its PSI logs in again (§4.4).
 
-**A session is the result of reducing its event list** with the pure functions of `packages/shared`. Persisting events instead of counters makes the rules of persistence trivial: one tap = one IndexedDB write of one event, and the screen is updated from the stored result (NFR-05, AC-06.2). UNDO is an event that the reducer interprets by the cases of FR-08 (it never touches Qty Inspection). Qty Inspection is the `qty` of the session's last `SET_QTY_INSPECTION` event, empty when there is none (ADR-019); a `SET_QTY_INSPECTION` changes nothing else, so the UNDO history of the findings survives it. Recording a finding is never refused because of Qty Inspection (ADR-019 decision 6). **Legacy events:** every event is persisted and replayed when a session is loaded, so a session open during the update can still hold `NO_DEFECT` events; the reducer ignores them (no figure, no UNDO state), which is the compatibility strategy of ADR-019 decision 9. Sealed ADR-008 sessions in the outbox are never replayed: their payload bytes are sent as stored. Totals, Top 5 and the findings list of FR-09 are derived, never stored. Sealing (§4.6) puts the session's Qty Inspection into `counts.qtyInspection` and never writes `noDefect`.
+**A session is the result of reducing its event list** with the pure functions of `packages/shared`. Persisting events instead of counters makes the rules of persistence trivial: one tap = one IndexedDB write of one event, and the screen is updated from the stored result (NFR-05, AC-06.2). UNDO is an event that the reducer interprets by the cases of FR-08 (it never touches Qty Inspection). Qty Inspection is the `qty` of the session's last `SET_QTY_INSPECTION` event, empty when there is none (ADR-019); a `SET_QTY_INSPECTION` changes nothing else, so the UNDO history of the findings survives it. Recording a finding is never refused because of Qty Inspection (ADR-019 decision 6). **Legacy events:** every event is persisted and replayed when a session is loaded, so a session open during the update can still hold `NO_DEFECT` events; the reducer ignores them (no figure, no UNDO state), which is the compatibility strategy of ADR-019 decision 9. Sealed ADR-008 sessions in the outbox are never replayed: their payload bytes are sent as stored. Totals, ALL DEFECT and the current-inspection findings list of FR-09 are derived, never stored; session findings still aggregate every inspection for submission. Sealing (§4.6) in ENTERED mode (PSI lv.1) writes `counts.qtyInspection` and no `noDefect`; TAPPED mode (PSI lv.2) writes `counts.noDefect` and no `qtyInspection` (ADR-021).
 
 **Counting mode per PSI level (ADR-021).** The reducer runs in one of two modes, from the logged-in PSI's level (`countingMode` in `packages/shared`): `ENTERED` for PSI lv.1 (everything above) and `TAPPED` for PSI lv.2. In `TAPPED`: `NO_DEFECT` adds one A-Grade pair (refused during an inspection) and makes UNDO cancel it; `SET_QTY_INSPECTION` is ignored; Qty Inspection = NO DEFECT + REWORK + B-GRADE inspections started − the active one; the commands `noDefect` and `startInspection(…, po)` refuse a pair once NO DEFECT + REWORK + B-GRADE reach the partial quantity or Qty Order (`canAddPair`); sealing puts `noDefect` into `counts` and no `qtyInspection`. In `ENTERED`, `NO_DEFECT` events stay ignored (ADR-019 decision 9).
+
+**Rework approval and current inspection (ADR-022).** `SET_REWORK_APPROVED{qty}` persists SIMPAN for both PSI levels; the last value belongs to the session and starts empty. The number pad accepts integers 0…`counts.rework` or empty, is disabled at 0 rework starts unless the saved value is not valid (then it opens with max 0 so the PSI can save 0 or empty), and an empty approval is sealed as `counts.reworkApproved: 0`. UNDO never changes this entered value or its event: cancelling a REWORK start may make the value invalid and block SUBMIT PO. Tablet, API and database independently enforce BR-11. Only new PSI lv.2 payloads carry `photoRule: 'ALL'`; PSI lv.1 payloads carry none; already sealed outbox strings are never rewritten. The read-only INSPECTION REWORK QTY remains `counts.rework`; report figures use ADR-022 decision 7 without changing the existing counting formulas. For open sessions, empty REWORK AND APPROVED counts as 0; while PSI lv.1 QTY INSPECTION is empty or not valid the engine returns `null` for Inspected Qty (Including Rework), Rejected Qty, Total Approved Qty, Not Reworkable Defect % and Balance Qty, and while REWORK AND APPROVED is not valid it returns `null` for Total Approved Qty and Balance Rework; screens and exports display these null figures as `0` / `0,0%` (clarified 31 Oct 2026). END is refused without a finding in the active inspection, including after UNDO of its last finding. The Defect screen list is derived from the current inspection only and starts empty on START_REWORK / START_BGRADE; Home and sealed findings retain session totals.
 
 ### 4.3 State and the persistence rule
 
@@ -127,7 +130,9 @@ Zustand holds the current view state (selected PO, drill-down path). Anything th
 
 ### 4.5 Photos (PSI lv.2 only)
 
-`<input type="file" accept="image/*" capture="environment">` opens the camera. The image is drawn onto a canvas at most 960 px on its long edge and encoded as JPEG (quality chosen so the result is ≈ 100–200 KB and always ≤ 1 MB), then stored with its SHA-256. One photo per defect: GANTI FOTO replaces the row `[sessionId, defectId]` (AC-10.5). PSI lv.1 never gets the control and never stores a photo (AC-10.6). Behaviour of the `capture` attribute on the Redmi Pad 2 must be checked on the device (risk R8).
+`<input type="file" accept="image/*" capture="environment">` opens the camera. The image is drawn onto a canvas at most 960 px on its long edge and encoded as JPEG (quality chosen so the result is at most 500 KB), then stored with its SHA-256. One photo per defect: GANTI FOTO replaces the row `[sessionId, defectId]` (AC-10.5). PSI lv.1 never gets the control and never stores a photo (AC-10.6). Behaviour of the `capture` attribute on the Redmi Pad 2 must be checked on the device (risk R8).
+
+PSI lv.2 needs one photo per distinct defect with a finding, displayed in ALL DEFECT; missing photos block SUBMIT PO and either export. Up to 98 photos plus the JSON part fit in 99 multipart parts. The API accepts JPEG ≤ 1 MB each without re-encoding and a body ≤ 100 MB; the multipart parser ceiling is 100 parts (doc 04 §7). Photos follow DEFECT_ID, not rank.
 
 ### 4.6 Sealing and the outbox
 
@@ -179,6 +184,19 @@ The device key is a secret that the PSI never types and the app has no screen to
 To check on a real Redmi Pad 2 (risk R9): that the data saved while the page runs in Chrome is visible when the installed app runs. If it is not, setup moves into the installed app as a one-time screen with a paste field.
 
 As built (T2.7): `/setup` is a route of the app itself (the service worker's navigation fallback serves it offline too; Caddy must serve `index.html` for it, Phase 4). The key is kept in `meta.deviceKey` and survives logout; a new setup link replaces it. Without a stored key the app shows only "Tablet ini belum terdaftar. Buka tautan setup dari admin." and calls no API.
+
+### 4.10 Exports (ADR-022)
+
+Generated on the tablet, offline, from one PO session per file; never an API call and never a multi-PO aggregation. Use `PSI_<PO>_<yyyyMMdd>.pdf` / `.xlsx`, with the session's inspection date. For an open session, use the WIB date of its first recorded event; with no event yet, use the WIB date the session was created. For a sealed submission, use its stored `inspection_date`. This date supplies Excel Part I Date, PDF DATE INSPECTION and the file name, never the export time. Both formats refuse a missing photo for any PSI lv.2 finding defect; PSI lv.1 has none. Report values come from the shared figures implementing ADR-022 decision 7 (full table: PRD FR-12), including the level-specific Inspected Qty (Including Rework). Older sealed data keeps NULL approval and displays "—" for that input and dependent figures; never recalculate its stored counts.
+
+**Excel layout** (one sheet, values only; `write-excel-file`). Title "PSI Inspection Report". Follow `reference/excel-format/excel-template.xlsx` and the user-confirmed layout of 30 Oct 2026:
+
+1. **Part I: General Data** — Date, PSI Name.
+2. **Part II: KPI Summary** — Inspected Qty, Inspected Qty (Including Rework), Rejected Order Qty (ADR-022 decision 7's Rejected Qty), RFT %, Defect %, Not Reworkable Defect Qty, Not Reworkable Defect %, Total Approved Qty, in that order.
+3. **Part III: Daily Inspection Summary** — the template's vertical label/value block (rows 25–37; labels in column A, values in B), for one PO session: PO NO, Model Name, Qty Order, Destination, Offered Lot Qty, Inspected Qty, Inspected Qty (Including Rework), Approved Qty, Rejected Qty, Rework and Approved, Pairs Not Reworkable & Not Shippable (B&C Grade), Balance Rework, Balance Qty, in that order. The template's wide legacy table (rows 20–23) and example numbers are not copied.
+4. **Defect Findings List** — No / Defect / Severity (MINOR, MAJOR, CRITICAL) / Qty / % of QTY INSPECTION. Every defect in ranking order, grouped by DEFECT_ID; no defect code (`ctq_code` is not unique and is not on the tablet).
+
+**PDF layout.** Company mark and title "PSI INSPECTION REPORT" on every page; "DATE INSPECTION" uses the session's WIB inspection date instead of "DICETAK" or export time. Include PO info, PSI name and level, Factory/Cell, results including INSPECTION REWORK QTY and REWORK AND APPROVED, then all defects (No / Defect / Severity / Area / Qty / % of QTY INSPECTION) and all photos of current finding defects in ranking order, each once with its defect name. No Foto column; PSI lv.1 has no photos. The PDF creator is "PSI Inspection Report".
 
 ## 5. The API
 
@@ -256,7 +274,7 @@ sequenceDiagram
 
 The steps and their invariants are in doc 02 §6; this document adds only:
 
-- The tablet waits for the answer with a **60 s** request timeout. At the expected volume the database transaction takes milliseconds and photo uploads (five JPEGs of ≤ 1 MB) take well under a second on the LAN; the 50-tablet worst case (10 submissions a minute) needs no queue.
+- The tablet waits for the answer with a **60 s** request timeout. At the expected volume the database transaction takes milliseconds and photo upload time grows with the number of defects (up to 98 JPEGs of ≤ 1 MB; tablet target ≤ 500 KB). Capacity is verified with 50 tablets and 15 photos per PSI lv.2 submission (ADR-022); there is no server queue.
 - Photos are stored **before** the transaction, so a submission row never points to a missing file. A crash in between leaves orphan photos, which the retry overwrites with the same bytes and which `sweep-photos` removes weekly if the submission never arrives.
 - `ON CONFLICT DO NOTHING` plus the primary key means two concurrent requests with the same UUID cannot both insert; the loser re-reads and answers `200`.
 - The transaction ends with a re-check of the sums in SQL (doc 02 §6.3); the table constraints are the last line of defence.
@@ -279,7 +297,7 @@ The steps and their invariants are in doc 02 §6; this document adds only:
 | `qtyInspectionLimits(qtyDefect, partial, orderQty)` | BR-10 → `{ min: max(1, qtyDefect), max: partial?.qty ?? orderQty }`; the same function feeds the tablet's number pad, the Submit PO check and the API's validation |
 | `checkQtyInspection(qty, limits)` | `null` (valid) or, in this order of precedence, `IMPOSSIBLE{min, max}` (min > max: no value is valid, also when Qty Inspection is empty), `EMPTY`, `BELOW{min}`, `ABOVE{max}`. The single priority rule: `totals` and `checkSubmit` report its result, so Home, S5b and SUBMIT PO agree (doc 05 §13.1) |
 | `totals(state, po)` | the session's figures for Home and exports: Qty Defect and Qty B-Grade always; Qty A-Grade, Defect Rate and Pass Rate `null` while Qty Inspection is empty or not valid (the screen shows `0` / `0,0%`, ADR-019 decision 7), plus the `checkQtyInspection` result |
-| `top5(findings, defects)` | order by quantity, severity, first recorded (AC-05.1); the same function on tablet and server |
+| `rankDefects(findings, defects)` / `top5(findings, defects)` | All defects ordered by quantity descending, severity, first recorded (AC-05.1); ALL DEFECT and exports use the full ranking, legacy photo rules and admin Top 5 use its first five |
 | `photoKey(uuid, defectId, sealedAt)` | `submissions/<yyyy>/<MM>/<uuid>/<defectId>.jpg` (month from `sealedAt` in WIB) |
 | `partialText(...)` | `P1 1.200 OF 10.002` with `Intl.NumberFormat('id-ID')` (Node 22 ships full ICU) |
 | `inspectionDate(sealedAt)` | WIB calendar date |
@@ -288,7 +306,7 @@ The steps and their invariants are in doc 02 §6; this document adds only:
 
 - Per device: 60 requests per minute (`@nestjs/throttler`, keyed by device ID; unknown keys by IP, 20 failed key attempts per minute per IP are refused). Beyond it: `429 RATE_LIMITED` with `Retry-After`.
 - Admin calls carry no device key, so they count per client IP (Caddy's `X-Forwarded-For`; the API trusts it from loopback only): 60 per minute for every admin endpoint, login included. Decided by the product owner (23 Oct 2026, T3b.4): photo downloads of a signed-in admin (`GET /admin/photos/{id}`, one request per photo in the A1b strip) have their own budget of 300 per minute per IP and do not count against the 60. A request counts in exactly one bucket: the photo bucket when it goes to the photo route with a validly signed `m100_admin` cookie, the general one otherwise (an unauthenticated or forged-cookie photo request counts in the 60). `AdminGuard` runs after the rate limit and still refuses (`401 ADMIN_AUTH_REQUIRED`) a missing, forged or expired session or a deactivated admin before any photo is read. Beyond either budget: `429 RATE_LIMITED` with `Retry-After`.
-- Request body ≤ 8 MB, each photo part ≤ 1 MB; checked by the multipart parser (memory storage) before validation. Photo parts must start with the JPEG signature `FF D8 FF`; the server does not re-encode photos.
+- Request body ≤ 100 MB, each photo part ≤ 1 MB; up to 98 photos plus one JSON part = 99, with a parser ceiling of 100 parts; checked by the multipart parser (memory storage) before validation. Photo parts must start with the JPEG signature `FF D8 FF`; the server does not re-encode photos.
 - Admin login: 5 failures lock the account 10 minutes. CSV/XLSX import files ≤ 20 MB.
 
 ### 5.7 Database and store errors → behaviour
@@ -475,11 +493,11 @@ As built (T4.1, files in `deploy/`):
 
 | Level | What | Tool |
 |---|---|---|
-| Unit | Counting engine against the ADR-019 table (and ADR-008 for old payloads), BR-10 limits and FR-08; `top5`; `photoKey`, `partialText`, `inspectionDate` | Vitest |
+| Unit | Counting engine against the ADR-019 and ADR-021 tables (and ADR-008 for old payloads), BR-10 limits and FR-08; BR-11 `reworkApproved` limits, empty as 0 and correction after UNDO to 0 rework; ADR-022 decision 7 report model for both PSI levels, with and without partial quantity, legacy NULL approval and open/sealed inspection dates; `rankDefects` / all-defect list and legacy `top5`; END INSPECTION guard before any finding and after UNDO of the last finding; `photoKey`, `partialText`, `inspectionDate` | Vitest |
 | Database | Migrations from empty; every table constraint and the immutability trigger (an UPDATE or DELETE of a submission, finding or photo must fail); views against fixtures with hand-computed totals | Jest against a real PostgreSQL 16 (local service or testcontainers) |
 | API integration | Every endpoint against the real database and a temp-folder `PhotoStore`, validated against `04-openapi.yaml`; all checks of doc 04 §4.2; auth, device revocation, admin lockout | Jest + supertest |
 | Idempotency and faults | Same UUID twice (same and different hash) including in parallel; crash injected after photos and before commit (fake store that throws); store down; database down | Jest |
-| Load | 30 simulated tablets submitting within 5 minutes with 5 photos each: no loss, no duplicate, p95 per submission measured | Script (k6 or Node) |
+| Load | 50 simulated tablets submitting within 5 minutes with 15 photos per PSI lv.2 submission (ADR-022, doc 08 T7.8): no loss, no duplicate, p95 per submission measured | Script (k6 or Node) |
 | Import | `import-master` and the admin imports on made-up files in the repository and on the real CSV/XLSX exports (dry run and apply); idempotent second run. The real exports hold personal names and stay out of the repository: their test runs only when `MASTER_DATA_DIR` names their folder (decided 21 Oct 2026) | Jest + the mapping workbook in `reference/` |
 | Web | Playwright for each flow of the plan, offline mode on, reload mid-inspection, shared tablet, outbox states against a stub API; the admin app flows | Playwright |
 | Device | Camera `capture`, install, setup link storage, offline start, certificate trust, on a real Redmi Pad 2 | Manual checklist (T4.2, T4.4) |

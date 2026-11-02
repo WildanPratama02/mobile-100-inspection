@@ -28,7 +28,11 @@ describe('encodeWithin (AC-10.1)', () => {
     expect(encode).toHaveBeenCalledExactlyOnceWith(QUALITIES[0]);
   });
 
-  it('lowers the quality until the JPEG is at most 1 MB', async () => {
+  it('aims at 500 KB at most (AC-10.1, ADR-022 decision 3)', () => {
+    expect(MAX_BYTES).toBe(500_000);
+  });
+
+  it('lowers the quality until the JPEG is at most 500 KB', async () => {
     const encode = vi.fn((q: number) =>
       Promise.resolve(ofSize(q > 0.55 ? MAX_BYTES + 1 : MAX_BYTES)),
     );

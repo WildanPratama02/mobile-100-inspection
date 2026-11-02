@@ -160,6 +160,8 @@ export type SessionEvent = SessionEventBase &
     | { type: 'UNDO' }
     /** SIMPAN in the QTY INSPECTION dialog (FR-15); the last one is the session's Qty Inspection. */
     | { type: 'SET_QTY_INSPECTION'; qty: number }
+    /** SIMPAN in REWORK AND APPROVED (FR-16); null saves an empty input. */
+    | { type: 'SET_REWORK_APPROVED'; qty: number | null }
   );
 
 export type SessionEventType = SessionEvent['type'];
@@ -189,11 +191,15 @@ export interface InspectionCounts {
  * `counts` of `POST /submissions` (doc 04 §4.1): exactly one of `qtyInspection` (ADR-019, entered by PSI lv.1)
  * and `noDefect` (tapped, ADR-008 calculation: PSI lv.2 under ADR-021, or a session sealed before ADR-019).
  */
-export type SubmissionCounts = InspectionCounts &
-  ({ qtyInspection: number; noDefect?: never } | { noDefect: number; qtyInspection?: never });
+export type SubmissionCounts = InspectionCounts & { reworkApproved?: number } & (
+    { qtyInspection: number; noDefect?: never } | { noDefect: number; qtyInspection?: never }
+  );
 
 /** Which rules a submission's totals follow (`submissions.counting_rule`, doc 02 §4.1). */
 export type CountingRule = 'ADR-008' | 'ADR-019';
+
+/** Required defect photos: legacy Top 5 or every finding defect (ADR-022). */
+export type PhotoRule = 'TOP5' | 'ALL';
 
 /** One photo part of a submission (doc 04 §4.1): PSI lv.2 only, at most one per defect (ADR-011). */
 export interface SubmissionPhoto {
@@ -218,6 +224,8 @@ export interface SubmissionRequest {
   po: string;
   partial: PoPartial | null;
   counts: SubmissionCounts;
+  /** New PSI lv.2 payloads only; absent in older sealed payloads and PSI lv.1. */
+  photoRule?: 'ALL';
   findings: Finding[];
   photos: SubmissionPhoto[];
 }

@@ -21,6 +21,18 @@ describe('takesPhotos (AC-10.6)', () => {
 });
 
 describe('missingPhotos (BR-04)', () => {
+  it('requires all seven defects for ALL and only the first five for TOP5 (ADR-022)', () => {
+    const all = ['D001', 'D005', 'D035', 'D049', 'D071', 'D082', 'D020'].map((id, i) =>
+      ranked(id as DefectId, 7 - i),
+    );
+    expect(missingPhotos(all, new Set(), 'ALL')).toEqual(all);
+    expect(missingPhotos(all, new Set())).toEqual(all);
+    expect(missingPhotos(all, new Set(), 'TOP5')).toEqual(all.slice(0, 5));
+    const firstFive = new Set(all.slice(0, 5).map((row) => row.defectId));
+    expect(missingPhotos(all, firstFive, 'ALL')).toEqual(all.slice(5));
+    expect(missingPhotos(all, firstFive, 'TOP5')).toEqual([]);
+  });
+
   const top = [ranked('D035', 4), ranked('D049', 3), ranked('D071', 2), ranked('D082', 1)];
 
   it('lists the Top 5 defects without a photo, in rank order', () => {

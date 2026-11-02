@@ -36,6 +36,6 @@ describe('AppModule', () => {
   });
 
   it('resolves @m100/shared from the workspace', () => {
-    expect(APP_NAME).toBe('Mobile 100% Inspection');
+    expect(APP_NAME).toBe('PSI Inspection Report');
   });
 });

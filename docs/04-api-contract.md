@@ -1,11 +1,11 @@
-# Mobile 100% Inspection — API Contract
+# PSI Inspection Report — API Contract
 
 | | |
 |---|---|
-| Version | 2.2 — 29 Oct 2026: PSI lv.2 sends `counts.noDefect` again (tapped counts, ADR-021); tapped counts above the partial quantity / `ORDER QTY` are refused (§4.1, §4.2 rule 3, A18). 2.1 — 27 Oct 2026: `counts.qtyInspection` entered by the PSI, `noDefect` only for sessions sealed before the update (ADR-019, §4.1, §4.2, A17). v2.0 — 20 Oct 2026, rewritten for ADR-018 (PostgreSQL and object storage). v1.x (Google Sheets) is superseded |
-| Date | 27 Oct 2026 |
+| Version | 2.3 — 30 Oct 2026 (ADR-022): `counts.reworkApproved`, `photoRule`, per-defect photos, 100 MB body limit, admin detail and CSV fields. v2.2 — 29 Oct 2026: PSI lv.2 sends `counts.noDefect` again (tapped counts, ADR-021); tapped counts above the partial quantity / `ORDER QTY` are refused (§4.1, §4.2 rule 3, A18). 2.1 — 27 Oct 2026: `counts.qtyInspection` entered by the PSI, `noDefect` only for sessions sealed before the update (ADR-019, §4.1, §4.2, A17). v2.0 — 20 Oct 2026, rewritten for ADR-018 (PostgreSQL and object storage). v1.x (Google Sheets) is superseded |
+| Date | 30 Oct 2026 |
 | Machine-readable spec | [`04-openapi.yaml`](04-openapi.yaml) (OpenAPI 3.1) |
-| Related | [01 PRD](01-prd.md) FR-01, FR-03, FR-11, FR-13, FR-14; [02 Data Design](02-data-design.md); [07 Decision Log](07-decision-log.md) ADR-006, 008, 013, 014, 018, 019 |
+| Related | [01 PRD](01-prd.md) FR-01, FR-03, FR-11, FR-13, FR-14, FR-16; [02 Data Design](02-data-design.md); [07 Decision Log](07-decision-log.md) ADR-006, 008, 013, 014, 018, 019, 021, 022 |
 
 This document explains the rules behind the OpenAPI file: who may call what, what the API checks, and how the tablet must react to each answer. Where the two disagree, `04-openapi.yaml` is corrected to match this text. Two audiences use the API: the **tablet app** (§2–§7) and the **admin web app** (§8).
 
@@ -76,6 +76,8 @@ Case-insensitive substring match on `po`, `article` and `model` using the trigra
 - part `submission`: the JSON below, `Content-Type: application/json`;
 - one part per photo, named `photo_<DEFECT_ID>`, `Content-Type: image/jpeg`.
 
+**Example: PSI lv.2 tapped counts (ADR-021, calculated with ADR-008), with ADR-022 approval and photos.**
+
 ```json
 {
   "submissionUuid": "0f6b6c1e-6a52-4c9f-9a3e-5d7a2b0c41f2",
@@ -86,7 +88,8 @@ Case-insensitive substring match on `po`, `article` and `model` using the trigra
   "cell": "F3-10",
   "po": "0903359388",
   "partial": { "number": 1, "qty": 1200 },
-  "counts": { "rework": 10, "bGrade": 2, "qtyInspection": 30 },
+  "counts": { "rework": 10, "bGrade": 2, "noDefect": 18, "reworkApproved": 4 },
+  "photoRule": "ALL",
   "findings": [
     { "inspectionType": "REWORK", "areaId": "A03", "subAreaId": "SA03L", "familyId": "F03",
       "defectId": "D035", "qty": 3, "firstRecordedAt": "2026-10-16T13:05:11+07:00" },
@@ -100,23 +103,25 @@ Case-insensitive substring match on `po`, `article` and `model` using the trigra
 }
 ```
 
-The tablet sends **what happened**, not totals: the Qty Inspection the PSI entered, REWORK and B-GRADE inspections started, and findings per area + sub-area + defect + inspection type. The API computes every other total itself with the ADR-019 rules, so a tablet bug cannot write inconsistent numbers:
+The PSI lv.2 tablet sends **what happened**, not totals: NO DEFECT taps, REWORK and B-GRADE inspections started, and findings per area + sub-area + defect + inspection type. The API computes the totals itself with ADR-008 (ADR-021); for the example above:
 
 | Total | Computed as |
 |---|---|
-| Qty Inspection | `qtyInspection` (entered by the PSI, FR-15) |
-| Qty Defect | sum of all `findings[].qty` (defect findings, not defective pairs) |
-| Qty A-Grade | `qtyInspection − Qty Defect` |
-| Qty B-Grade | sum of `qty` of findings with `inspectionType` = `B-GRADE` |
-| RFT, Defect Rate | doc 02 §6.3 |
+| Qty Inspection | `rework + bGrade + noDefect` = 10 + 2 + 18 = 30 |
+| Qty Defect | sum of all `findings[].qty` = 3 + 2 = 5 (defect findings, not defective pairs) |
+| Qty A-Grade | `noDefect` = 18 |
+| Qty B-Grade | sum of `qty` of findings with `inspectionType` = `B-GRADE` = 2 |
+| RFT, Defect Rate | 18 ÷ 30 = 60,0%; 5 ÷ 30 = 16,7% (doc 02 §6.3) |
 
 The result returns these totals; the tablet compares them with what it showed the PSI and logs any difference.
 
-**Tapped counts: PSI lv.2 (ADR-021) and sessions sealed before the ADR-019 update.** A PSI lv.2 session counts its pairs with taps and sends `counts: { rework, bGrade, noDefect }` without `qtyInspection`; so does a session sealed by an app version from before ADR-019 (its bytes never change, §4.3). The API computes it with the ADR-008 rules (Qty Inspection = `rework + bGrade + noDefect`, Qty A-Grade = `noDefect`), storing `counting_rule = 'ADR-008'` (doc 02 §4.1). `counts` must have exactly one of `qtyInspection` and `noDefect`. PSI lv.1 sends `qtyInspection` (ADR-019).
+**Tapped counts: PSI lv.2 (ADR-021) and sessions sealed before the ADR-019 update.** A PSI lv.2 session counts its pairs with taps and sends `counts: { rework, bGrade, noDefect }` without `qtyInspection`; so does a session sealed by an app version from before ADR-019 (its bytes never change, §4.3). The API computes it with the ADR-008 rules (Qty Inspection = `rework + bGrade + noDefect`, Qty A-Grade = `noDefect`), storing `counting_rule = 'ADR-008'` (doc 02 §4.1). `counts` must have exactly one of `qtyInspection` and `noDefect`. PSI lv.1 sends `qtyInspection` (ADR-019): Qty Inspection is the entered value and Qty A-Grade = `qtyInspection − Qty Defect`; findings totals and rate denominators follow the same rules above.
+
+**ADR-022 fields.** New tablet sessions at both levels send `counts.reworkApproved` (whole number 0…`counts.rework`; empty input is sent as 0). Only PSI lv.2 payloads also send `photoRule: 'ALL'`; PSI lv.1 payloads carry no photo rule. These fields remain optional for already sealed outbox payloads: absent `reworkApproved` is stored as NULL, never filled with 0; absent `photoRule` selects Top 5 for PSI lv.2. The only supplied request marker is `'ALL'`; other values are invalid. PSI lv.1 still sends no photos and always stores `photo_rule = NULL`. A PSI lv.1 payload that carries `photoRule` is accepted; the marker is ignored and `photo_rule` stays NULL. PSI lv.2 stores `'ALL'` or `'TOP5'` as selected. Existing rows are not backfilled: their approval and photo rule stay NULL; PSI lv.2 with stored NULL uses the Top 5 rule. Admin detail shows "—" and CSV leaves NULL fields empty. All stored fields are immutable. INSPECTION REWORK QTY is the existing `counts.rework`; neither new field changes the ADR-019 / ADR-021 counting formulas. Report figures follow ADR-022 decision 7 (PRD FR-12).
 
 ### 4.2 Checks before anything is written
 
-All failures are collected and returned together as one `422 VALIDATION_FAILED` with an `errors` list (path, code, message), unless a more specific code is named. Each entry of `errors` carries its own code; when every failure has the same specific code (for example only Top 5 photos are missing), the answer carries that code (`PHOTO_MISSING`), otherwise `VALIDATION_FAILED`. `PO_NOT_FOUND` is `422` here.
+All failures are collected and returned together as one `422 VALIDATION_FAILED` with an `errors` list (path, code, message), unless a more specific code is named. Each entry of `errors` carries its own code; when every failure has the same specific code (for example only required defect photos are missing), the answer carries that code (`PHOTO_MISSING`), otherwise `VALIDATION_FAILED`. `PO_NOT_FOUND` is `422` here.
 
 1. `user`, `factory`, `cell` match the token and exist, active, in the master data (`USER_NOT_FOUND`, `CELL_NOT_FOUND`).
 2. `po` exists in `pos` (`PO_NOT_FOUND`).
@@ -125,15 +130,17 @@ All failures are collected and returned together as one `422 VALIDATION_FAILED` 
    - with `qtyInspection` (ADR-019): a positive integer ("Qty Inspection minimal 1."); ≥ Qty Defect, the sum of `findings[].qty` ("Qty Inspection minimal {n}: jumlah defect yang tercatat."); ≤ `partial.qty` when `partial` is present, otherwise ≤ the PO's `ORDER QTY` ("Qty Inspection maksimal {n} pasang."). When Qty Defect is itself above that maximum, both messages are returned;
    - the API applies these rules itself, from the request and the PO in the database; it never relies on the tablet having checked them. The request carries no totals: the API computes them (§4.1) and the database checks them again in the same transaction (doc 02 §4.1, §6.3);
    - with `noDefect` (tapped counts, §4.1): `rework + bGrade + noDefect` ≥ 1 ("Qty Inspection 0: belum ada inspeksi."), and ≤ `partial.qty` when `partial` is present, otherwise ≤ the PO's `ORDER QTY` ("Qty Inspection maksimal {n} pasang.", ADR-021; path `counts`).
+   - when `counts.reworkApproved` is present: integer, ≥ 0, ≤ `counts.rework` (BR-11); failure returns `422 VALIDATION_FAILED`, `errors[].path = 'counts.reworkApproved'`, `errors[].code = 'INVALID'`, with the applicable limit in the message. Missing is allowed for older sealed payload compatibility (§4.1); the tablet sends 0 for an empty new input.
 4. Each finding: `qty` ≥ 1; `defectId` exists in `defects`; `subAreaId` belongs to `areaId`; if `inspectionType` is `REWORK` then `counts.rework` ≥ 1, and likewise for `B-GRADE`. The defect must be mapped to that sub-area in `area_map`, *or* have been mapped there when the session was recorded: a finding is not rejected because the map changed after the PSI tapped it (a deactivated map row is still accepted; a defect id that no longer exists in `defects` is not).
 5. No two findings share (`inspectionType`, `areaId`, `subAreaId`, `defectId`).
 6. `partial`, if present: `number` 1–99, `qty` 1 … the PO's `ORDER QTY`.
-7. Photos (ADR-011):
+7. Photos (ADR-022):
    - PSI lv.1: no photo parts and an empty `photos` array, otherwise `PHOTO_NOT_ALLOWED`.
-   - PSI lv.2: the API ranks the defects by quantity, then severity, then first recorded (doc 02 §8, `v_defect_totals`); each of the top 5 has exactly one photo, otherwise `PHOTO_MISSING` listing them. A photo may also belong to a defect outside the top 5 (AC-10.4). At most one photo per defect.
+   - `photoRule`, when supplied, must be `'ALL'`; otherwise `422 VALIDATION_FAILED` with path `photoRule`, code `INVALID`.
+   - PSI lv.2 with `photoRule: 'ALL'`: every distinct `defectId` in the findings requires exactly one photo. Missing photos produce an `errors` entry with code `PHOTO_MISSING` for each missing defect; when these are the only errors, the response is `422 PHOTO_MISSING`. Without the marker, rank by quantity, severity, then first recorded and require only the Top 5; additional photos outside the Top 5 stay allowed for older sealed payloads. At most one photo per defect, at most 98 photos.
    - Every `photos[]` entry has its part and every part has an entry; each part is JPEG, ≤ 1 MB, and its SHA-256 matches.
 8. `sealedAt` is not more than 5 minutes in the future (tablet clock check).
-9. Whole request ≤ 8 MB (`413 PAYLOAD_TOO_LARGE`).
+9. Whole request ≤ 100 MB (`413 PAYLOAD_TOO_LARGE`).
 
 ### 4.3 Idempotency
 
@@ -151,7 +158,7 @@ All failures are collected and returned together as one `422 VALIDATION_FAILED` 
 | `429` | Too many requests from this device | Problem + `Retry-After` |
 | `503` | `SUBMIT_DISABLED` (a readiness check failed), `DB_UNAVAILABLE` or `PHOTO_STORE_UNAVAILABLE` | Problem + `Retry-After` |
 
-The API answers only when the submission is committed (typically under 2 seconds, up to about 5 seconds for five photos). There is no queue, no `202` and no status endpoint. A tablet whose request timed out simply resends; the answer is `200` if the first attempt got through.
+The API answers only when the submission is committed (typically under 2 seconds, photo upload time depends on the number and size of photos). There is no queue, no `202` and no status endpoint. A tablet whose request timed out simply resends; the answer is `200` if the first attempt got through.
 
 ## 5. What the tablet does with each answer (outbox)
 
@@ -166,7 +173,7 @@ The outbox on the tablet (FR-11, AC-11.2 … AC-11.4) follows this table exactly
 | `429`, `503`, `5xx`, no connection, timeout | Menunggu koneksi | Resend after `Retry-After`, or with back-off 5 s, 15 s, 1 min, 5 min, then every 5 min |
 | App closed or killed while the item was Mengirim | Menunggu koneksi at next start | Resend the same UUID and bytes; the answer is `200` if the first attempt got through |
 
-The request timeout on the tablet is 60 seconds (weak Wi-Fi, five photos). The tablet never needs to ask whether a submission arrived; resending is always safe.
+The request timeout on the tablet is 60 seconds (weak Wi-Fi, up to 98 photos). The tablet never needs to ask whether a submission arrived; resending is always safe.
 
 ## 6. Error codes
 
@@ -195,8 +202,9 @@ Admin-only codes (§8): `ADMIN_AUTH_REQUIRED` 401, `ADMIN_LOGIN_FAILED` 401, `AD
 
 | Limit | Value |
 |---|---|
-| Request size | 8 MB |
-| Photo | JPEG, ≤ 1 MB, ≤ 960 px long edge (AC-10.1) |
+| Submission request size | 100 MB; larger → `413 PAYLOAD_TOO_LARGE` |
+| Submission multipart parts | Up to 98 photos + 1 JSON part = 99; parser ceiling 100 |
+| Photo | JPEG, API ≤ 1 MB; tablet resizes to ≤ 500 KB and ≤ 960 px long edge (AC-10.1), server never re-encodes |
 | Findings per submission | 2,000 |
 | Rate per device | 60 requests / minute |
 | Admin login | 5 failures → 10 min lock |
@@ -246,9 +254,10 @@ No admin endpoint changes a submission (AC-14.4): there is no route for it, and 
 | A10 | (23 Oct 2026, product owner, T3b.2) The mapping re-import only upserts: areas, sub-areas, families and map rows stored but missing from the workbook stay as they are and are listed in `warnings`; a single map row is switched off with `PATCH /admin/area-map/{id}`. |
 | A11 | (23 Oct 2026, product owner, T3b.2) The admin CRUD uses TypeORM entities over the existing tables (doc 03 §5.1); the two imports keep the batched SQL upserts of the one-time import. |
 | A12 | (23 Oct 2026, product owner, T3b.3) Submission list filters: `from` / `to` are inclusive WIB dates on `inspection_date`, each optional (the admin app sends today by default); `factory`, `cell` and `username` match exactly; `po` matches any part of the PO number, ignoring case; an empty value is no filter. Newest `sealed_at` first, then `display_no`; 50 per page; the answer is `{ total, page, pageSize, items }`. A bad date, `to` before `from` or a bad `page` is `422`. |
-| A13 | (23 Oct 2026, product owner, T3b.3) The detail adds the PO snapshot, `receivedAt`, `appVersion`, `counts`, the findings in first-tap order (the tablet history) with area, sub-area and family names, the Top 5 computed with the shared ranking (with the photo id of each place), the photo ids, and the audit-log rows about the submission (none are written in release 1). An unknown or malformed id is `404`. `GET /admin/photos/{id}` sends the stored bytes as `image/jpeg` with `Cache-Control: private, no-store`; a photo row without its object is `404` (and logged), a store error `503 PHOTO_STORE_UNAVAILABLE`. |
-| A14 | (23 Oct 2026, product owner, T3b.3) The CSV export: UTF-8 with a BOM, `,` between fields, CRLF, RFC 4180 quoting, one header row; the columns of `v_submissions` (`display_no` as `M100-000123`, `sealed_at` in WIB) and `top<n>_defect_id`, `top<n>_defect_name`, `top<n>_qty` for n = 1…5. Raw numbers: no thousands separator, a dot for decimals, `rft` and `defect_rate` as the stored fractions (`0.60000`). Text typed by people that starts with `=`, `+`, `-`, `@`, a tab or CR gets a leading `'` (CSV injection). The column list is in `04-openapi.yaml`. |
+| A13 | (23 Oct 2026, product owner, T3b.3) The detail adds the PO snapshot, `receivedAt`, `appVersion`, `counts`, the findings in first-tap order (the tablet history) with area, sub-area and family names, the Top 5 computed with the shared ranking (with the photo id of each place), the photo ids, `counts.reworkApproved` (nullable), `photoRule` (`ALL` / `TOP5` / null), and the audit-log rows about the submission (none are written in release 1). An unknown or malformed id is `404`. `GET /admin/photos/{id}` sends the stored bytes as `image/jpeg` with `Cache-Control: private, no-store`; a photo row without its object is `404` (and logged), a store error `503 PHOTO_STORE_UNAVAILABLE`. |
+| A14 | (23 Oct 2026, product owner, T3b.3) The CSV export: UTF-8 with a BOM, `,` between fields, CRLF, RFC 4180 quoting, one header row; the columns of `v_submissions` (`display_no` as `M100-000123`, `sealed_at` in WIB) and `top<n>_defect_id`, `top<n>_defect_name`, `top<n>_qty` for n = 1…5. Raw numbers: no thousands separator, a dot for decimals, `rft` and `defect_rate` as the stored fractions (`0.60000`). Text typed by people that starts with `=`, `+`, `-`, `@`, a tab or CR gets a leading `'` (CSV injection). ADR-022 adds `qty_rework_approved` (empty for legacy NULL) and `photo_rule` (ALL / TOP5, empty for PSI lv.1 and existing PSI lv.2 rows with NULL); `qty_rework` remains INSPECTION REWORK QTY. The column list is in `04-openapi.yaml`. |
 | A15 | (23 Oct 2026, product owner, T3b.3) `PATCH /admin/admins/{id}` takes either `{ password }` (a reset, which also clears a lock) or `{ active }`, one change per request. A deactivated admin may be reactivated, audited like any change. Deactivating yourself or the last active admin is `422` with `errors[].code` `SELF` / `LAST_ACTIVE_ADMIN`; a taken username is `409 CONFLICT`; a password under 10 characters `422` (`PASSWORD_TOO_SHORT`). The list never carries a password hash. |
 | A16 | (23 Oct 2026, product owner, T3b.3) `GET /admin/audit-log`: `from` / `to` inclusive WIB days of `at`, `actor` exact (`admin:<name>`, `script:<name>`, `system`), newest first, 50 per page, `{ total, page, pageSize, items }`. The admin app renders the summary from `details`. |
+| A19 | (30 Oct 2026, ADR-022) New sessions at both levels send `counts.reworkApproved` (empty input → 0); only PSI lv.2 payloads carry `photoRule: 'ALL'`, and PSI lv.1 payloads carry none; the API independently checks BR-11 and every defect photo. Older sealed payloads omit the fields: store approval NULL and use Top 5 for PSI lv.2. Body limit is 100 MB; per-photo limit stays 1 MB. Admin detail adds `counts.reworkApproved` and `photoRule`; CSV adds `qty_rework_approved` and `photo_rule`. Older NULL approval and dependent report figures display "—", with only the photos stored; counts are never recalculated. |
 | A18 | (29 Oct 2026, product owner, ADR-021) PSI lv.2 sends tapped counts (`noDefect`) again; the API calculates them with ADR-008 as before and now also refuses pairs above the partial quantity or `ORDER QTY` (§4.2 rule 3). No new field, so it stays in `/v1`. A payload sealed before ADR-019 with more pairs than that maximum is refused too (accepted risk, ADR-021). |
 | A17 | (27 Oct 2026, product owner, ADR-019; revised 28 Oct 2026) `counts.qtyInspection` replaces `counts.noDefect`: the PSI enters Qty Inspection, the API derives Qty A-Grade as `qtyInspection − Qty Defect` (Qty Defect = sum of the findings' `qty`) and checks BR-10 itself (§4.2 rule 3). `rework` and `bGrade` stay in `counts` for the finding-type check and the admin detail; they are in no formula. A payload with `noDefect` (sealed before the update) is still accepted under ADR-008 and stored with `counting_rule = 'ADR-008'`; this stays in `/v1` because no client needs to change for it. The admin detail's `counts` and the summary carry `countingRule`; `counts.noDefect` is `null` for ADR-019 rows and `counts.qtyInspection` is the stored `qty_inspection`. |

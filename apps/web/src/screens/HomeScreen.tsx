@@ -1,15 +1,17 @@
 /**
- * S3 Home (doc 05 §8): the PO info strip and account in the header, the PO list, TOP 5 DEFECT, the results box
+ * S3 Home (doc 05 §8): the PO info strip and account in the header, the PO list, ALL DEFECT, the results box
  * and the bottom row. Everything shown is derived from the selected PO's open session with `@m100/shared`
  * (FR-04, FR-05); nothing here counts by itself.
  *
- * For PSI lv.2 the Top 5 rows carry the photo control (FR-10, doc 05 §8.3, §12); PSI lv.1 gets none.
+ * For PSI lv.2 every ALL DEFECT row carries the photo control (FR-10, ADR-022, doc 05 §8.3, §12); PSI lv.1 gets
+ * none. The results box also has INSPECTION REWORK QTY and REWORK AND APPROVED (FR-16, doc 05 §8.1, §10c).
  * EXPORT PDF / EXPORT EXCEL make a file of the open session on the tablet (FR-12, doc 05 §8.5). SUBMIT PO runs
  * the checks and the confirmation of S8, seals the session into the outbox and hands it to the outbox sender
  * (FR-11, doc 05 §13); the header counts the PSI's waiting submissions (AC-11.3).
  */
 import { useRef, useState, type ChangeEvent } from 'react';
 import {
+  allDefects,
   countingMode,
   emptySession,
   findings,
@@ -19,7 +21,6 @@ import {
   formatTime,
   missingPhotos,
   takesPhotos,
-  top5,
   totals,
   type Classification,
   type CountingMode,
@@ -65,12 +66,14 @@ import { NO_PATH } from './drilldown';
 import { MissingPhotosDialog } from './MissingPhotosDialog';
 import { PartialDialog } from './PartialDialog';
 import { PhotoViewDialog } from './PhotoViewDialog';
+import { ReworkApprovedDialog } from './ReworkApprovedDialog';
 import { SettingsDialog } from './SettingsDialog';
 import {
   SubmitActiveDialog,
   SubmitConfirmDialog,
   SubmitEmptyDialog,
   SubmitNoPairsDialog,
+  SubmitReworkApprovedDialog,
 } from './SubmitDialogs';
 import { QtyInspectionDialog } from './QtyInspectionDialog';
 import { QtySubmitDialog } from './QtySubmitDialog';
@@ -94,6 +97,8 @@ type Open =
   | { kind: 'submit-active' }
   | { kind: 'submit-no-pairs' }
   | { kind: 'submit-empty' }
+  | { kind: 'submit-rework-approved' }
+  | { kind: 'rework-approved' }
   | { kind: 'submit-confirm' };
 type QtyOpen = { kind: 'qty' } | { kind: 'submit-qty'; issue: 'BELOW' | 'ABOVE' | 'IMPOSSIBLE' };
 
@@ -153,12 +158,15 @@ export function HomeScreen({ auth }: HomeScreenProps) {
   // One export at a time: a second tap while the file is being made does nothing.
   const exporting = useRef(false);
 
-  /** Doc 05 §8.5. Reads the session only, so exporting never changes it (AC-12.4). */
+  /**
+   * Doc 05 §8.5. Reads the session only, so exporting never changes it (AC-12.4); the file carries the
+   * session's inspection date, never this moment (AC-12.3).
+   */
   const onExport = async (format: ExportFormat) => {
     if (!po || exporting.current) return;
     exporting.current = true;
     try {
-      const report = exportReport({ po, session, auth, mapping, now: new Date() });
+      const report = exportReport({ po, session, auth, mapping });
       if (report.missingPhotos.length > 0) {
         setOpen({ kind: 'missing-photos', names: report.missingPhotos });
         return;
@@ -183,7 +191,8 @@ export function HomeScreen({ auth }: HomeScreenProps) {
     else if (block.kind === 'EMPTY') setOpen({ kind: 'submit-empty' });
     else if (block.kind === 'BELOW' || block.kind === 'ABOVE' || block.kind === 'IMPOSSIBLE')
       setOpen({ kind: 'submit-qty', issue: block.kind });
-    else {
+    else if (block.kind === 'REWORK_APPROVED_ABOVE') setOpen({ kind: 'submit-rework-approved' });
+    else if (block.kind === 'PHOTOS_MISSING') {
       const names = block.defects.map((d) => mapping.defect(d.defectId)?.name ?? d.defectId);
       setOpen({ kind: 'missing-photos', names });
     }
@@ -293,8 +302,8 @@ export function HomeScreen({ auth }: HomeScreenProps) {
           </Button>
         </Pane>
 
-        <Pane label="TOP 5 DEFECT" className="home__top5">
-          <Top5
+        <Pane label="ALL DEFECT" className="home__defects">
+          <AllDefect
             po={po}
             session={session}
             mapping={mapping}
@@ -310,6 +319,7 @@ export function HomeScreen({ auth }: HomeScreenProps) {
             session={session}
             mode={countingMode(auth.level)}
             onEdit={() => setOpen({ kind: 'qty' })}
+            onEditReworkApproved={() => setOpen({ kind: 'rework-approved' })}
           />
         </Pane>
 
@@ -400,6 +410,12 @@ export function HomeScreen({ auth }: HomeScreenProps) {
       ) : null}
       {open?.kind === 'submit-empty' ? (
         <SubmitEmptyDialog onClose={() => setOpen({ kind: 'qty' })} />
+      ) : null}
+      {open?.kind === 'submit-rework-approved' ? (
+        <SubmitReworkApprovedDialog onEdit={() => setOpen({ kind: 'rework-approved' })} />
+      ) : null}
+      {open?.kind === 'rework-approved' && po && session ? (
+        <ReworkApprovedDialog po={po} session={session} onClose={close} />
       ) : null}
       {open?.kind === 'qty' && po && session ? (
         <QtyInspectionDialog po={po} session={session} onClose={close} />
@@ -513,7 +529,7 @@ interface PanelProps {
   session: PoSession | undefined;
 }
 
-interface Top5Props extends PanelProps {
+interface AllDefectProps extends PanelProps {
   mapping: MappingIndex;
   /** PSI lv.2 (AC-10.6). */
   photos: boolean;
@@ -522,27 +538,28 @@ interface Top5Props extends PanelProps {
 }
 
 /**
- * TOP 5 DEFECT (FR-05, doc 05 §8.3): order and ties come from `top5` (AC-05.1). For PSI lv.2 each row has
- * its photo control, and a Notice counts the missing photos (AC-10.3, BR-04).
+ * ALL DEFECT (FR-05, ADR-022, doc 05 §8.3): every defect of the session, order and ties from `allDefects`
+ * (AC-05.1), scrolling inside the pane. For PSI lv.2 each row has its photo control, and a Notice counts the
+ * missing photos (AC-10.3, BR-04).
  */
-function Top5({ po, session, mapping, photos, onTakePhoto, onViewPhoto }: Top5Props) {
-  const rows = session ? top5(findings(session.state), mapping) : [];
+function AllDefect({ po, session, mapping, photos, onTakePhoto, onViewPhoto }: AllDefectProps) {
+  const rows = session ? allDefects(findings(session.state), mapping) : [];
   const attached = session?.photos ?? {};
   const missing = photos
-    ? missingPhotos(rows, new Set(Object.keys(attached) as DefectId[])).length
+    ? missingPhotos(rows, new Set(Object.keys(attached) as DefectId[]), 'ALL').length
     : 0;
   return (
     <>
-      <h2 className="home__pane-title">TOP 5 DEFECT</h2>
+      <h2 className="home__pane-title">ALL DEFECT</h2>
       {!po ? (
         <Empty title="Belum ada PO" hint="Tekan tombol + di PO List untuk menambahkan PO." />
       ) : rows.length === 0 ? (
         <Empty title="Belum ada defect" hint="Tekan ADD DEFECT untuk mulai input." />
       ) : (
-        <div className="home__t5" role="list">
+        <div className="home__dlist" role="list">
           {rows.map((row, i) => (
             <div key={row.defectId} role="listitem">
-              <Top5Item
+              <DefectItem
                 no={i + 1}
                 row={row}
                 mapping={mapping}
@@ -557,14 +574,14 @@ function Top5({ po, session, mapping, photos, onTakePhoto, onViewPhoto }: Top5Pr
       )}
       {missing > 0 ? (
         <Notice tone="warning" title={`${missing} foto belum ada.`} className="home__photo-notice">
-          PSI lv.2 wajib melampirkan foto pada setiap Top 5 Defect sebelum SUBMIT PO.
+          PSI lv.2 wajib melampirkan foto pada setiap defect sebelum SUBMIT PO.
         </Notice>
       ) : null}
     </>
   );
 }
 
-interface Top5ItemProps {
+interface DefectItemProps {
   no: number;
   row: RankedDefect;
   mapping: MappingIndex;
@@ -574,7 +591,15 @@ interface Top5ItemProps {
   onViewPhoto: () => void;
 }
 
-function Top5Item({ no, row, mapping, photos, photo, onTakePhoto, onViewPhoto }: Top5ItemProps) {
+function DefectItem({
+  no,
+  row,
+  mapping,
+  photos,
+  photo,
+  onTakePhoto,
+  onViewPhoto,
+}: DefectItemProps) {
   const src = usePhotoUrl(photo?.blob);
   const name = mapping.defect(row.defectId)?.name ?? row.defectId;
   return (
@@ -606,15 +631,18 @@ function Empty({ title, hint }: { title: string; hint: string }) {
 }
 
 /**
- * The results box (FR-04): seven values, using zero fallbacks until Qty Inspection is valid. PSI lv.1 taps QTY
- * INSPECTION to enter it; PSI lv.2 sees it counted from NO DEFECT and END INSPECTION (ADR-021).
+ * The results box (FR-04, doc 05 §8.1): nine values, using zero fallbacks until Qty Inspection is valid. PSI lv.1
+ * taps QTY INSPECTION to enter it; PSI lv.2 sees it counted from NO DEFECT and END INSPECTION (ADR-021). Both
+ * levels see INSPECTION REWORK QTY (read-only) and tap REWORK AND APPROVED (S5c) while there is rework, or while
+ * its saved value is not valid, so it can be corrected (FR-16, BR-11). Neither adds a term to the rates.
  */
 function Results({
   po,
   session,
   mode,
   onEdit,
-}: PanelProps & { mode: CountingMode; onEdit: () => void }) {
+  onEditReworkApproved,
+}: PanelProps & { mode: CountingMode; onEdit: () => void; onEditReworkApproved: () => void }) {
   if (!po) {
     return (
       <div className="home__results home__results--off">
@@ -623,6 +651,8 @@ function Results({
         <StatRow label="Qty Defect" value="0" />
         <StatRow label="Qty A-Grade" value="0" />
         <StatRow label="Qty B-Grade" value="0" />
+        <StatRow label="INSPECTION REWORK QTY" value="0" />
+        <StatRow label="REWORK AND APPROVED" value={null} />
         <StatRow label="Defect Rate" value={null} />
         <StatRow label="Pass Rate (RFT)" value={null} />
       </div>
@@ -631,6 +661,8 @@ function Results({
   const t = totals(session?.state ?? emptySession(mode), po);
   const entered = mode === 'ENTERED';
   const bad = t.defectRate !== null && t.defectRate > DEFECT_RATE_BAD_ABOVE;
+  // Disabled at 0 rework unless the saved value is not valid (ADR-022 decision 6 as amended).
+  const approvable = t.inspectionReworkQty > 0 || t.reworkApprovedIssue !== null;
   return (
     <div className="home__results">
       <StatRow label="Qty PO Order" value={formatCount(po.orderQty)} />
@@ -644,6 +676,20 @@ function Results({
       <StatRow label="Qty Defect" value={formatCount(t.qtyDefect)} />
       <StatRow label="Qty A-Grade" value={formatCount(t.qtyAGrade ?? 0)} />
       <StatRow label="Qty B-Grade" value={formatCount(t.qtyBGrade)} />
+      <StatRow label="INSPECTION REWORK QTY" value={formatCount(t.inspectionReworkQty)} />
+      <StatRow
+        label="REWORK AND APPROVED"
+        // An entered value stays visible when it is not valid; it is never clamped after UNDO (BR-11).
+        value={t.reworkApproved === null ? null : formatCount(t.reworkApproved)}
+        tone={t.reworkApprovedIssue ? 'bad' : undefined}
+        className={approvable ? undefined : 'home__stat--off'}
+        onClick={approvable ? onEditReworkApproved : undefined}
+      />
+      {!approvable ? (
+        <span>Belum ada inspeksi REWORK.</span>
+      ) : t.reworkApproved === null ? (
+        <span>Ketuk untuk isi</span>
+      ) : null}
       <StatRow
         label="Defect Rate"
         value={formatRate(t.defectRate ?? 0)}
@@ -653,6 +699,11 @@ function Results({
       {t.qtyInspectionIssue ? (
         <Notice tone="warning">
           {qtyNotice(t.qtyInspectionIssue.kind, t.qtyDefect, po, mode)}
+        </Notice>
+      ) : null}
+      {t.reworkApprovedIssue ? (
+        <Notice tone="warning">
+          REWORK AND APPROVED melebihi INSPECTION REWORK QTY. Ubah angkanya sebelum SUBMIT PO.
         </Notice>
       ) : null}
     </div>

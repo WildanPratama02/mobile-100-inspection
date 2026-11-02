@@ -43,6 +43,7 @@ export const EXPORT_COLUMNS: readonly string[] = [
   'partial_qty',
   'partial_text',
   'qty_rework',
+  'qty_rework_approved',
   'qty_bgrade_inspections',
   'qty_no_defect',
   'qty_inspection',
@@ -53,6 +54,7 @@ export const EXPORT_COLUMNS: readonly string[] = [
   'defect_rate',
   'photo_count',
   'counting_rule',
+  'photo_rule',
   ...TOP5_COLUMNS,
 ];
 
@@ -109,6 +111,7 @@ export function exportCells(row: SubmissionRow, top5: readonly Top5Cell[]): Cell
     row.partialQty,
     row.partialText,
     row.qtyRework,
+    row.qtyReworkApproved,
     row.qtyBGradeInspections,
     row.qtyNoDefect,
     row.qtyInspection,
@@ -119,6 +122,7 @@ export function exportCells(row: SubmissionRow, top5: readonly Top5Cell[]): Cell
     row.defectRate,
     row.photoCount,
     row.countingRule,
+    row.photoRule,
     ...places,
   ];
 }

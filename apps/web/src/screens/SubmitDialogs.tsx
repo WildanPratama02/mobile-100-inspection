@@ -43,6 +43,27 @@ export function SubmitNoPairsDialog({ onAddDefect }: { onAddDefect: () => void }
   );
 }
 
+/**
+ * REWORK AND APPROVED is above INSPECTION REWORK QTY after UNDO (BR-11): the action opens S5c, also at 0 rework,
+ * so the PSI can save 0 or empty.
+ */
+export function SubmitReworkApprovedDialog({ onEdit }: { onEdit: () => void }) {
+  return (
+    <Overlay>
+      <Dialog title="REWORK AND APPROVED tidak valid" role="alertdialog" onClose={false}>
+        <p className="dialog__text">
+          REWORK AND APPROVED melebihi INSPECTION REWORK QTY. Ubah angkanya sebelum SUBMIT PO.
+        </p>
+        <div className="dialog__actions">
+          <Button variant="primary" onClick={onEdit}>
+            Ubah REWORK AND APPROVED
+          </Button>
+        </div>
+      </Dialog>
+    </Overlay>
+  );
+}
+
 /** Qty Inspection is empty: the action opens the quantity editor. */
 export function SubmitEmptyDialog({ onClose }: { onClose: () => void }) {
   return (
@@ -88,6 +109,9 @@ export function SubmitConfirmDialog({
           <StatRow label="Qty Defect" value={formatCount(t.qtyDefect)} />
           <StatRow label="Qty A-Grade" value={formatCount(t.qtyAGrade ?? 0)} />
           <StatRow label="Qty B-Grade" value={formatCount(t.qtyBGrade)} />
+          <StatRow label="INSPECTION REWORK QTY" value={formatCount(t.inspectionReworkQty)} />
+          {/* Empty is sealed as 0 (BR-11). */}
+          <StatRow label="REWORK AND APPROVED" value={formatCount(t.reworkApproved ?? 0)} />
           <StatRow label="Defect Rate" value={formatRate(t.defectRate ?? 0)} />
           <StatRow label="Pass Rate (RFT)" value={formatRate(t.passRate ?? 0)} />
           {takesPhotos(level) ? (

@@ -1,4 +1,4 @@
-# Mobile 100% Inspection (M100) — instructions for Codex and other agents
+# PSI Inspection Report (M100) — instructions for Codex and other agents
 
 **Read `CLAUDE.md` in this folder first and follow all of it.** It is the single source of the project's rules: where the truth lives, the stack, the hard rules, the UI rules, how to work and the commands. Everything in it applies to you as well, even where it says "Claude". Also read `.claude/rules/*.md` for the area you touch (`api-postgres.md`, `web-ui.md`). This file only adds what differs for agents started by the Orca pipeline (`docs/09-agent-workflow.md`).
 

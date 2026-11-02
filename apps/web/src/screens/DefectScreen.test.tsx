@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { defaultMapping, totals, type Po } from '@m100/shared';
+import { defaultMapping, findings, totals, type Po } from '@m100/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ToastProvider } from '../app/toast';
 import { ALL_PO_MASTER } from '../data/fixtures/pos';
@@ -72,6 +72,8 @@ const option = (title: string) =>
   within(pick()).getByRole('button', { name: new RegExp(`^${escape(title)}`) });
 const historyRows = () =>
   within(screen.getByRole('region', { name: 'Riwayat defect' })).queryAllByRole('listitem');
+const END_HINT = 'Catat minimal 1 defect sebelum END INSPECTION.';
+const EMPTY_HISTORY = 'Belum ada defect tercatat untuk inspeksi ini.';
 const session = () => store.getState().sessions[PO.po]!.state;
 
 /** The toast; a Notice (also a status) may be shown next to it. */
@@ -108,47 +110,73 @@ describe('command states (doc 05 §11.2)', () => {
     expect(pill('GENERAL')).toBeDisabled();
     expect(screen.getByText('Mulai inspeksi')).toBeVisible();
     expect(screen.getByText(/atau NO DEFECT untuk pasang tanpa defect\.$/)).toBeVisible();
-    expect(screen.getByText('Belum ada defect tercatat untuk PO ini.')).toBeVisible();
+    expect(screen.getByText(EMPTY_HISTORY)).toBeVisible();
+    expect(screen.queryByText(END_HINT)).not.toBeInTheDocument();
   });
 
-  it('REWORK highlights itself, disables the other starts and enables areas and END', async () => {
+  it('REWORK highlights itself, disables the other starts; END waits for a defect (AC-06.3)', async () => {
     renderDefect();
     await startRework();
     expect(button('REWORK')).toHaveAttribute('aria-pressed', 'true');
     expect(button('B-GRADE')).toBeDisabled();
-    expect(button('END INSPECTION')).toBeEnabled();
+    expect(button('END INSPECTION')).toBeDisabled();
+    expect(screen.getByText(END_HINT)).toBeVisible();
+    expect(button('END INSPECTION')).toHaveAccessibleDescription(END_HINT);
     expect(pill('QUARTER')).toBeEnabled();
     expect(screen.getByText('Pilih area sepatu')).toBeVisible();
     expect(screen.getByText(/PO 0903359388/).closest('p')).toHaveTextContent('REWORK');
+
+    await openFamily();
+    fireEvent.click(option(D1!.name));
+    await toast('+1 Defect');
+    expect(button('END INSPECTION')).toBeEnabled();
+    expect(screen.queryByText(END_HINT)).not.toBeInTheDocument();
+    expect(button('END INSPECTION')).not.toHaveAttribute('aria-describedby');
   });
 
-  it('B-GRADE starts a B-GRADE inspection', async () => {
+  it('B-GRADE starts a B-GRADE inspection and END waits for a defect (AC-06.3)', async () => {
     renderDefect();
     fireEvent.click(button('B-GRADE'));
     await toast('Inspeksi B-GRADE dimulai');
     expect(button('B-GRADE')).toHaveAttribute('aria-pressed', 'true');
     expect(button('REWORK')).toBeDisabled();
     expect(session().active?.type).toBe('B-GRADE');
+    expect(button('END INSPECTION')).toBeDisabled();
+    expect(screen.getByText(END_HINT)).toBeVisible();
+
+    await openFamily();
+    fireEvent.click(option(D1!.name));
+    await toast('+1 Defect dan B-Grade');
+    expect(button('END INSPECTION')).toBeEnabled();
+    expect(screen.queryByText(END_HINT)).not.toBeInTheDocument();
   });
 
-  it('PSI lv.1 has no NO DEFECT; Qty Inspection stays independent of inspections (ADR-019)', async () => {
+  it('PSI lv.1 has no NO DEFECT; END needs a defect; Qty Inspection stays independent (ADR-019)', async () => {
     await asLv1();
     renderDefect();
     expect(screen.queryByRole('button', { name: 'NO DEFECT' })).not.toBeInTheDocument();
     expect(screen.getByText(/isi QTY INSPECTION di Home\.$/)).toBeVisible();
     await startRework();
+    expect(button('END INSPECTION')).toBeDisabled();
+    await openFamily();
+    fireEvent.click(option(D1!.name));
+    await toast('+1 Defect');
     fireEvent.click(button('END INSPECTION'));
-    await toast('Inspeksi selesai tanpa defect');
-    expect(totals(session())).toMatchObject({ qtyInspection: null, qtyDefect: 0 });
+    await toast('Inspeksi selesai. 1 defect tercatat');
+    expect(totals(session())).toMatchObject({ qtyInspection: null, qtyDefect: 1 });
+    expect(screen.getByText('Mulai inspeksi')).toBeVisible();
   });
 
   it('PSI lv.2: END INSPECTION counts the pair (ADR-021)', async () => {
     renderDefect();
     await startRework();
     expect(button('NO DEFECT')).toBeDisabled();
+    await openFamily();
+    fireEvent.click(option(D1!.name));
+    await toast('+1 Defect');
     fireEvent.click(button('END INSPECTION'));
-    await toast('Inspeksi selesai tanpa defect');
-    expect(totals(session())).toMatchObject({ qtyInspection: 1, qtyAGrade: 0, qtyDefect: 0 });
+    await toast('Inspeksi selesai. 1 defect tercatat');
+    expect(totals(session())).toMatchObject({ qtyInspection: 1, qtyAGrade: 0, qtyDefect: 1 });
     expect(button('END INSPECTION')).toBeDisabled();
     expect(screen.getByText('Mulai inspeksi')).toBeVisible();
   });
@@ -175,8 +203,11 @@ describe('NO DEFECT, PSI lv.2 (ADR-021)', () => {
     fireEvent.click(button('NO DEFECT'));
     await toast('No Defect tercatat. A-Grade +1');
     await startRework();
+    await openFamily();
+    fireEvent.click(option(D1!.name));
+    await toast('+1 Defect');
     fireEvent.click(button('END INSPECTION'));
-    await toast('Inspeksi selesai tanpa defect');
+    await toast('Inspeksi selesai. 1 defect tercatat');
     for (const name of ['NO DEFECT', 'REWORK', 'B-GRADE']) expect(button(name)).toBeDisabled();
     expect(screen.getByText(/Qty Inspection sudah 2 pasang, maksimum PO ini/)).toBeVisible();
   });
@@ -205,7 +236,7 @@ describe('recording defects (FR-07, FR-09)', () => {
     );
   });
 
-  it('keeps one history row per type + area + sub-area + defect (AC-09.2)', async () => {
+  it('lists only the current inspection while Home stays session-wide (AC-06.3, AC-09.2)', async () => {
     renderDefect();
     await startRework();
     await openFamily();
@@ -216,14 +247,19 @@ describe('recording defects (FR-07, FR-09)', () => {
 
     fireEvent.click(button('B-GRADE'));
     await toast('Inspeksi B-GRADE dimulai');
+    // A new start begins with an empty list (AC-06.3).
+    expect(historyRows()).toHaveLength(0);
+    expect(screen.getByText(EMPTY_HISTORY)).toBeVisible();
     await openFamily();
     fireEvent.click(option(D1!.name));
     await toast('+1 Defect dan B-Grade');
     fireEvent.click(option(D2!.name));
-    await waitFor(() => expect(historyRows()).toHaveLength(3));
+    await waitFor(() => expect(historyRows()).toHaveLength(2));
 
-    expect(historyRows()[1]).toHaveTextContent('B-GRADE');
-    // The row count is of the active inspection only (AC-07.3): the REWORK tap does not show.
+    // Only the active B-GRADE inspection: the ended REWORK tap stays on Home and in the export.
+    expect(historyRows()[0]).toHaveTextContent('B-GRADE');
+    expect(historyRows().some((row) => row.textContent?.includes('REWORK'))).toBe(false);
+    expect(findings(session())).toHaveLength(3);
     expect(option(D1!.name)).toHaveTextContent(/1$/);
     // PSI lv.2: the ended REWORK pair counts, the active B-GRADE one not yet (ADR-021).
     expect(totals(session())).toMatchObject({ qtyInspection: 1, qtyDefect: 3, qtyBGrade: 2 });
@@ -240,22 +276,29 @@ describe('recording defects (FR-07, FR-09)', () => {
 });
 
 describe('BACK, HOME, UNDO (FR-08)', () => {
-  it('UNDO removes the last defect, then cancels the inspection, then is disabled (AC-08.1)', async () => {
+  it('UNDO removes the last defect, then cancels the inspection, then is disabled (AC-08.1, AC-06.3)', async () => {
     renderDefect();
     await startRework();
     await openFamily();
     fireEvent.click(option(D1!.name));
     await toast('+1 Defect');
+    expect(button('END INSPECTION')).toBeEnabled();
 
     fireEvent.click(bar('UNDO'));
     await toast('Defect terakhir dibatalkan');
     expect(historyRows()).toHaveLength(0);
+    expect(screen.getByText(EMPTY_HISTORY)).toBeVisible();
     expect(session().active?.defects).toHaveLength(0);
+    // AC-06.3: the only defect is gone, so END is disabled again and the hint is back.
+    expect(button('END INSPECTION')).toBeDisabled();
+    expect(screen.getByText(END_HINT)).toBeVisible();
 
     fireEvent.click(bar('UNDO'));
     await toast('Inspeksi dibatalkan');
     expect(totals(session()).qtyInspection).toBe(0);
     expect(bar('UNDO')).toBeDisabled();
+    expect(screen.getByText('Mulai inspeksi')).toBeVisible();
+    expect(screen.queryByText(END_HINT)).not.toBeInTheDocument();
     await waitFor(() => expect(store.getState().view.defectPath).toEqual(NO_PATH));
   });
 
@@ -264,8 +307,11 @@ describe('BACK, HOME, UNDO (FR-08)', () => {
     await store.getState().tap(PO.po, { type: 'SET_QTY_INSPECTION', qty: 30 });
     renderDefect();
     await startRework();
+    await openFamily();
+    fireEvent.click(option(D1!.name));
+    await toast('+1 Defect');
     fireEvent.click(button('END INSPECTION'));
-    await toast('Inspeksi selesai tanpa defect');
+    await toast('Inspeksi selesai. 1 defect tercatat');
     expect(bar('UNDO')).toBeDisabled();
     expect(totals(session()).qtyInspection).toBe(30);
   });
@@ -273,9 +319,13 @@ describe('BACK, HOME, UNDO (FR-08)', () => {
   it('UNDO never reaches an ended inspection', async () => {
     renderDefect();
     await startRework();
+    await openFamily();
+    fireEvent.click(option(D1!.name));
+    await toast('+1 Defect');
     fireEvent.click(button('END INSPECTION'));
-    await toast('Inspeksi selesai');
+    await toast('Inspeksi selesai. 1 defect tercatat');
     expect(bar('UNDO')).toBeDisabled();
+    expect(historyRows()).toHaveLength(0);
   });
 
   it('BACK goes up one level, a crumb goes to its level, and BACK at the top returns Home', async () => {
