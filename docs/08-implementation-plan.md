@@ -306,27 +306,27 @@ Migration `0007`: `submissions.qty_rework_approved` (NULL allowed, CHECK 0 ≤ v
 - [x] Admin detail and CSV carry Rework and Approved and the photo rule; old rows show them empty.
 
 ### T7.4 Tablet Home and name (web)
-- [ ] `index.html` title, manifest `name` "PSI Inspection Report" / `short_name` "PSI Inspection", login brand.
-- [ ] ALL DEFECT list: every defect in ranking order, scrolling inside its pane, photo status per row for PSI lv.2 ("Foto wajib" or the thumbnail); SUBMIT PO and EXPORT refused while one is missing (`MissingPhotosDialog` lists all).
-- [ ] Hasil pane: Inspection Rework QTY (read-only) and Rework and Approved (number pad, disabled at 0, not-valid state after UNDO; a not-valid value keeps the row tappable, also at 0 rework, so it can be corrected); every change saved to IndexedDB before the screen confirms it (NFR-03).
-- [ ] Photo resize target 500 KB.
-- [ ] Playwright: PSI lv.2 with 7 defects needs 7 photos before SUBMIT PO; Rework and Approved entered, sent and shown; `smoke`, `pwa` and `export` title checks updated.
+- [x] `index.html` title, manifest `name` "PSI Inspection Report" / `short_name` "PSI Inspection", login brand.
+- [x] ALL DEFECT list: every defect in ranking order, scrolling inside its pane, photo status per row for PSI lv.2 ("Foto wajib" or the thumbnail); SUBMIT PO and EXPORT refused while one is missing (`MissingPhotosDialog` lists all).
+- [x] Hasil pane: Inspection Rework QTY (read-only) and Rework and Approved (number pad, disabled at 0, not-valid state after UNDO; a not-valid value keeps the row tappable, also at 0 rework, so it can be corrected); every change saved to IndexedDB before the screen confirms it (NFR-03).
+- [x] Photo resize target 500 KB.
+- [x] Playwright: PSI lv.2 with 7 defects needs 7 photos before SUBMIT PO; Rework and Approved entered, sent and shown; `smoke`, `pwa` and `export` title checks updated.
 
 ### T7.5 Tablet Defect screen (web)
-- [ ] END INSPECTION disabled after REWORK / B-GRADE until a defect is tapped; UNDO of the only defect disables it again; UNDO of the start removes the inspection.
-- [ ] The defect list shows only the current inspection and is empty at each new start; Home totals unchanged.
-- [ ] Playwright for both flows (PSI lv.1 and PSI lv.2).
+- [x] END INSPECTION disabled after REWORK / B-GRADE until a defect is tapped; UNDO of the only defect disables it again; UNDO of the start removes the inspection.
+- [x] The defect list shows only the current inspection and is empty at each new start; Home totals unchanged.
+- [x] Playwright for both flows (PSI lv.1 and PSI lv.2).
 
 ### T7.6 Exports (web)
-- [ ] Excel: one sheet in the template's labels and order (title, Part I, Part II, Part III vertical label/value block (template rows 25–37), Defect Findings List No / Defect / Severity / Qty / %), values only; figures equal the T7.2 totals.
-- [ ] PDF: "PSI INSPECTION REPORT", "DATE INSPECTION" (inspection date), results with the two rework figures, an all-defect table (No / Defect / Severity / Area / Qty / %), every photo.
-- [ ] File name `PSI_<PO>_<yyyyMMdd>`; PDF creator "PSI Inspection Report".
-- [ ] Vitest on the report model (PSI lv.1 and lv.2, a PO with and without partial quantity); Playwright `export.spec.ts` downloads both files.
+- [x] Excel: one sheet in the template's labels and order (title, Part I, Part II, Part III vertical label/value block (template rows 25–37), Defect Findings List No / Defect / Severity / Qty / %), values only; figures equal the T7.2 totals.
+- [x] PDF: "PSI INSPECTION REPORT", "DATE INSPECTION" (inspection date), results with the two rework figures, an all-defect table (No / Defect / Severity / Area / Qty / %), every photo.
+- [x] File name `PSI_<PO>_<yyyyMMdd>`; PDF creator "PSI Inspection Report".
+- [x] Vitest on the report model (PSI lv.1 and lv.2, a PO with and without partial quantity); Playwright `export.spec.ts` downloads both files.
 
 ### T7.7 Admin app
-- [ ] Title "PSI Inspection Admin".
-- [ ] Submission detail: Inspection Rework QTY, Rework and Approved ("—" for older rows), photo rule, every photo.
-- [ ] Playwright admin detail test updated.
+- [x] Title "PSI Inspection Admin".
+- [x] Submission detail: Inspection Rework QTY, Rework and Approved ("—" for older rows), photo rule, every photo.
+- [x] Playwright admin detail test updated.
 
 ### T7.8 Load test
 - [ ] `pnpm test:load` with 15 photos per PSI lv.2 submission (`LOAD_PHOTOS`, default 15) passes the T3.7 targets; figures recorded in the PR.
