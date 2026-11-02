@@ -277,7 +277,7 @@ A change request of 29 Oct 2026 to code that is already built (Phase 5). Specs: 
 ### T6.5 Admin reload
 - [x] The tablet service worker leaves `/admin`, `/admin/` and `/admin/…` to the server (Playwright `pwa.spec.ts`, which fails without the denylist).
 
-## Phase 7 — PSI Inspection Report: all defects, rework re-inspection, template exports (ADR-022) · Planned
+## Phase 7 — PSI Inspection Report: all defects, rework re-inspection, template exports (ADR-022) · Done 2 Nov 2026
 
 A change request of 30 Oct 2026 (`docs/change-psi-feature-export.md`) to code that is already built (Phase 6). Spec: ADR-022; the PRD, doc 02, doc 03, doc 04 and doc 05 sections are written in T7.1 before any code. One branch (`phase-7-psi-report`, in a worktree), one PR, one release; one database migration (`0007`). Order: T7.1 → T7.2 → T7.3 → T7.4 / T7.5 → T7.6 → T7.7 → T7.8.
 
@@ -329,4 +329,4 @@ Migration `0007`: `submissions.qty_rework_approved` (NULL allowed, CHECK 0 ≤ v
 - [x] Playwright admin detail test updated.
 
 ### T7.8 Load test
-- [ ] `pnpm test:load` with 15 photos per PSI lv.2 submission (`LOAD_PHOTOS`, default 15) passes the T3.7 targets; figures recorded in the PR.
+- [x] `pnpm test:load` with 15 photos per PSI lv.2 submission (`LOAD_PHOTOS`, default 15) passes the T3.7 targets; figures recorded in the PR.
