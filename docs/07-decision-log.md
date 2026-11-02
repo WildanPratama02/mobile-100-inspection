@@ -408,6 +408,9 @@ Defect Rate = Qty Defect ÷ Qty Inspection; Pass Rate (RFT) = Qty A-Grade ÷ Qty
 **Amended 30 Oct 2026 (decision 7, Date):** For an open session, use the WIB date of its first recorded event; with no event yet, use the WIB date the session was created. For a sealed submission, use its stored `inspection_date`. This date supplies Excel Part I Date, PDF DATE INSPECTION and the file name, never the export time.
 
 Submissions sealed before this ADR show "–" for Rework and Approved and the figures that need it, and only the photos they have; their stored counts are never recalculated.
+
+**Clarified 2 Nov 2026:** older rows show '—' (em dash, doc 05 G5) for REWORK AND APPROVED, the photo rule and the figures that need them.
+
 8. **Defect screen.** END INSPECTION is disabled until the current inspection has at least one defect; UNDO of its last defect disables it again; a REWORK / B-GRADE started by mistake is removed with UNDO of the start (no new button). The defect list on the Defect screen shows only the current inspection and starts empty at each REWORK / B-GRADE start; session totals stay on Home.
 9. **Exports** stay on the tablet, one PO session per file (a multi-PO daily report would be a later change).
    - **Excel**, one sheet, values only (`write-excel-file`, no formulas): title, Part I (Date, PSI Name), Part II (KPI Summary), Part III (one row: PO No., Model Name, Qty Order, Destination, Offered Lot Qty, Inspected Qty, Inspected Qty (Including Rework), Approved Qty, Reject Qty, Rework and Approved, Pairs Not Reworkable & Not Shippable (B&C Grade), Balance Qty, Balance Rework), then the Defect Findings List (No / Defect / Severity MINOR, MAJOR, CRITICAL / Qty / % of QTY INSPECTION). Labels and order follow the template; no defect code (the old `ctq_code` is not unique and not on the tablet).

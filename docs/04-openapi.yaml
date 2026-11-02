@@ -1252,7 +1252,7 @@ components:
             photoRule:
               type: [string, 'null']
               enum: ['ALL', 'TOP5', null]
-              description: 'Stored photo_rule; null for PSI lv.1 and existing PSI lv.2 rows (legacy Top 5 rule, no backfill). TOP5 for unmarked PSI lv.2 payloads inserted after migration, ALL for marked submissions. Display null as –.'
+              description: 'Stored photo_rule; null for PSI lv.1 and existing PSI lv.2 rows (legacy Top 5 rule, no backfill). TOP5 for unmarked PSI lv.2 payloads inserted after migration, ALL for marked submissions. Display null as —.'
             counts:
               type: object
               description: '`noDefect` is null for ADR-019 rows; `qtyInspection` is the stored qty_inspection (A17).'
@@ -1262,7 +1262,7 @@ components:
                 bGrade: { type: integer }
                 noDefect: { type: [integer, 'null'] }
                 qtyInspection: { type: integer }
-                reworkApproved: { type: [integer, 'null'], minimum: 0, description: 'Stored qty_rework_approved; at most rework. Legacy NULL displays – along with dependent figures; never recalculate stored counts.' }
+                reworkApproved: { type: [integer, 'null'], minimum: 0, description: 'Stored qty_rework_approved; at most rework. Legacy NULL displays — along with dependent figures; never recalculate stored counts.' }
             findings:
               type: array
               description: In the order the PSI first tapped them, like the tablet history (doc 05 section 20.3).

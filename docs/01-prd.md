@@ -314,7 +314,7 @@ EXPORT PDF and EXPORT EXCEL create the selected PO's current session file on the
 
 For open sessions, empty REWORK AND APPROVED counts as 0; while PSI lv.1 QTY INSPECTION is empty or not valid the engine returns `null` for Inspected Qty (Including Rework), Rejected Qty, Total Approved Qty, Not Reworkable Defect % and Balance Qty, and while REWORK AND APPROVED is not valid it returns `null` for Total Approved Qty and Balance Rework; screens and exports display these null figures as `0` / `0,0%` (clarified 31 Oct 2026).
 
-Submissions sealed before ADR-022 show "–" for REWORK AND APPROVED and dependent figures (Total Approved Qty, Balance Rework), with only the photos they have. Stored counts are never recalculated. Export figures use this table, never the template's example numbers.
+Submissions sealed before ADR-022 show "—" for REWORK AND APPROVED and dependent figures (Total Approved Qty, Balance Rework), with only the photos they have. Stored counts are never recalculated. Export figures use this table, never the template's example numbers.
 
 ### FR-13 Master data on the tablet (M)
 

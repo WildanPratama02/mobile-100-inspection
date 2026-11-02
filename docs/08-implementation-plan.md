@@ -325,7 +325,7 @@ Migration `0007`: `submissions.qty_rework_approved` (NULL allowed, CHECK 0 ≤ v
 
 ### T7.7 Admin app
 - [ ] Title "PSI Inspection Admin".
-- [ ] Submission detail: Inspection Rework QTY, Rework and Approved ("–" for older rows), photo rule, every photo.
+- [ ] Submission detail: Inspection Rework QTY, Rework and Approved ("—" for older rows), photo rule, every photo.
 - [ ] Playwright admin detail test updated.
 
 ### T7.8 Load test
