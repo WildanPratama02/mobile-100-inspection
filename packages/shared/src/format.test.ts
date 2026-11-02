@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  fileDate,
   formatCount,
   formatDate,
   formatDateTime,
@@ -87,14 +86,6 @@ describe('formatDateTime (WIB)', () => {
 
   it('moves to the next day from 17.00 UTC', () => {
     expect(formatDateTime(new Date('2026-12-31T17:30:00Z'))).toBe('01 Jan 2027 00.30 WIB');
-  });
-});
-
-describe('fileDate (AC-12.3)', () => {
-  it('gives the WIB calendar day as YYYYMMDD', () => {
-    expect(fileDate(new Date('2026-10-19T07:05:00Z'))).toBe('20261019');
-    expect(fileDate(new Date('2026-10-19T16:59:59Z'))).toBe('20261019');
-    expect(fileDate(new Date('2026-10-19T17:00:00Z'))).toBe('20261020');
   });
 });
 

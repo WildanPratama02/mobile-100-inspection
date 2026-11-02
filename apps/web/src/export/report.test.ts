@@ -58,8 +58,12 @@ class Taps {
   bGrade() {
     return this.push({ type: 'START_BGRADE' });
   }
-  qtyInspection() {
-    return this.push({ type: 'SET_QTY_INSPECTION', qty: 30 });
+  qtyInspection(qty = 30) {
+    return this.push({ type: 'SET_QTY_INSPECTION', qty });
+  }
+  /** REWORK AND APPROVED saved with the number pad (FR-16). */
+  approved(qty: number | null) {
+    return this.push({ type: 'SET_REWORK_APPROVED', qty });
   }
   end() {
     return this.push({ type: 'END' });
@@ -125,8 +129,15 @@ describe('exportReport (FR-12)', () => {
     });
 
     it('uses the session creation when no event was recorded yet', () => {
-      // createdAt is 08.00 WIB on 19 Oct.
-      expect(exportReport(input(new Taps())).fileBase).toBe('PSI_0903359388_20261019');
+      // The PO was added on 19 Oct (07.00 WIB), its session created on 20 Oct (08.00 WIB): the session wins.
+      const base = new Taps().session();
+      const session = {
+        ...base,
+        session: { ...base.session, createdAt: '2026-10-20T01:00:00.000Z' },
+      };
+      const report = exportReport(input(undefined, { session }));
+      expect(report.date).toBe('2026-10-20');
+      expect(report.fileBase).toBe('PSI_0903359388_20261020');
     });
 
     it('falls back to the PO date for a PO without a session', () => {
@@ -183,11 +194,11 @@ describe('exportReport (FR-12)', () => {
     expect(exportReport(input(taps)).results).toEqual([
       { label: 'Qty PO Order', kind: 'count', value: 10002 },
       { label: 'Qty Inspection', kind: 'count', value: 30 },
-      { label: 'Inspection Rework Qty', kind: 'count', value: 1 },
+      { label: 'INSPECTION REWORK QTY', kind: 'count', value: 1 },
       { label: 'Qty Defect', kind: 'count', value: 3 },
       { label: 'Qty A-Grade', kind: 'count', value: 27 },
       { label: 'Qty B-Grade', kind: 'count', value: 1 },
-      { label: 'Rework and Approved', kind: 'count', value: 0 },
+      { label: 'REWORK AND APPROVED', kind: 'count', value: 0 },
       { label: 'Defect Rate', kind: 'rate', value: 0.1 },
       { label: 'Pass Rate (RFT)', kind: 'rate', value: 0.9 },
     ]);
@@ -217,7 +228,8 @@ describe('exportReport (FR-12)', () => {
     ]);
 
     expect(report.summary).toEqual([
-      { label: 'PO No.', value: '0903359388' },
+      // Exactly the template's labels, column A rows 25–37 (PO NO as cell A25, 2 Nov 2026).
+      { label: 'PO NO', value: '0903359388' },
       { label: 'Model Name', value: PO.model },
       { label: 'Qty Order', value: 10002 },
       { label: 'Destination', value: PO.destination },
@@ -238,6 +250,137 @@ describe('exportReport (FR-12)', () => {
     const report = exportReport(input(new Taps().qtyInspection(), { po }));
     expect(report.summary).toContainEqual({ label: 'Offered Lot Qty', value: 1200 });
     expect(report.summary).toContainEqual({ label: 'Balance Qty', value: 1170 });
+  });
+
+  describe('REWORK AND APPROVED (FR-16, ADR-022 decision 7)', () => {
+    it('adds to Total Approved Qty and takes off Balance Rework', () => {
+      // PSI lv.1: two REWORK pairs with three findings, QTY INSPECTION 30, one pair approved after rework.
+      const taps = new Taps()
+        .rework()
+        .defect('D005')
+        .defect('D049')
+        .end()
+        .rework()
+        .defect('D035')
+        .end()
+        .qtyInspection(30)
+        .approved(1);
+      const report = exportReport(input(taps, { auth: LV1 }));
+      // A-Grade 30 − 3 = 27; incl. rework 30 + 2 = 32; rejected 30 − 27 = 3; total approved 27 + 1 = 28;
+      // balance rework 2 − 1 = 1; balance qty 10.002 − 30 = 9.972.
+      expect(report.results.map((r) => r.value)).toEqual([
+        10002,
+        30,
+        2,
+        3,
+        27,
+        0,
+        1,
+        3 / 30,
+        27 / 30,
+      ]);
+      expect(report.kpi.map((r) => r.value)).toEqual([30, 32, 3, 27 / 30, 3 / 30, 0, 0, 28]);
+      expect(report.summary.map((row) => row.value)).toEqual([
+        '0903359388',
+        PO.model,
+        10002,
+        PO.destination,
+        10002,
+        30,
+        32,
+        27,
+        3,
+        1,
+        0,
+        1,
+        9972,
+      ]);
+    });
+
+    it('not valid after UNDO: the figures that need it are 0, the entered value stays (BR-11)', () => {
+      // Approved 2 while a second REWORK was open; UNDO of that start leaves INSPECTION REWORK QTY 1.
+      const taps = new Taps()
+        .rework()
+        .defect('D005')
+        .end()
+        .qtyInspection(30)
+        .rework()
+        .approved(2)
+        .undo();
+      const state = taps.session().state;
+      expect([state.counts.rework, state.reworkApproved]).toEqual([1, 2]);
+      const report = exportReport(input(taps, { auth: LV1 }));
+      // A-Grade 30 − 1 = 29; incl. rework 30 + 1 = 31; rejected 1; Total Approved Qty and Balance Rework are
+      // null (shown 0); REWORK AND APPROVED keeps the entered 2, as Home shows it.
+      expect(report.results.map((r) => r.value)).toEqual([
+        10002,
+        30,
+        1,
+        1,
+        29,
+        0,
+        2,
+        1 / 30,
+        29 / 30,
+      ]);
+      expect(report.kpi.map((r) => r.value)).toEqual([30, 31, 1, 29 / 30, 1 / 30, 0, 0, 0]);
+      expect(report.summary).toContainEqual({ label: 'Rework and Approved', value: 2 });
+      expect(report.summary).toContainEqual({ label: 'Balance Rework', value: 0 });
+      expect(report.summary).toContainEqual({ label: 'Approved Qty', value: 29 });
+    });
+  });
+
+  describe('PSI lv.1 QTY INSPECTION not valid (BR-10, 31 Oct 2026)', () => {
+    it('below Qty Defect: every figure that needs it is 0 / 0,0%, the defect shares too', () => {
+      // Five findings on one REWORK pair, QTY INSPECTION 2.
+      const taps = new Taps().rework().defect('D005', 3).defect('D049', 2).end().qtyInspection(2);
+      const report = exportReport(input(taps, { auth: LV1 }));
+      // QTY INSPECTION shows the entered 2; A-Grade, rates, incl. rework, rejected, total approved and
+      // balance qty are null (0); Balance Rework 1 − 0 = 1 needs no QTY INSPECTION.
+      expect(report.results.map((r) => r.value)).toEqual([10002, 2, 1, 5, 0, 0, 0, 0, 0]);
+      expect(report.kpi.map((r) => r.value)).toEqual([2, 0, 0, 0, 0, 0, 0, 0]);
+      expect(report.summary.slice(4).map((row) => row.value)).toEqual([
+        10002, 2, 0, 0, 0, 0, 0, 1, 0,
+      ]);
+      // Not 3 / 2 and 2 / 2: the rows agree with Defect % (0,0%).
+      expect(report.defects.map((d) => [d.defectId, d.qty, d.rate])).toEqual([
+        ['D005', 3, 0],
+        ['D049', 2, 0],
+      ]);
+    });
+
+    it('above the partial quantity: the defect shares are 0,0% as Defect %', () => {
+      const po = { ...PO, partial: { number: 1, qty: 1200 } };
+      const taps = new Taps().rework().defect('D005').end().qtyInspection(2000);
+      const report = exportReport(input(taps, { po, auth: LV1 }));
+      expect(report.kpi.find((r) => r.label === 'Defect %')!.value).toBe(0);
+      expect(report.defects.map((d) => d.rate)).toEqual([0]);
+      expect(report.summary).toContainEqual({ label: 'Offered Lot Qty', value: 1200 });
+      expect(report.summary).toContainEqual({ label: 'Balance Qty', value: 0 });
+    });
+  });
+
+  it('PSI lv.2 with a partial quantity: the partial is the offered lot (ADR-021, ADR-022)', () => {
+    const po = { ...PO, partial: { number: 1, qty: 1200 } };
+    const taps = new Taps('TAPPED')
+      .noDefect(7)
+      .rework()
+      .defect('D005')
+      .defect('D049')
+      .end()
+      .bGrade()
+      .defect('D035')
+      .end();
+    const report = exportReport(input(taps, { po }));
+    // Qty Inspection 7 + 2 ended pairs = 9; A-Grade 7; rejected 9 − 7 = 2; incl. rework 9 (lv.2);
+    // not reworkable 1 / 9; total approved 7 + 0; balance rework 1 − 0; balance qty 1.200 − 9 = 1.191.
+    expect(report.results.map((r) => r.value)).toEqual([10002, 9, 1, 3, 7, 1, 0, 3 / 9, 7 / 9]);
+    expect(report.kpi.map((r) => r.value)).toEqual([9, 9, 2, 7 / 9, 3 / 9, 1, 1 / 9, 7]);
+    expect(report.summary.slice(4).map((row) => row.value)).toEqual([
+      1200, 9, 9, 7, 2, 0, 1, 1, 1191,
+    ]);
+    expect(report.defects.map((d) => d.rate)).toEqual([1 / 9, 1 / 9, 1 / 9]);
+    expect(report.info).toContainEqual(['PARTIAL', 'P1 · 1.200 dari 10.002']);
   });
 
   it('PSI lv.2: Qty Inspection and A-Grade from NO DEFECT and ended inspections (ADR-021)', () => {

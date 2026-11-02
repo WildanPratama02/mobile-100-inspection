@@ -33,7 +33,7 @@ export const NO_DEFECT_TEXT = 'Belum ada defect.';
 export type ResultValue =
   { label: string; kind: 'count'; value: number } | { label: string; kind: 'rate'; value: number };
 
-/** A Part III row: a count, or a text field (PO No., Model Name, Destination). */
+/** A Part III row: a count, or a text field (PO NO, Model Name, Destination). */
 export interface SummaryRow {
   label: string;
   value: string | number;
@@ -107,8 +107,13 @@ export function exportReport({ po, session, auth, mapping }: ExportInput): Expor
   const ranked = rankDefects(list, (id) => defectOf(id).classification);
   const t = totals(state, po);
   const count = (n: number | null) => n ?? 0;
-  /** QTY INSPECTION as the files show it, and the denominator of each defect's share. */
-  const inspected = count(t.qtyInspection);
+  /**
+   * A defect's share of QTY INSPECTION, only while QTY INSPECTION is valid: Defect Rate is null exactly when it is
+   * empty, not valid (BR-10) or 0, and every figure that needs a valid QTY INSPECTION is then 0,0% (31 Oct 2026),
+   * so the rows always agree with Defect Rate.
+   */
+  const share = (qty: number) =>
+    t.defectRate === null || t.qtyInspection === null ? 0 : qty / t.qtyInspection;
 
   // AC-12.3: the WIB date of the session's first recorded event, else of its creation. Export time never enters.
   const date = inspectionDate(session?.events[0]?.at ?? session?.session.createdAt ?? po.addedAt);
@@ -135,11 +140,11 @@ export function exportReport({ po, session, auth, mapping }: ExportInput): Expor
     results: [
       { label: 'Qty PO Order', kind: 'count', value: po.orderQty },
       { label: 'Qty Inspection', kind: 'count', value: count(t.qtyInspection) },
-      { label: 'Inspection Rework Qty', kind: 'count', value: t.inspectionReworkQty },
+      { label: 'INSPECTION REWORK QTY', kind: 'count', value: t.inspectionReworkQty },
       { label: 'Qty Defect', kind: 'count', value: t.qtyDefect },
       { label: 'Qty A-Grade', kind: 'count', value: count(t.qtyAGrade) },
       { label: 'Qty B-Grade', kind: 'count', value: t.qtyBGrade },
-      { label: 'Rework and Approved', kind: 'count', value: count(t.reworkApproved) },
+      { label: 'REWORK AND APPROVED', kind: 'count', value: count(t.reworkApproved) },
       { label: 'Defect Rate', kind: 'rate', value: count(t.defectRate) },
       { label: 'Pass Rate (RFT)', kind: 'rate', value: count(t.passRate) },
     ],
@@ -158,7 +163,8 @@ export function exportReport({ po, session, auth, mapping }: ExportInput): Expor
       { label: 'Total Approved Qty', kind: 'count', value: count(t.totalApprovedQty) },
     ],
     summary: [
-      { label: 'PO No.', value: po.po },
+      // Labels exactly as the template's column A, rows 25–37 (ADR-022 decision 9, 2 Nov 2026).
+      { label: 'PO NO', value: po.po },
       { label: 'Model Name', value: po.model },
       { label: 'Qty Order', value: po.orderQty },
       { label: 'Destination', value: po.destination },
@@ -185,7 +191,7 @@ export function exportReport({ po, session, auth, mapping }: ExportInput): Expor
       classification: row.classification,
       areas: areaLabels(row.areaIds, mapping),
       qty: row.qty,
-      rate: inspected > 0 ? row.qty / inspected : 0,
+      rate: share(row.qty),
     })),
     // A photo of a defect that was undone completely is not part of the findings and stays out.
     photos: ranked.flatMap((row, i) => {

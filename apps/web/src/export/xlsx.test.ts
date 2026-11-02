@@ -4,7 +4,7 @@
 import { strFromU8, unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { formatDate } from '@m100/shared';
-import { REPORT, REPORT_EMPTY } from './testReport';
+import { REPORT, REPORT_EMPTY, SHARED_NAME } from './testReport';
 import { SUMMARY_SHEET, toXlsx, XLSX_TYPE } from './xlsx';
 import type { ExportReport } from './report';
 
@@ -21,19 +21,30 @@ function text(xml: Record<string, string>): string {
   return Object.values(xml).join('\n');
 }
 
-/** The sheet's column A, row by row, with shared strings resolved (empty rows become `''`). */
-function columnA(xml: Record<string, string>): string[] {
+/** The sheet's rows, each a map of column letter to value, with shared strings resolved. */
+function rows(xml: Record<string, string>): Array<Record<string, string>> {
   const shared = [
     ...(xml['xl/sharedStrings.xml'] ?? '').matchAll(/<si>.*?<t[^>]*>(.*?)<\/t>.*?<\/si>/g),
   ].map(([, value]) => unescapeXml(value ?? ''));
   const sheet = xml['xl/worksheets/sheet1.xml'] ?? '';
-  return [...sheet.matchAll(/<row r="\d+"[^>]*>(.*?)<\/row>/g)].map(([, body]) => {
-    const cell = /<c r="A\d+"([^>]*)>(.*?)<\/c>/.exec(body ?? '');
-    if (!cell) return '';
-    const [, attrs, inner] = cell;
-    const value = /<v>(.*?)<\/v>/.exec(inner ?? '')?.[1] ?? '';
-    return attrs!.includes('t="s"') ? (shared[Number(value)] ?? '') : value;
-  });
+  return [...sheet.matchAll(/<row r="\d+"[^>]*>(.*?)<\/row>/g)].map(([, body]) =>
+    Object.fromEntries(
+      [...(body ?? '').matchAll(/<c r="([A-Z]+)\d+"([^>]*)>(.*?)<\/c>/g)].map(
+        ([, column, attrs, inner]): [string, string] => {
+          const value = /<v>(.*?)<\/v>/.exec(inner ?? '')?.[1] ?? '';
+          return [
+            column ?? '',
+            (attrs ?? '').includes('t="s"') ? (shared[Number(value)] ?? '') : value,
+          ];
+        },
+      ),
+    ),
+  );
+}
+
+/** The sheet's column A, row by row (empty rows become `''`). */
+function columnA(xml: Record<string, string>): string[] {
+  return rows(xml).map((row) => row['A'] ?? '');
 }
 
 function unescapeXml(value: string): string {
@@ -91,7 +102,7 @@ describe('toXlsx (FR-12)', () => {
     // Counts are numbers, rates are percentages: 23/30 and 7/30, 1/30.
     expect(sheet1).toContain('<v>30</v>');
     expect(sheet1).toContain('<v>31</v>');
-    expect(sheet1).toContain('<v>25</v>');
+    expect(sheet1).toContain('<v>24</v>');
     expect(sheet1).toContain(`<v>${23 / 30}</v>`);
     expect(sheet1).toContain(`<v>${7 / 30}</v>`);
     expect(sheet1).toContain(`<v>${1 / 30}</v>`);
@@ -113,20 +124,32 @@ describe('toXlsx (FR-12)', () => {
   });
 
   it('lists every defect finding with its severity and share, never only five (ADR-022)', async () => {
-    const all = text(await parts(REPORT));
+    const xml = await parts(REPORT);
+    const all = text(xml);
     expect(all).not.toContain('TOP 5');
     expect(all).toContain('Severity');
     expect(all).toContain('% of QTY INSPECTION');
-    for (const d of REPORT.defects) {
-      expect(all).toContain(d.name);
-      expect(all).toContain(d.classification);
-    }
+    // One row per defect: No, the name exactly as in the mapping, severity, Qty and share.
+    const list = rows(xml).slice(-REPORT.defects.length);
+    expect(list.map((row) => [row['A'], row['B'], row['C'], row['D']])).toEqual(
+      REPORT.defects.map((d) => [String(d.no), d.name, d.classification, String(d.qty)]),
+    );
     expect(REPORT.defects).toHaveLength(6);
     expect(all).toContain(`<v>${2 / 30}</v>`);
     // No photo section, no template formula, no area column.
     expect(all).not.toContain('Foto');
     expect(all).not.toContain('<f>');
     expect(all).not.toContain('Sub Area');
+  });
+
+  it('gives D049 and D071 a row each although they share a name (ADR-009)', async () => {
+    const list = rows(await parts(REPORT)).filter((row) => row['B'] === SHARED_NAME);
+    // Two rows, numbered by their own ranks: the defects are kept apart by DEFECT_ID, not merged by name.
+    expect(list.map((row) => row['A'])).toEqual(['5', '6']);
+    expect(REPORT.defects.filter((d) => d.name === SHARED_NAME).map((d) => d.defectId)).toEqual([
+      'D049',
+      'D071',
+    ]);
   });
 
   it('an empty session shows "Belum ada defect." and zero figures (doc 05 §8.5)', async () => {

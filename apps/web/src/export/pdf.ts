@@ -19,11 +19,20 @@ const HEADER_BOTTOM = 22;
 const CONTENT_TOP = 28;
 const FOOTER_Y = PAGE_H - 8;
 
-/** Photos sit three in a row, each fitted in a 58 × 43 mm box with a two-line caption. */
+/**
+ * Photos sit three in a row, each fitted in a 58 × 43 mm box. The caption below holds the full defect name as in
+ * the mapping, on as many lines as it needs; a row is as high as its longest caption (at least two lines).
+ */
 const PHOTO_W = 58;
 const PHOTO_H = 43;
 const PHOTO_GAP = 4;
-const CAPTION_H = 9;
+const PER_ROW = 3;
+const CAPTION_PT = 7.5;
+/** The first caption baseline below the photo box, and the space kept under the last line. */
+const CAPTION_TOP = 3.5;
+const CAPTION_BOTTOM = 2.5;
+/** jsPDF's line height for a text array: the font size × its line height factor (1.15), in mm. */
+const CAPTION_LINE = (CAPTION_PT * 1.15 * 25.4) / 72;
 
 const INK = 0;
 const MUTED = 90;
@@ -150,39 +159,49 @@ export function toPdf(report: ExportReport, assets: PdfAssets): Blob {
 
   let y = tableEnd(doc) + 8;
   if (report.photos.length > 0) {
-    const rowH = PHOTO_H + CAPTION_H + PHOTO_GAP;
-    if (y + 4 + rowH > FOOTER_Y - 6) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(CAPTION_PT);
+    // Every listed defect has a number, so a photo always names its row (AC-10.4); the name is never cut.
+    const captioned = report.photos.map((photo) => ({
+      photo,
+      lines: doc.splitTextToSize(`${photo.no}. ${photo.name}`, PHOTO_W) as string[],
+    }));
+    const rows: (typeof captioned)[] = [];
+    for (let i = 0; i < captioned.length; i += PER_ROW) rows.push(captioned.slice(i, i + PER_ROW));
+    const heightOf = (row: typeof captioned) => {
+      const lines = Math.max(2, ...row.map((c) => c.lines.length));
+      return PHOTO_H + CAPTION_TOP + (lines - 1) * CAPTION_LINE + CAPTION_BOTTOM + PHOTO_GAP;
+    };
+
+    if (y + 4 + heightOf(rows[0]!) > FOOTER_Y - 6) {
       doc.addPage();
       header();
       y = CONTENT_TOP + 4;
     }
     y = title('FOTO DEFECT', y) + 2;
-    let x = MARGIN;
-    for (const photo of report.photos) {
-      if (x + PHOTO_W > PAGE_W - MARGIN + 0.5) {
-        x = MARGIN;
-        y += rowH;
-      }
+    for (const row of rows) {
+      const rowH = heightOf(row);
       if (y + rowH > FOOTER_Y - 6) {
         doc.addPage();
         header();
-        x = MARGIN;
         y = CONTENT_TOP;
       }
-      const bytes = assets.photos.get(photo.defectId);
-      if (bytes) {
-        const size = fit(doc, bytes, PHOTO_W, PHOTO_H);
-        doc.addImage(bytes, 'JPEG', x + (PHOTO_W - size.w) / 2, y, size.w, size.h);
+      let x = MARGIN;
+      for (const { photo, lines } of row) {
+        const bytes = assets.photos.get(photo.defectId);
+        if (bytes) {
+          const size = fit(doc, bytes, PHOTO_W, PHOTO_H);
+          doc.addImage(bytes, 'JPEG', x + (PHOTO_W - size.w) / 2, y, size.w, size.h);
+        }
+        doc.setDrawColor(LINE);
+        doc.rect(x, y, PHOTO_W, PHOTO_H);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(CAPTION_PT);
+        doc.setTextColor(INK);
+        doc.text(lines, x, y + PHOTO_H + CAPTION_TOP);
+        x += PHOTO_W + PHOTO_GAP;
       }
-      doc.setDrawColor(LINE);
-      doc.rect(x, y, PHOTO_W, PHOTO_H);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(INK);
-      // Every listed defect has a number, so a photo always names its row (AC-10.4).
-      const lines = doc.splitTextToSize(`${photo.no}. ${photo.name}`, PHOTO_W) as string[];
-      doc.text(lines.slice(0, 2), x, y + PHOTO_H + 3.5);
-      x += PHOTO_W + PHOTO_GAP;
+      y += rowH;
     }
   }
 

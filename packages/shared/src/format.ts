@@ -83,12 +83,6 @@ export function formatDateTime(at: Date): string {
   return `${p.day} ${p.month} ${p.year} ${p.hour}.${p.minute} WIB`;
 }
 
-/** The WIB calendar day of a moment as `YYYYMMDD`, for export file names (AC-12.3). */
-export function fileDate(at: Date): string {
-  const p = parts(WIB_DIGITS, at);
-  return `${p.year}${p.month}${p.day}`;
-}
-
 /**
  * The WIB calendar day of a moment as `YYYY-MM-DD`: a submission's `inspection_date` and the month of its photo
  * keys (doc 02 §6.4, §7).
