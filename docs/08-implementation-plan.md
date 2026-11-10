@@ -357,9 +357,9 @@ Event `SET_NO_DEFECT{qty}`; command `setNoDefect(state, qty, po)`; `noDefectRun`
 - [x] Vitest for the row and the dialog.
 
 ### T8.4 Tablet photo menu (web)
-- [ ] The photo button and GANTI FOTO open "Foto defect" with Ambil Foto (input with `capture="environment"`) and Pilih dari Galeri (input without `capture`), both `accept="image/*"`; BATAL or a cancelled picker changes nothing.
-- [ ] An image that can't be decoded → toast "Foto tidak bisa dibaca. Pilih foto JPG atau PNG.", nothing stored; a gallery photo goes through the same resize (≤ 960 px, ≤ 500 KB).
-- [ ] `HomeScreen.test.tsx` (the `capture` check) and the photo tests updated.
+- [x] The photo button and GANTI FOTO open "Foto defect" with Ambil Foto (input with `capture="environment"`) and Pilih dari Galeri (input without `capture`), both `accept="image/*"`; BATAL or a cancelled picker changes nothing.
+- [x] An image that can't be decoded → toast "Foto tidak bisa dibaca. Pilih foto JPG atau PNG.", nothing stored; a gallery photo goes through the same resize (≤ 960 px, ≤ 500 KB).
+- [x] `HomeScreen.test.tsx` (the `capture` check) and the photo tests updated.
 
 ### T8.5 End-to-end
 - [ ] Playwright, PSI lv.2: set NO DEFECT to 120, tap NO DEFECT once, UNDO twice (121 → 120 → previous total), set again, SUBMIT PO; the API stores `qty_no_defect` equal to the total.

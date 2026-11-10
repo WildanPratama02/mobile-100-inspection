@@ -1,4 +1,4 @@
-import { setQtyInspection } from './helpers';
+import { photoSource, setQtyInspection } from './helpers';
 // SUBMIT PO, local half: checks, confirmation, sealing into the outbox, waiting count and gear list
 // (T1.7: FR-11 steps 1–3, BR-04, AC-11.3; doc 05 §13, §14).
 import { type Page } from '@playwright/test';
@@ -88,8 +88,9 @@ async function shootTop5(page: Page) {
     context.fillRect(0, 0, 1200, 900);
     return canvas.toDataURL('image/jpeg', 0.9).split(',')[1]!;
   });
-  const chooser = page.waitForEvent('filechooser');
   await allDefect(page).getByRole('button', { name: 'Foto wajib' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await photoSource(page, 'Ambil Foto');
   await (
     await chooser
   ).setFiles({

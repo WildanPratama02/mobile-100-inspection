@@ -92,6 +92,13 @@ export const stat = (page: Page, label: string) =>
 
 export const allDefect = (page: Page) => page.getByRole('region', { name: 'ALL DEFECT' });
 
+/**
+ * Picks a source in the S7a photo menu ("Foto defect", ADR-023) that the photo button or GANTI FOTO opened;
+ * call it inside the wait for the file chooser.
+ */
+export const photoSource = (page: Page, source: 'Ambil Foto' | 'Pilih dari Galeri') =>
+  page.getByRole('dialog', { name: 'Foto defect' }).getByRole('button', { name: source }).click();
+
 /** Every value of the results box on Home, in order (FR-04). */
 export async function expectResults(
   page: Page,

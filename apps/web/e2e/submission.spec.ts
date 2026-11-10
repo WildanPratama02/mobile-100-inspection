@@ -8,7 +8,16 @@ import { join } from 'node:path';
 import { type Page } from '@playwright/test';
 import { PHOTO_DIR_ENV } from './api/testApi';
 import { expect, test, type Sql, type Tablet } from './fixtures';
-import { addPo, bar, choice, login, openFamily, tapNoDefect, allDefect } from './helpers';
+import {
+  addPo,
+  bar,
+  choice,
+  login,
+  openFamily,
+  tapNoDefect,
+  allDefect,
+  photoSource,
+} from './helpers';
 
 const PO = '0903359388';
 // Quarter › Medial / Lateral Quarter › Stitching (reference/mapping/mapping.json).
@@ -220,8 +229,9 @@ async function shootNext(page: Page, colour: string) {
   }, colour);
   const required = allDefect(page).getByRole('button', { name: 'Foto wajib' });
   const before = await required.count();
-  const chooser = page.waitForEvent('filechooser');
   await required.first().click();
+  const chooser = page.waitForEvent('filechooser');
+  await photoSource(page, 'Ambil Foto');
   await (
     await chooser
   ).setFiles({ name: 'camera.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpeg, 'base64') });

@@ -23,6 +23,18 @@ export class PhotoProcessingError extends Error {
   }
 }
 
+/**
+ * The browser can't decode the image (for example HEIC from a gallery): "Foto tidak bisa dibaca. Pilih foto JPG
+ * atau PNG." (AC-10.7, ADR-023). Nothing is stored.
+ */
+export class PhotoDecodeError extends PhotoProcessingError {
+  constructor(cause: unknown) {
+    super('The image could not be decoded');
+    this.name = 'PhotoDecodeError';
+    this.cause = cause;
+  }
+}
+
 /** The size to draw at: the long edge at most `max`, aspect kept, never enlarged. */
 export function fitWithin(
   width: number,
@@ -61,12 +73,22 @@ function canvasJpeg(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
   });
 }
 
+/** Decodes the image upright; `PhotoDecodeError` when the browser can't read it (AC-10.7). */
+async function decode(file: Blob): Promise<ImageBitmap> {
+  try {
+    return await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch (error) {
+    throw new PhotoDecodeError(error);
+  }
+}
+
 /**
  * Decodes the photo upright (EXIF orientation applied, the EXIF itself dropped), draws it at most 960 px on
- * the long edge and encodes it as JPEG.
+ * the long edge and encodes it as JPEG. A camera photo and a gallery photo take the same path, with no date or
+ * EXIF check (ADR-023 decision 9).
  */
 export async function toJpeg(file: Blob): Promise<Jpeg> {
-  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  const bitmap = await decode(file);
   try {
     const size = fitWithin(bitmap.width, bitmap.height);
     const canvas = document.createElement('canvas');

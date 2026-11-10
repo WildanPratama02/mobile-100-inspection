@@ -14,12 +14,15 @@ import type { OutboxSender } from '../outbox/sender';
 import { OutboxSenderContext } from '../outbox/useOutboxSender';
 import { exportFile } from '../export/exportFile';
 import { saveFile } from '../export/saveFile';
-import { toJpeg } from '../photos/resize';
+import { PhotoDecodeError, toJpeg } from '../photos/resize';
 import { AppStoreContext, createAppStore, type AppStore, type TapCommand } from '../state/store';
 import { HomeScreen, LONG_PRESS_MS } from './HomeScreen';
 
 // jsdom has no canvas: the resize itself is covered by the Playwright test (e2e/photos.spec.ts).
-vi.mock('../photos/resize', () => ({ toJpeg: vi.fn() }));
+vi.mock('../photos/resize', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../photos/resize')>()),
+  toJpeg: vi.fn(),
+}));
 // The files themselves are tested in src/export and e2e/export.spec.ts; here only what Home does with them.
 vi.mock('../export/exportFile', () => ({ exportFile: vi.fn() }));
 vi.mock('../export/saveFile', () => ({ saveFile: vi.fn() }));
@@ -515,11 +518,25 @@ describe('photos (FR-10, doc 05 §12)', () => {
   const rows = () =>
     within(screen.getByRole('region', { name: 'ALL DEFECT' })).getAllByRole('listitem');
   const camera = () => screen.getByTestId<HTMLInputElement>('camera');
+  const gallery = () => screen.getByTestId<HTMLInputElement>('gallery');
   const stored = () => store.getState().sessions[PO.po]!.photos;
+  /** The S7a photo menu (ADR-023). */
+  const menu = () => screen.getByRole('dialog', { name: 'Foto defect' });
+
+  /** Taps the first row's photo button and a source in the menu. */
+  function choose(source: 'Ambil Foto' | 'Pilih dari Galeri') {
+    fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' }));
+    fireEvent.click(within(menu()).getByRole('button', { name: source }));
+  }
 
   /** What the camera hands back: a file, or nothing when it is cancelled. Callers wait for the result. */
   function returnFromCamera(...files: File[]) {
     fireEvent.change(camera(), { target: { files } });
+  }
+
+  /** What the gallery or file picker hands back. */
+  function returnFromGallery(...files: File[]) {
+    fireEvent.change(gallery(), { target: { files } });
   }
 
   async function withDefects(...entries: AreaMapEntry[]) {
@@ -544,16 +561,57 @@ describe('photos (FR-10, doc 05 §12)', () => {
     ).toBeInTheDocument();
   });
 
-  it('opens the camera, stores the resized photo and shows its thumbnail (S7a, AC-10.1, AC-10.2)', async () => {
+  it('the photo button opens the menu: Ambil Foto opens the camera, Pilih dari Galeri the gallery (ADR-023)', async () => {
     const a = entry('MAJOR', 'A01');
     await withDefects(a);
     renderHome();
-    const click = vi.spyOn(camera(), 'click');
-
-    fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' }));
-    expect(click).toHaveBeenCalledOnce();
+    const cameraClick = vi.spyOn(camera(), 'click');
+    const galleryClick = vi.spyOn(gallery(), 'click');
     expect(camera()).toHaveAttribute('accept', 'image/*');
     expect(camera()).toHaveAttribute('capture', 'environment');
+    expect(gallery()).toHaveAttribute('accept', 'image/*');
+    expect(gallery()).not.toHaveAttribute('capture');
+
+    fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' }));
+    const sourceMenu = menu();
+    expect(sourceMenu).toHaveTextContent(nameOf(a));
+    expect(sourceMenu).toHaveTextContent('MAJOR');
+    expect(cameraClick).not.toHaveBeenCalled();
+    fireEvent.click(within(sourceMenu).getByRole('button', { name: 'Ambil Foto' }));
+    expect(cameraClick).toHaveBeenCalledOnce();
+    expect(galleryClick).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: 'Foto defect' })).not.toBeInTheDocument();
+
+    fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' }));
+    fireEvent.click(within(menu()).getByRole('button', { name: 'Pilih dari Galeri' }));
+    expect(galleryClick).toHaveBeenCalledOnce();
+    expect(cameraClick).toHaveBeenCalledOnce();
+  });
+
+  it('BATAL, the close button and Escape close the menu and change nothing', async () => {
+    await withDefects(entry('MAJOR', 'A01'));
+    renderHome();
+    const cameraClick = vi.spyOn(camera(), 'click');
+    const galleryClick = vi.spyOn(gallery(), 'click');
+    for (const close of [
+      () => fireEvent.click(within(menu()).getByRole('button', { name: 'BATAL' })),
+      () => fireEvent.click(within(menu()).getByRole('button', { name: 'Tutup' })),
+      () => fireEvent.keyDown(document, { key: 'Escape' }),
+    ]) {
+      fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' }));
+      close();
+      expect(screen.queryByRole('dialog', { name: 'Foto defect' })).not.toBeInTheDocument();
+    }
+    expect(cameraClick).not.toHaveBeenCalled();
+    expect(galleryClick).not.toHaveBeenCalled();
+    expect(stored()).toEqual({});
+  });
+
+  it('stores the resized camera photo and shows its thumbnail (S7a, AC-10.1, AC-10.2)', async () => {
+    const a = entry('MAJOR', 'A01');
+    await withDefects(a);
+    renderHome();
+    choose('Ambil Foto');
     returnFromCamera(shot());
 
     expect(await screen.findByText('Foto tersimpan')).toBeInTheDocument();
@@ -568,22 +626,54 @@ describe('photos (FR-10, doc 05 §12)', () => {
     expect(screen.queryByText(/foto belum ada/)).not.toBeInTheDocument();
   });
 
-  it('changes nothing when the camera is cancelled', async () => {
+  it('a gallery photo goes through the same resize and is stored (AC-10.7)', async () => {
+    const a = entry('MAJOR', 'A01');
+    await withDefects(a);
+    renderHome();
+    choose('Pilih dari Galeri');
+    const picked = new File(['png'], 'gallery.png', { type: 'image/png' });
+    returnFromGallery(picked);
+
+    expect(await screen.findByText('Foto tersimpan')).toBeInTheDocument();
+    expect(toJpeg).toHaveBeenCalledExactlyOnceWith(picked);
+    expect(stored()[a.defectId]?.sha256).toBe('hash-1');
+  });
+
+  it('changes nothing when the camera or the gallery is cancelled', async () => {
     await withDefects(entry('MAJOR', 'A01'));
     renderHome();
-    fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' }));
+    choose('Ambil Foto');
     returnFromCamera();
+    choose('Pilih dari Galeri');
+    returnFromGallery();
     expect(toJpeg).not.toHaveBeenCalled();
     expect(stored()).toEqual({});
     expect(screen.queryByText('Foto tersimpan')).not.toBeInTheDocument();
   });
 
-  it('says so when the photo cannot be processed, and keeps the row as it was', async () => {
-    vi.mocked(toJpeg).mockRejectedValueOnce(new Error('decode failed'));
+  it('refuses an image it cannot read with its own message, and stores nothing (AC-10.7)', async () => {
+    vi.mocked(toJpeg).mockRejectedValueOnce(new PhotoDecodeError(new Error('HEIC')));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await withDefects(entry('MAJOR', 'A01'));
     renderHome();
-    fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' }));
+    choose('Pilih dari Galeri');
+    returnFromGallery(new File(['heic'], 'IMG_0001.heic', { type: 'image/heic' }));
+
+    expect(
+      await screen.findByText('Foto tidak bisa dibaca. Pilih foto JPG atau PNG.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Foto gagal disimpan. Coba lagi.')).not.toBeInTheDocument();
+    expect(stored()).toEqual({});
+    expect(await db.photos.count()).toBe(0);
+    expect(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' })).toBeInTheDocument();
+  });
+
+  it('says so when the photo cannot be processed otherwise, and keeps the row as it was', async () => {
+    vi.mocked(toJpeg).mockRejectedValueOnce(new Error('storage full'));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await withDefects(entry('MAJOR', 'A01'));
+    renderHome();
+    choose('Ambil Foto');
     returnFromCamera(shot());
 
     expect(await screen.findByText('Foto gagal disimpan. Coba lagi.')).toBeInTheDocument();
@@ -595,18 +685,34 @@ describe('photos (FR-10, doc 05 §12)', () => {
     const a = entry('CRITICAL', 'A01');
     await withDefects(a);
     renderHome();
-    fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' }));
+    choose('Ambil Foto');
     returnFromCamera(shot());
     await screen.findByText('Foto tersimpan');
 
-    fireEvent.click(screen.getByRole('button', { name: `Lihat foto ${nameOf(a)}` }));
-    const view = screen.getByRole('dialog', { name: 'Foto defect' });
+    const openView = () => {
+      fireEvent.click(screen.getByRole('button', { name: `Lihat foto ${nameOf(a)}` }));
+      return screen.getByRole('dialog', { name: 'Foto defect' });
+    };
+    const view = openView();
     expect(view).toHaveTextContent(nameOf(a));
     expect(view).toHaveTextContent('CRITICAL');
     expect(within(view).getByRole('img', { name: `Foto defect ${nameOf(a)}` })).toBeInTheDocument();
 
+    // GANTI FOTO opens the same menu; BATAL returns to the photo, unchanged (ADR-023).
     fireEvent.click(within(view).getByRole('button', { name: 'GANTI FOTO' }));
-    returnFromCamera(shot('second.jpg'));
+    fireEvent.click(within(menu()).getByRole('button', { name: 'BATAL' }));
+    expect(
+      within(screen.getByRole('dialog', { name: 'Foto defect' })).getByRole('img'),
+    ).toBeInTheDocument();
+
+    // From the gallery this time: the photo is replaced, so there is still one.
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Foto defect' })).getByRole('button', {
+        name: 'GANTI FOTO',
+      }),
+    );
+    fireEvent.click(within(menu()).getByRole('button', { name: 'Pilih dari Galeri' }));
+    returnFromGallery(shot('second.jpg'));
     await waitFor(() => expect(stored()[a.defectId]?.sha256).toBe('hash-2'));
     expect(await db.photos.count()).toBe(1);
     expect(screen.queryByRole('dialog', { name: 'Foto defect' })).not.toBeInTheDocument();
@@ -625,7 +731,7 @@ describe('photos (FR-10, doc 05 §12)', () => {
     const [first, ...others] = seen as [AreaMapEntry, ...AreaMapEntry[]];
     await withDefects(first);
     renderHome();
-    fireEvent.click(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' }));
+    choose('Ambil Foto');
     returnFromCamera(shot());
     await screen.findByText('Foto tersimpan');
 
@@ -651,6 +757,7 @@ describe('photos (FR-10, doc 05 §12)', () => {
     expect(screen.queryByText('Foto wajib')).not.toBeInTheDocument();
     expect(screen.queryByText(/foto belum ada/)).not.toBeInTheDocument();
     expect(screen.queryByTestId('camera')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('gallery')).not.toBeInTheDocument();
   });
 });
 
