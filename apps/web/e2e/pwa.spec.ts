@@ -146,7 +146,7 @@ test('after the first load, inspection, photos, results, export and SUBMIT PO wo
   expect(assets.logo).toBe(true);
 
   // Defect screen (S6): REWORK with two defects; the shoe photo is precached too.
-  await page.getByRole('button', { name: 'ADD DEFECT' }).click();
+  await page.getByRole('button', { name: 'INSPECTION', exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -194,13 +194,6 @@ test('after the first load, inspection, photos, results, export and SUBMIT PO wo
   ).setFiles({ name: 'camera.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpeg, 'base64') });
   await expect(page.getByText('Foto tersimpan')).toBeVisible();
 
-  // Export PDF and Excel (FR-12) load their code from the precache.
-  for (const button of ['EXPORT PDF', 'EXPORT EXCEL'] as const) {
-    const download = page.waitForEvent('download');
-    await page.getByRole('button', { name: button }).click();
-    expect((await download).suggestedFilename()).toMatch(/^PSI_0903359388_\d{8}\.(pdf|xlsx)$/);
-  }
-
   // SUBMIT PO (S8) queues the submission.
   await page.getByRole('button', { name: 'SUBMIT PO' }).click();
   await page
@@ -210,6 +203,13 @@ test('after the first load, inspection, photos, results, export and SUBMIT PO wo
   await expect(page.getByText('Tersimpan. Menunggu koneksi.')).toBeVisible();
   await expect(page.getByLabel(/pengiriman menunggu/)).toHaveText('1');
   expect(await outbox(page)).toMatchObject([{ po: PO, state: 'waiting' }]);
+
+  // Export PDF and Excel (FR-12) of the sealed submission load their code from the precache.
+  for (const button of ['EXPORT PDF', 'EXPORT EXCEL'] as const) {
+    const download = page.waitForEvent('download');
+    await page.getByRole('button', { name: button }).click();
+    expect((await download).suggestedFilename()).toMatch(/^PSI_0903359388_\d{8}\.(pdf|xlsx)$/);
+  }
 
   // Login (S2) shows its offline notice instead of failing.
   await logout(page);
