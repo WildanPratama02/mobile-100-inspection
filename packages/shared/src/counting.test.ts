@@ -17,7 +17,9 @@ import {
   qtyInspectionLimits,
   rankDefects,
   recordDefect,
+  noDefectMax,
   replay,
+  setNoDefect,
   setQtyInspection,
   setReworkApproved,
   startInspection,
@@ -102,6 +104,10 @@ class Tablet {
   }
   qty(n: number) {
     return this.store(setQtyInspection(this.state, n, this.po));
+  }
+  /** SIMPAN in the NO DEFECT dialog (ADR-023). */
+  setNoDefect(n: number) {
+    return this.store(setNoDefect(this.state, n, this.po));
   }
   get totals(): SessionTotals {
     return totals(this.state, this.po);
@@ -645,7 +651,7 @@ describe('PSI lv.2 counts Qty Inspection with taps (ADR-021)', () => {
     it('UNDO takes back one pair at a time through the latest NO DEFECT taps, then is disabled', () => {
       const t = lv2().noDefect(3);
       expect(t.state.undo).toBe('NO_DEFECT');
-      expect(t.state.noDefectRun).toBe(3);
+      expect(t.state.noDefectRun).toHaveLength(3);
       t.undo();
       expect(quantities(t.totals)).toEqual([2, 2, 0, 0]);
       expect(t.state.undo).toBe('NO_DEFECT');
@@ -666,7 +672,7 @@ describe('PSI lv.2 counts Qty Inspection with taps (ADR-021)', () => {
 
     it('a NO DEFECT after UNDO starts counting again from the new tap', () => {
       const t = lv2().noDefect(2).undo().noDefect();
-      expect(t.state.noDefectRun).toBe(2);
+      expect(t.state.noDefectRun).toHaveLength(2);
       t.undo().undo();
       expect(quantities(t.totals)).toEqual([0, 0, 0, 0]);
       expect(t.state.undo).toBeNull();
@@ -755,6 +761,237 @@ describe('PSI lv.2 counts Qty Inspection with taps (ADR-021)', () => {
 
     it('setQtyInspection is refused in TAPPED', () => {
       expect(setQtyInspection(lv2().state, 5, PO)).toBeNull();
+    });
+  });
+
+  describe('NO DEFECT total set with the number pad (ADR-023)', () => {
+    const SET = (qty: number): SessionEventPayload => ({ type: 'SET_NO_DEFECT', qty });
+
+    it('replaces the NO DEFECT pairs so far; later taps add one each; all figures follow', () => {
+      const t = lv2().noDefect(3).rework().defect('D035').end().bGrade().defect('D005').end();
+      expect(quantities(t.totals)).toEqual([5, 3, 2, 1]);
+      t.setNoDefect(120);
+      expect(t.state.noDefect).toBe(120);
+      expect(t.totals).toMatchObject({
+        qtyInspection: 122,
+        qtyAGrade: 120,
+        qtyDefect: 2,
+        qtyBGrade: 1,
+        defectRate: 2 / 122,
+        passRate: 120 / 122,
+        qtyInspectionIssue: null,
+      });
+      t.noDefect(2);
+      expect(quantities(t.totals)).toEqual([124, 122, 2, 1]);
+    });
+
+    it('can set the total to 0 and from 0', () => {
+      const t = lv2().setNoDefect(40);
+      expect(quantities(t.totals)).toEqual([40, 40, 0, 0]);
+      t.setNoDefect(0);
+      expect(quantities(t.totals)).toEqual([0, 0, 0, 0]);
+      expect(t.totals.passRate).toBeNull();
+    });
+
+    it('submits the set total as counts.noDefect; the API totals equal the screen', () => {
+      const t = lv2().noDefect(2).setNoDefect(50).noDefect().rework().defect('D035').end();
+      const counts = { ...t.state.counts, noDefect: t.state.noDefect };
+      expect(counts.noDefect).toBe(51);
+      expect(countingRule(counts)).toBe('ADR-008');
+      const api = computeTotals(counts, findings(t.state));
+      const shown = t.totals;
+      expect([api.qtyInspection, api.qtyAGrade, api.qtyDefect, api.qtyBGrade]).toEqual(
+        quantities(shown),
+      );
+      expect([api.defectRate, api.passRate]).toEqual([shown.defectRate, shown.passRate]);
+    });
+
+    describe('setNoDefect: limit (partial, else Qty Order, minus REWORK and B-GRADE pairs)', () => {
+      const order: PoQuantities = { orderQty: 100, partial: null };
+      const partial: PoQuantities = { orderQty: 100, partial: { number: 1, qty: 30 } };
+
+      it('accepts 0 up to the maximum, refuses above it', () => {
+        const t = lv2(order).rework().defect('D035').end().bGrade().defect('D005').end();
+        expect(noDefectMax(t.state, order)).toBe(98);
+        expect(setNoDefect(t.state, 98, order)).toEqual(SET(98));
+        expect(setNoDefect(t.state, 99, order)).toBeNull();
+        expect(setNoDefect(t.state, 1, order)).toEqual(SET(1));
+        // 0 is the current total: unchanged, no event.
+        expect(setNoDefect(t.state, 0, order)).toBeNull();
+      });
+
+      it('uses the partial quantity when set', () => {
+        const t = lv2(partial).rework().defect('D035').end();
+        expect(noDefectMax(t.state, partial)).toBe(29);
+        expect(setNoDefect(t.state, 29, partial)).toEqual(SET(29));
+        expect(setNoDefect(t.state, 30, partial)).toBeNull();
+      });
+
+      it('refuses a value that is not a whole number from 0', () => {
+        const s = lv2(order).noDefect(2).state;
+        for (const qty of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+          expect(setNoDefect(s, qty, order)).toBeNull();
+        }
+      });
+
+      it('returns no event for an unchanged value', () => {
+        const t = lv2(order).noDefect(7);
+        expect(setNoDefect(t.state, 7, order)).toBeNull();
+        expect(setNoDefect(t.state, 8, order)).toEqual(SET(8));
+      });
+
+      it('is refused during an inspection', () => {
+        const t = lv2(order).noDefect(2).rework();
+        expect(setNoDefect(t.state, 5, order)).toBeNull();
+        t.defect('D035');
+        expect(setNoDefect(t.state, 5, order)).toBeNull();
+        t.end();
+        expect(setNoDefect(t.state, 5, order)).toEqual(SET(5));
+      });
+
+      it('is allowed at the maximum, so the total can be lowered', () => {
+        const small: PoQuantities = { orderQty: 3, partial: null };
+        const t = lv2(small).noDefect(3);
+        expect(canAddPair(t.state, small)).toBe(false);
+        expect(setNoDefect(t.state, 1, small)).toEqual(SET(1));
+      });
+
+      it('lowering below a partial quantity lowered afterwards clears ABOVE', () => {
+        const t = lv2(order).noDefect(5).rework().defect('D035').end();
+        const lowered: PoQuantities = { orderQty: 100, partial: { number: 1, qty: 4 } };
+        expect(totals(t.state, lowered).qtyInspectionIssue).toEqual({ kind: 'ABOVE', max: 4 });
+        expect(noDefectMax(t.state, lowered)).toBe(3);
+        expect(setNoDefect(t.state, 4, lowered)).toBeNull();
+        const event = setNoDefect(t.state, 3, lowered);
+        expect(event).toEqual(SET(3));
+        t.push(SET(3));
+        expect(totals(t.state, lowered)).toMatchObject({
+          qtyInspection: 4,
+          qtyInspectionIssue: null,
+        });
+      });
+
+      it('never goes below 0 when the REWORK and B-GRADE pairs alone exceed the maximum', () => {
+        const t = lv2(order)
+          .noDefect(2)
+          .rework()
+          .defect('D035')
+          .end()
+          .rework()
+          .defect('D035')
+          .end();
+        const lowered: PoQuantities = { orderQty: 100, partial: { number: 1, qty: 1 } };
+        expect(noDefectMax(t.state, lowered)).toBe(0);
+        expect(setNoDefect(t.state, 0, lowered)).toEqual(SET(0));
+        expect(setNoDefect(t.state, 1, lowered)).toBeNull();
+      });
+    });
+
+    describe('UNDO: a set total is one step of the NO DEFECT run', () => {
+      it('takes back later taps one by one, then the set, then the earlier taps', () => {
+        const t = lv2().noDefect(2).setNoDefect(120).noDefect(2);
+        expect(t.state.noDefect).toBe(122);
+        expect(t.state.noDefectRun).toHaveLength(5);
+        expect(t.state.undo).toBe('NO_DEFECT');
+        t.undo();
+        expect(t.state.noDefect).toBe(121);
+        t.undo();
+        expect(t.state.noDefect).toBe(120);
+        expect(t.state.undo).toBe('SET_NO_DEFECT');
+        t.undo();
+        // Back to the total before the set.
+        expect(quantities(t.totals)).toEqual([2, 2, 0, 0]);
+        expect(t.state.undo).toBe('NO_DEFECT');
+        t.undo().undo();
+        expect(quantities(t.totals)).toEqual([0, 0, 0, 0]);
+        expect(t.state.undo).toBeNull();
+        expect(undo(t.state)).toBeNull();
+      });
+
+      it('a set right after another set goes back one set at a time', () => {
+        const t = lv2().setNoDefect(10).setNoDefect(4);
+        expect(t.state.undo).toBe('SET_NO_DEFECT');
+        t.undo();
+        expect(t.state.noDefect).toBe(10);
+        expect(t.state.undo).toBe('SET_NO_DEFECT');
+        t.undo();
+        expect(t.state.noDefect).toBe(0);
+        expect(t.state.undo).toBeNull();
+      });
+
+      it('a lowered total goes back up on UNDO', () => {
+        const t = lv2().noDefect(5).setNoDefect(1).undo();
+        expect(t.state.noDefect).toBe(5);
+      });
+
+      it('a REWORK / B-GRADE start ends the run: UNDO never reaches the set before it', () => {
+        for (const start of ['REWORK', 'B-GRADE'] as const) {
+          const t = lv2().setNoDefect(50).start(start).defect('D035').end();
+          expect(t.state.noDefectRun).toEqual([]);
+          expect(t.state.undo).toBeNull();
+          expect(undo(t.state)).toBeNull();
+          t.setNoDefect(60).undo();
+          expect(t.state.noDefect).toBe(50);
+          expect(t.state.undo).toBeNull();
+        }
+      });
+
+      it('cancelling a REWORK start right after a set leaves the set in place', () => {
+        const t = lv2().setNoDefect(50).rework().undo();
+        expect(t.state.noDefect).toBe(50);
+        expect(t.state.undo).toBeNull();
+      });
+
+      it('replaying the stored events gives the same state', () => {
+        const t = lv2()
+          .noDefect(2)
+          .setNoDefect(120)
+          .noDefect()
+          .undo()
+          .rework()
+          .defect('D035')
+          .end()
+          .setNoDefect(80)
+          .noDefect(2)
+          .undo()
+          .undo();
+        expect(replay(t.events, 'TAPPED')).toEqual(t.state);
+        expect(t.state.noDefect).toBe(80);
+        expect(t.state.undo).toBe('SET_NO_DEFECT');
+      });
+    });
+
+    describe('the reducer', () => {
+      it('ignores a set during an inspection, an unchanged total and a value not a whole number from 0', () => {
+        const t = lv2().noDefect(3);
+        const before = t.state;
+        t.push(SET(3)).push(SET(-1)).push(SET(2.5));
+        expect(t.state).toEqual(before);
+        t.rework().push(SET(9));
+        expect(t.state.noDefect).toBe(3);
+        expect(t.state.undo).toBe('INSPECTION');
+      });
+
+      it('PSI lv.1 (ENTERED) ignores SET_NO_DEFECT, and setNoDefect is refused there', () => {
+        const t = new Tablet().qty(40).push(SET(25));
+        expect(t.state).toMatchObject({
+          noDefect: 0,
+          noDefectRun: [],
+          qtyInspection: 40,
+          undo: null,
+        });
+        expect(replay(t.events)).toEqual(new Tablet().qty(40).state);
+        expect(setNoDefect(new Tablet().state, 5, PO)).toBeNull();
+        expect(noDefectMax(new Tablet().state, PO)).toBeNull();
+      });
+
+      it('a session without SET_NO_DEFECT replays to the same figures and UNDO as before', () => {
+        const t = lv2().noDefect(3).undo().rework().defect('D035').end().noDefect(2);
+        const state = replay(t.events, 'TAPPED');
+        expect(state).toEqual(t.state);
+        expect(state).toMatchObject({ noDefect: 4, undo: 'NO_DEFECT' });
+        expect(state.noDefectRun).toEqual([{ kind: 'TAP' }, { kind: 'TAP' }]);
+      });
     });
   });
 

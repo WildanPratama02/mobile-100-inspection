@@ -345,10 +345,10 @@ Bring every spec in line with ADR-023 before code; no code in this task.
 
 ### T8.2 Shared rules (`packages/shared`)
 Event `SET_NO_DEFECT{qty}`; command `setNoDefect(state, qty, po)`; `noDefectRun` becomes the list of the run's steps (tap, or set with the total before it).
-- [ ] `TAPPED`: `SET_NO_DEFECT` replaces the NO DEFECT pairs counted so far; later `NO_DEFECT` taps add one each; Qty Inspection, Qty A-Grade and both rates follow; `buildSubmission` sends the set value in `counts.noDefect` and `totals` equals `computeTotals` of the submitted counts.
-- [ ] `setNoDefect` accepts integers 0 ≤ qty ≤ (partial or Qty Order) − REWORK − B-GRADE pairs; refuses above it and during an inspection; accepts lowering when the maximum is already exceeded (ABOVE cleared); returns no event for an unchanged value.
-- [ ] UNDO after taps, a set and more taps takes back the later taps one by one, then the set (back to the total before it), then the earlier taps; a REWORK / B-GRADE start ends the run; UNDO is disabled once the run is empty.
-- [ ] `ENTERED` (PSI lv.1) ignores `SET_NO_DEFECT`; a session without the event replays to the same state as before.
+- [x] `TAPPED`: `SET_NO_DEFECT` replaces the NO DEFECT pairs counted so far; later `NO_DEFECT` taps add one each; Qty Inspection, Qty A-Grade and both rates follow; `buildSubmission` sends the set value in `counts.noDefect` and `totals` equals `computeTotals` of the submitted counts.
+- [x] `setNoDefect` accepts integers 0 ≤ qty ≤ (partial or Qty Order) − REWORK − B-GRADE pairs; refuses above it and during an inspection; accepts lowering when the maximum is already exceeded (ABOVE cleared); returns no event for an unchanged value.
+- [x] UNDO after taps, a set and more taps takes back the later taps one by one, then the set (back to the total before it), then the earlier taps; a REWORK / B-GRADE start ends the run; UNDO is disabled once the run is empty.
+- [x] `ENTERED` (PSI lv.1) ignores `SET_NO_DEFECT`; a session without the event replays to the same state as before.
 
 ### T8.3 Tablet Defect screen (web)
 - [ ] `HistoryRow` gets the optional `onClick` (button, ≥ `--tap-min`) in `apps/web/src/ui`, `design-system/components/index.d.ts` and its README.
