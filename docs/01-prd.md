@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Version | 0.9 — 30 Oct 2026 (ADR-022): ALL DEFECT and photos per defect, INSPECTION REWORK QTY, REWORK AND APPROVED (FR-16, BR-11), END INSPECTION requires a finding, template exports. v0.8 — 29 Oct 2026 (ADR-021): PSI lv.2 counts Qty Inspection with NO DEFECT and END INSPECTION again (A-Grade = NO DEFECT, upper limit); PSI lv.1 keeps FR-15; tablet data per factory and cell (AC-02.4); exports without Foto column and defect list (FR-12). v0.7 — Qty Inspection entered by the PSI, NO DEFECT removed, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026; FR-15, BR-01, BR-02, BR-10). v0.6: backend moved to PostgreSQL + photo store; admin screens added (ADR-018) |
+| Version | 0.9.1 — 10 Nov 2026: exports from the sealed submission, enabled after SUBMIT PO (FR-12, AC-12.1–12.4); HAPUS DATA DEFECT (AC-04.3). 0.9 — 30 Oct 2026 (ADR-022): ALL DEFECT and photos per defect, INSPECTION REWORK QTY, REWORK AND APPROVED (FR-16, BR-11), END INSPECTION requires a finding, template exports. v0.8 — 29 Oct 2026 (ADR-021): PSI lv.2 counts Qty Inspection with NO DEFECT and END INSPECTION again (A-Grade = NO DEFECT, upper limit); PSI lv.1 keeps FR-15; tablet data per factory and cell (AC-02.4); exports without Foto column and defect list (FR-12). v0.7 — Qty Inspection entered by the PSI, NO DEFECT removed, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026; FR-15, BR-01, BR-02, BR-10). v0.6: backend moved to PostgreSQL + photo store; admin screens added (ADR-018) |
 | Date | 30 Oct 2026 |
 | Owner | QIP Digital Team, PT Parkland World Indonesia |
 | Related | [00 Document Map](00-document-map.md), [07 Decision Log](07-decision-log.md), clickable prototype "Mobile 100% Inspection" v3 |
@@ -161,6 +161,7 @@ The `0` and `0,0%` shown while Qty Inspection is empty or not valid are display 
 
 - AC-04.1 Values update immediately after every tap on the defect screen and every change of Qty Inspection or REWORK AND APPROVED; no network is needed.
 - AC-04.2 After a Submit PO is sealed (stored or waiting), all values return to 0 and Qty Inspection to empty (PSI lv.1) or 0 (PSI lv.2) for the next session; REWORK AND APPROVED starts empty.
+- AC-04.3 (added 10 Nov 2026) HAPUS DATA DEFECT on Home, after a confirmation, clears the selected PO's open session: every defect finding, REWORK / B-GRADE start, NO DEFECT tap, entered Qty Inspection and REWORK AND APPROVED value and every photo of that session, so the values are as in AC-04.2. It is the PSI's own choice, never automatic (the app itself still never deletes findings, BR-10). The PO stays in the list with its partial, and sealed submissions are untouched (BR-07). The button is disabled while the open session holds no data.
 
 ### FR-15 QTY INSPECTION entry (M) — added 27 Oct 2026, ADR-019; PSI lv.1 only since ADR-021
 
@@ -277,12 +278,12 @@ SUBMIT PO on Home sends the selected PO's session to the server, which stores it
 
 ### FR-12 Export PDF and Excel (S)
 
-EXPORT PDF and EXPORT EXCEL create the selected PO's current session file on the tablet: one PO session per file, not a multi-PO daily report (ADR-022).
+EXPORT PDF and EXPORT EXCEL create, on the tablet, the file of the selected PO's sealed submission: its newest item in the outbox, exactly what SUBMIT PO sealed. One submission per file, not a multi-PO daily report (ADR-022). Before the PO's first SUBMIT PO both buttons are disabled; input made after a SUBMIT PO is in the file only after the next one (changed 10 Nov 2026; before, the files came from the open session).
 
-- AC-12.1 Both formats follow the layouts and report figures below; every defect appears, not only the Top 5. Excel uses one sheet, values only and no formulas.
-- AC-12.2 PDF includes all current finding-defect photos. Both exports are refused while any required PSI lv.2 photo is missing (BR-04); PSI lv.1 takes no photos.
-- AC-12.3 File names follow `PSI_<PO>_<yyyyMMdd>.pdf` / `.xlsx`, using the session's inspection date. For an open session, use the WIB date of its first recorded event; with no event yet, use the WIB date the session was created. For a sealed submission, use its stored `inspection_date`. This date supplies Excel Part I Date, PDF DATE INSPECTION and the file name, never the export time.
-- AC-12.4 Export works offline and does not change the session.
+- AC-12.1 Both formats follow the layouts and report figures below; every defect appears, not only the Top 5. Excel uses one sheet, values only and no formulas, with thin borders on the table cells and a light-gray fill on the part headings and the table header, as in the template.
+- AC-12.2 PDF includes the photos stored with the submission, one per finding defect. The PSI lv.2 photo check (BR-04) runs at SUBMIT PO, so a sealed submission always has its required photos; PSI lv.1 takes no photos.
+- AC-12.3 File names follow `PSI_<PO>_<yyyyMMdd>.pdf` / `.xlsx`, using the submission's inspection date: the WIB date of its `sealedAt`, the value stored as `inspection_date`. This date supplies Excel Part I Date, PDF DATE INSPECTION and the file name, never the export time.
+- AC-12.4 Export works offline and reads the outbox only: it changes neither the sealed submission nor the open session.
 
 **Excel layout** (one sheet, values only; `write-excel-file`). Title "PSI Inspection Report". Follow `reference/excel-format/excel-template.xlsx` and the user-confirmed layout of 30 Oct 2026:
 
