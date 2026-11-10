@@ -4,11 +4,12 @@ coverage/
 playwright-report/
 test-results/
 release/
-.agent-work/
 .env
 .env.*
 !.env.example
 secrets/
 *.service-account.json
 CLAUDE.local.md
-.claude/settings.local.json
+CLAUDE.md
+AGENT.md
+.claude/
