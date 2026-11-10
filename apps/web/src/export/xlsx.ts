@@ -11,24 +11,29 @@ export const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsh
 
 export const SUMMARY_SHEET = 'Ringkasan';
 
-const bold = (value: string): Cell => ({ value, fontWeight: 'bold' });
-const head = (labels: string[]): Row => labels.map(bold);
+/** Thin table borders like the reference template (reference/excel-format/excel-template.xlsx). */
+const BORDER = { borderStyle: 'thin', borderColor: '#000000' } as const;
+
+const bold = (value: string): Cell => ({ value, fontWeight: 'bold', ...BORDER });
+/** A bold cell on the light-gray section fill (HASIL, TOP 5 DEFECT, the header row). */
+const filled = (value: string): Cell => ({ value, fontWeight: 'bold', backgroundColor: '#D9D9D9', ...BORDER });
+const head = (labels: string[]): Row => labels.map(filled);
 
 function summary(report: ExportReport): SheetData {
   const rows: SheetData = [[{ value: EXPORT_TITLE, fontWeight: 'bold', fontSize: 14 }], []];
   for (const [label, value] of report.info) rows.push([bold(label), value]);
-  rows.push([], [bold('HASIL')]);
+  rows.push([], [filled('HASIL')]);
   for (const r of report.results) {
     rows.push([
       bold(r.label),
       r.value === null
         ? NO_VALUE
         : r.kind === 'count'
-          ? { value: r.value, type: Number, format: '#,##0' }
-          : { value: r.value, type: Number, format: '0.0%' },
+          ? { value: r.value, type: Number, format: '#,##0', ...BORDER }
+          : { value: r.value, type: Number, format: '0.0%', ...BORDER },
     ]);
   }
-  rows.push([], [bold('TOP 5 DEFECT')], head(['No', 'Defect', 'Klasifikasi', 'Area', 'Qty']));
+  rows.push([], [filled('TOP 5 DEFECT')], head(['No', 'Defect', 'Klasifikasi', 'Area', 'Qty']));
   if (report.top5.length === 0) rows.push([null, NO_DEFECT_TEXT]);
   for (const t of report.top5) rows.push([t.no, t.name, t.classification, t.areas, t.qty]);
   return rows;

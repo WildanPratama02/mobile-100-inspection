@@ -1,4 +1,6 @@
 import {
+  buildSubmission,
+  countingMode,
   defaultMapping,
   findings,
   replay,
@@ -10,9 +12,9 @@ import {
 } from '@m100/shared';
 import { describe, expect, it } from 'vitest';
 import { ALL_PO_MASTER } from '../data/fixtures/pos';
-import type { Auth, PhotoRow, PoRow } from '../db/schema';
+import type { Auth, OutboxPhotoRow, OutboxRow, PhotoRow, PoRow } from '../db/schema';
 import type { PoSession } from '../state/store';
-import { exportReport, type ExportInput } from './report';
+import { sealedExport, type SealedExportInput } from './report';
 
 const mapping = defaultMapping();
 
@@ -38,15 +40,23 @@ const PO: PoRow = {
 // 14.05 WIB on 19 Oct 2026.
 const NOW = new Date('2026-10-19T07:05:00Z');
 
+/** When the fixture was submitted: 09.30 WIB on 19 Oct 2026. */
+const SEALED_AT = '2026-10-19T02:30:00Z';
+
 /**
  * Taps in order, one second apart, reduced by the shared engine like the store does: `ENTERED` (PSI lv.1) unless
- * told `TAPPED` (PSI lv.2, ADR-021).
+ * told `TAPPED` (PSI lv.2, ADR-021). `outbox()` seals them into an `OutboxRow`, exactly like SUBMIT PO does.
  */
 class Taps {
   private readonly events: SessionEvent[] = [];
   private readonly photos: Partial<Record<DefectId, PhotoRow>> = {};
+  private readonly auth: Auth;
+  private readonly mode: CountingMode;
 
-  constructor(private readonly mode: CountingMode = 'ENTERED') {}
+  constructor(auth: Auth = LV2) {
+    this.auth = auth;
+    this.mode = countingMode(auth.level);
+  }
 
   private push(payload: SessionEventPayload): this {
     const seq = this.events.length + 1;
@@ -93,43 +103,87 @@ class Taps {
     return this;
   }
 
+  state() {
+    return replay(this.events, this.mode);
+  }
+
   session(): PoSession {
     return {
       session: {
         id: 's1',
-        username: LV2.username,
+        username: this.auth.username,
         po: PO.po,
         status: 'open',
         createdAt: '2026-10-19T01:00:00.000Z',
       },
       events: this.events,
-      state: replay(this.events, this.mode),
+      state: this.state(),
       photos: this.photos,
     };
   }
+
+  /** The sealed outbox item SUBMIT PO would have stored for these taps. */
+  outbox(): OutboxRow {
+    const payload = buildSubmission({
+      submissionUuid: 'u-1',
+      sealedAt: SEALED_AT,
+      appVersion: 'test',
+      user: this.auth,
+      cell: { factory: this.auth.factory, cell: this.auth.cell },
+      po: PO.po,
+      partial: PO.partial,
+      state: this.state(),
+      photos: Object.values(this.photos).map((p) => ({ defectId: p.defectId, sha256: p.sha256 })),
+    });
+    return {
+      submissionUuid: 'u-1',
+      po: PO.po,
+      sealedAt: payload.sealedAt,
+      payloadJson: JSON.stringify(payload),
+      payloadSha256: 'sha256',
+      authorUsername: LV2.username,
+      authorToken: null,
+      authorTokenExpiresAt: null,
+      state: 'sent',
+      attempts: 1,
+      nextAttemptAt: SEALED_AT,
+      lastAttemptAt: SEALED_AT,
+      problem: null,
+      problemErrors: [],
+      displayNo: 'S-0001',
+      sentAt: SEALED_AT,
+    };
+  }
+
+  /** The photo blobs stored with the submission (`outboxPhotos`). */
+  photoBlobs(): Pick<OutboxPhotoRow, 'defectId' | 'blob'>[] {
+    return Object.values(this.photos).map(({ defectId, blob }) => ({ defectId, blob }));
+  }
 }
 
-const input = (taps: Taps | undefined, more: Partial<ExportInput> = {}): ExportInput => ({
+const input = (taps: Taps, more: Partial<SealedExportInput> = {}): SealedExportInput => ({
   po: PO,
-  session: taps?.session(),
-  auth: LV2,
+  item: taps.outbox(),
   mapping,
+  photoBlobs: taps.photoBlobs(),
   now: NOW,
   ...more,
 });
 
 const name = (id: DefectId) => mapping.defect(id)!.name;
 
-describe('exportReport (FR-12)', () => {
+describe('sealedExport (FR-12)', () => {
   it('names the file M100_<PO>_<YYYYMMDD> with the WIB date (AC-12.3)', () => {
-    expect(exportReport(input(undefined)).fileBase).toBe('M100_0903359388_20261019');
+    const taps = new Taps().qtyInspection();
+    expect(sealedExport(input(taps)).fileBase).toBe('M100_0903359388_20261019');
     // 00.30 WIB on 20 Oct is still 19 Oct in UTC.
-    const late = exportReport(input(undefined, { now: new Date('2026-10-19T17:30:00Z') }));
+    const late = sealedExport(input(taps, { now: new Date('2026-10-19T17:30:00Z') }));
     expect(late.fileBase).toBe('M100_0903359388_20261020');
   });
 
   it('carries the PO info, inspector, Factory/Cell and export time (AC-12.1)', () => {
-    expect(exportReport(input(undefined)).info).toEqual([
+    const taps = new Taps().qtyInspection();
+    expect(sealedExport(input(taps)).info).toEqual([
       ['PO NUMBER', '0903359388'],
       ['ARTIKEL', PO.article],
       ['MODEL', PO.model],
@@ -141,16 +195,26 @@ describe('exportReport (FR-12)', () => {
   });
 
   it('adds PO PARTIAL when it is set', () => {
+    const taps = new Taps().qtyInspection();
     const po = { ...PO, partial: { number: 1, qty: 1200 } };
-    expect(exportReport(input(undefined, { po })).info).toContainEqual([
+    // the sealed submission carries its own partial (doc 04 §4.1)
+    const item = { ...taps.outbox(), payloadJson: JSON.stringify({ ...JSON.parse(taps.outbox().payloadJson), partial: po.partial }) };
+    expect(sealedExport({ ...input(taps), po, item }).info).toContainEqual([
       'PARTIAL',
       'P1 · 1.200 dari 10.002',
     ]);
   });
 
-  it('has the results panel values (ADR-019)', () => {
-    // Qty Inspection 30 with three findings, including one B-Grade finding.
-    const taps = new Taps()
+  it('refuses an outbox item of another PO', () => {
+    const taps = new Taps().qtyInspection();
+    expect(() => sealedExport(input(taps, { po: { ...PO, po: 'OTHER' } }))).toThrow(
+      'Outbox item is for PO 0903359388, not OTHER',
+    );
+  });
+
+  it('has the results panel values of the sealed submission (ADR-019)', () => {
+    // PSI lv.1 (ENTERED): Qty Inspection 30 with three findings, including one B-Grade finding.
+    const taps = new Taps(LV1)
       .rework()
       .defect('D005')
       .defect('D049')
@@ -159,7 +223,7 @@ describe('exportReport (FR-12)', () => {
       .defect('D035')
       .end()
       .qtyInspection();
-    expect(exportReport(input(taps)).results).toEqual([
+    expect(sealedExport(input(taps)).results).toEqual([
       { label: 'Qty PO Order', kind: 'count', value: 10002 },
       { label: 'Qty Inspection', kind: 'count', value: 30 },
       { label: 'Qty Defect', kind: 'count', value: 3 },
@@ -171,7 +235,7 @@ describe('exportReport (FR-12)', () => {
   });
 
   it('PSI lv.2: Qty Inspection and A-Grade from NO DEFECT and ended inspections (ADR-021)', () => {
-    const taps = new Taps('TAPPED')
+    const taps = new Taps()
       .noDefect(7)
       .rework()
       .defect('D005')
@@ -180,7 +244,7 @@ describe('exportReport (FR-12)', () => {
       .bGrade()
       .defect('D035')
       .end();
-    expect(exportReport(input(taps)).results.map((r) => r.value)).toEqual([
+    expect(sealedExport(input(taps)).results.map((r) => r.value)).toEqual([
       10002,
       9,
       3,
@@ -191,28 +255,6 @@ describe('exportReport (FR-12)', () => {
     ]);
   });
 
-  it('exports an empty session with the Home display fallbacks (doc 05 §8.5)', () => {
-    // PSI lv.2 counts from 0 (ADR-021); PSI lv.1 has not entered Qty Inspection yet ("—").
-    for (const report of [
-      exportReport(input(undefined)),
-      exportReport(input(new Taps('TAPPED'))),
-    ]) {
-      expect(report.results.map((r) => r.value)).toEqual([10002, 0, 0, 0, 0, 0, 0]);
-    }
-    const lv1 = [
-      exportReport(input(undefined, { auth: LV1 })),
-      exportReport(input(new Taps(), { auth: LV1 })),
-    ];
-    for (const report of lv1) {
-      expect(report.results.map((r) => r.value)).toEqual([10002, null, 0, 0, 0, 0, 0]);
-    }
-    for (const report of [exportReport(input(undefined)), ...lv1]) {
-      expect(report.top5).toEqual([]);
-      expect(report.photos).toEqual([]);
-      expect(report.missingPhotos).toEqual([]);
-    }
-  });
-
   it('has the same TOP 5 DEFECT as Home (AC-05.1)', () => {
     const taps = new Taps()
       .rework()
@@ -221,8 +263,9 @@ describe('exportReport (FR-12)', () => {
       .defect('D035', 2)
       .defect('D001')
       .defect('D002')
-      .defect('D003');
-    const report = exportReport(input(taps, { auth: LV1 }));
+      .defect('D003')
+      .qtyInspection();
+    const report = sealedExport(input(taps));
     expect(report.top5.map((t) => t.defectId)).toEqual(
       top5(findings(taps.session().state), mapping).map((r) => r.defectId),
     );
@@ -239,29 +282,23 @@ describe('exportReport (FR-12)', () => {
   });
 
   it('has no full defect list (ADR-021)', () => {
-    const taps = new Taps().rework().defect('D049').defect('D071').end();
-    expect(exportReport(input(taps))).not.toHaveProperty('defects');
+    const taps = new Taps().rework().defect('D049').defect('D071').end().qtyInspection();
+    expect(sealedExport(input(taps))).not.toHaveProperty('defects');
+  });
+
+  it('the submission passed BR-04, so nothing is reported as missing', () => {
+    const taps = new Taps().rework().defect('D005').photo('D005').qtyInspection();
+    expect(sealedExport(input(taps)).missingPhotos).toEqual([]);
   });
 
   describe('photos (PSI lv.2)', () => {
-    it('names the Top 5 defects without a photo (BR-04)', () => {
-      const taps = new Taps().rework().defect('D005', 2).defect('D035').photo('D035');
-      const report = exportReport(input(taps));
-      expect(report.missingPhotos).toEqual([name('D005')]);
-    });
-
-    it('PSI lv.1 never misses a photo (AC-10.6)', () => {
-      const report = exportReport(input(new Taps().rework().defect('D005'), { auth: LV1 }));
-      expect(report.missingPhotos).toEqual([]);
-    });
-
     it('includes every photo of a current finding, Top 5 first, each once (AC-12.2, AC-10.4)', () => {
       // D001 has a photo and drops to rank 6 once five defects have more taps.
       const taps = new Taps().rework().defect('D001').photo('D001');
       for (const id of ['D002', 'D003', 'D004', 'D005', 'D006'] as const) {
         taps.defect(id, 2).photo(id);
       }
-      const report = exportReport(input(taps));
+      const report = sealedExport(input(taps));
       const shown = top5(findings(taps.session().state), mapping).map((r) => r.defectId);
       expect(shown).not.toContain('D001');
       expect(report.photos.map((p) => [p.defectId, p.top5No])).toEqual([
@@ -272,18 +309,24 @@ describe('exportReport (FR-12)', () => {
     });
 
     it('leaves out the photo of a defect that was undone completely', () => {
-      const taps = new Taps().rework().defect('D005').defect('D035').photo('D035').undo();
-      const report = exportReport(input(taps));
+      const taps = new Taps(LV1).rework().defect('D005').defect('D035').photo('D035').undo().qtyInspection();
+      const report = sealedExport(input(taps));
       expect(report.top5.map((d) => d.defectId)).toEqual(['D005']);
       expect(report.photos).toEqual([]);
+    });
+
+    it('PSI lv.1 exports without photos (AC-10.6)', () => {
+      const taps = new Taps(LV1).rework().defect('D005').qtyInspection();
+      const report = sealedExport(input(taps));
+      expect(report.photos).toEqual([]);
+      expect(report.missingPhotos).toEqual([]);
     });
   });
 
   it('only reads its input (AC-12.4)', () => {
-    const taps = new Taps().rework().defect('D005', 2).defect('D035').photo('D035');
-    const session = taps.session();
-    const before = JSON.stringify({ PO, session });
-    exportReport(input(undefined, { session }));
-    expect(JSON.stringify({ PO, session })).toBe(before);
+    const taps = new Taps().rework().defect('D005', 2).defect('D035').photo('D035').qtyInspection();
+    const before = JSON.stringify({ PO, item: taps.outbox() });
+    sealedExport(input(taps));
+    expect(JSON.stringify({ PO, item: taps.outbox() })).toBe(before);
   });
 });

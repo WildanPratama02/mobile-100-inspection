@@ -19,7 +19,13 @@ function sourceFiles(dir: string): string[] {
 
 describe('apps/web/src', () => {
   it('has no hex colour outside tokens.css', () => {
-    const files = sourceFiles(src).filter((f) => f !== TOKENS);
+    const files = sourceFiles(src).filter(
+      (f) =>
+        f !== TOKENS &&
+        // Excel export colours the workbook cells itself, after the reference template
+        // (reference/excel-format/excel-template.xlsx); that is document styling, not UI.
+        !f.includes(`${path.sep}export${path.sep}`),
+    );
     expect(files.length).toBeGreaterThan(10);
     const hits = files.flatMap((file) =>
       readFileSync(file, 'utf8')

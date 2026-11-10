@@ -50,6 +50,16 @@ describe('toXlsx (FR-12)', () => {
     expect(xml['xl/styles.xml']).toContain('0.0%');
   });
 
+  it('draws thin table borders and the gray header fill like the reference template', async () => {
+    const xml = await parts(REPORT);
+    const styles = xml['xl/styles.xml']!;
+    expect(styles).toContain('style="thin"');
+    expect(styles).toContain('D9D9D9');
+    // only the title row and the spacer rows stay borderless; every labelled cell carries a border
+    const sheet1 = xml['xl/worksheets/sheet1.xml']!;
+    expect(sheet1).toContain('s="2"');
+  });
+
   it('an empty session shows "Belum ada defect." and "—" for the rates (doc 05 §8.5)', async () => {
     const all = text(await parts(REPORT_EMPTY));
     expect(all).toContain('Belum ada defect.');

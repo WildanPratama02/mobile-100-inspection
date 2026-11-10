@@ -1,12 +1,11 @@
 /**
- * What EXPORT PDF and EXPORT EXCEL put in their files (FR-12, AC-12.1, doc 05 §8.5), derived from the selected
- * PO's open session with `@m100/shared`. Both files are drawn from this one model, so they never disagree, and
- * building it only reads: the session, its photos and Dexie stay as they were (AC-12.4).
+ * What EXPORT PDF and EXPORT EXCEL put in their files (FR-12, AC-12.1), built from the PO's sealed submission in
+ * the outbox: exporting is only possible after SUBMIT PO, and both files describe what was sent (doc 03 §4.6).
+ * Both files are drawn from this one model, so they never disagree, and building it only reads (AC-12.4).
  */
 import {
   APP_NAME,
-  countingMode,
-  emptySession,
+  computeTotals,
   fileDate,
   findings,
   formatDateTime,
@@ -14,14 +13,13 @@ import {
   missingPhotos,
   rankDefects,
   takesPhotos,
-  totals,
   type Classification,
   type DefectId,
   type MappingIndex,
+  type SubmissionRequest,
 } from '@m100/shared';
 import { areaLabels } from '../app/mapping';
-import type { Auth, PoRow } from '../db/schema';
-import type { PoSession } from '../state/store';
+import type { OutboxPhotoRow, OutboxRow, PoRow } from '../db/schema';
 
 /** The header title of the PDF (ADR-010). */
 export const EXPORT_TITLE = APP_NAME.toUpperCase();
@@ -60,24 +58,26 @@ export interface ExportReport {
   results: ResultValue[];
   /** Without a photo column; the files have no full defect list (ADR-021). */
   top5: Top5Line[];
-  /** Every photo of a defect in the current findings, Top 5 first, each once (AC-12.2). */
+  /** Every photo of a defect in the submission's findings, Top 5 first, each once (AC-12.2). */
   photos: ExportPhoto[];
-  /** PSI lv.2: Top 5 defect names without a photo. Exporting is refused while any is left (BR-04). */
+  /** PSI lv.2: Top 5 defect names without a photo. Always empty: the submission passed BR-04 at submit. */
   missingPhotos: string[];
 }
 
-export interface ExportInput {
+export interface SealedExportInput {
   po: PoRow;
-  session: PoSession | undefined;
-  auth: Auth;
+  /** The PO's sealed submission, the newest item in the outbox. */
+  item: OutboxRow;
   mapping: MappingIndex;
+  /** The photo blobs stored with the submission (`outboxPhotos`). */
+  photoBlobs: Pick<OutboxPhotoRow, 'defectId' | 'blob'>[];
   now: Date;
 }
 
-export function exportReport({ po, session, auth, mapping, now }: ExportInput): ExportReport {
-  const state = session?.state ?? emptySession(countingMode(auth.level));
-  const attached = session?.photos ?? {};
-  const photos = takesPhotos(auth.level);
+/** The report of a sealed submission (FR-12): only what was sent at SUBMIT PO. */
+export function sealedExport({ po, item, mapping, photoBlobs, now }: SealedExportInput): ExportReport {
+  const submission: SubmissionRequest = JSON.parse(item.payloadJson);
+  if (submission.po !== po.po) throw new Error(`Outbox item is for PO ${submission.po}, not ${po.po}`);
 
   const defectOf = (id: DefectId) => {
     const defect = mapping.defect(id);
@@ -85,11 +85,11 @@ export function exportReport({ po, session, auth, mapping, now }: ExportInput): 
     return defect;
   };
 
-  const list = findings(state);
+  const list = submission.findings;
   // Ranked by the rules of TOP 5 DEFECT (AC-05.1); the first five are exactly what Home shows.
   const ranked = rankDefects(list, (id) => defectOf(id).classification);
   const top = ranked.slice(0, 5);
-  const t = totals(state, po);
+  const t = computeTotals(submission.counts, list);
 
   const info: Array<[string, string]> = [
     ['PO NUMBER', po.po],
@@ -97,12 +97,14 @@ export function exportReport({ po, session, auth, mapping, now }: ExportInput): 
     ['MODEL', po.model],
     ['DESTINATION', po.destination],
   ];
-  if (po.partial) info.push(['PARTIAL', formatPartial(po.partial, po.orderQty)]);
+  if (submission.partial) info.push(['PARTIAL', formatPartial(submission.partial, po.orderQty)]);
   info.push(
-    ['INSPEKTOR', `${auth.username} (${auth.level})`],
-    ['FACTORY/CELL', auth.cell],
+    ['INSPEKTOR', `${submission.user.username} (${submission.user.level})`],
+    ['FACTORY/CELL', submission.cell],
     ['DICETAK', formatDateTime(now)],
   );
+
+  const blobOf = new Map(photoBlobs.map((p) => [p.defectId, p.blob]));
 
   return {
     fileBase: `M100_${po.po}_${fileDate(now)}`,
@@ -126,20 +128,21 @@ export function exportReport({ po, session, auth, mapping, now }: ExportInput): 
     })),
     // A photo of a defect that was undone completely is not part of the findings and stays out.
     photos: ranked.flatMap((row, i) => {
-      const photo = attached[row.defectId];
-      return photo
+      const blob = blobOf.get(row.defectId);
+      return blob
         ? [
             {
               defectId: row.defectId,
               name: defectOf(row.defectId).name,
               top5No: i < 5 ? i + 1 : null,
-              blob: photo.blob,
+              blob,
             },
           ]
         : [];
     }),
-    missingPhotos: photos
-      ? missingPhotos(top, new Set(Object.keys(attached) as DefectId[])).map(
+    // The submission passed BR-04 at SUBMIT PO, so this stays empty; the field keeps the report shape.
+    missingPhotos: takesPhotos(submission.user.level)
+      ? missingPhotos(top, new Set(submission.photos.map((p) => p.defectId))).map(
           (row) => defectOf(row.defectId).name,
         )
       : [],
