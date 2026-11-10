@@ -116,7 +116,7 @@ const top5Names = () =>
     .queryAllByRole('listitem')
     .map((row) => row.querySelector('.m100-t5__nm')?.firstChild?.textContent);
 
-const BOTTOM = ['ADD DEFECT', 'EXPORT PDF', 'EXPORT EXCEL', 'SUBMIT PO'];
+const BOTTOM = ['ADD DEFECT', 'EXPORT PDF', 'EXPORT EXCEL', 'SUBMIT PO', 'HAPUS DATA DEFECT'];
 
 describe('Home states (doc 05 §8.2)', () => {
   it('without a PO: says how to add one, shows "-" and empty results, disables the bottom row', () => {
@@ -147,7 +147,13 @@ describe('Home states (doc 05 §8.2)', () => {
     expect(screen.queryByRole('button', { name: 'Ubah Qty Inspection' })).not.toBeInTheDocument();
     expect(screen.queryByText('Ketuk untuk isi')).not.toBeInTheDocument();
     expect(stat('Pass Rate (RFT)')).toBe('0,0%');
-    for (const name of BOTTOM) expect(screen.getByRole('button', { name })).toBeEnabled();
+    for (const name of ['ADD DEFECT', 'SUBMIT PO']) {
+      expect(screen.getByRole('button', { name })).toBeEnabled();
+    }
+    // Exports wait for SUBMIT PO (FR-12); HAPUS DATA DEFECT has nothing to clear yet.
+    for (const name of ['EXPORT PDF', 'EXPORT EXCEL', 'HAPUS DATA DEFECT']) {
+      expect(screen.getByRole('button', { name })).toBeDisabled();
+    }
   });
 
   it('PSI lv.1 with an empty session: "—" and QTY INSPECTION to tap (ADR-019)', async () => {
@@ -531,7 +537,7 @@ describe('photos (FR-10, doc 05 §12)', () => {
   });
 });
 
-describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
+describe('EXPORT PDF / EXPORT EXCEL (FR-12): files of the sealed submission', () => {
   const FILE = /^M100_0903359388_\d{8}\.(pdf|xlsx)$/;
 
   beforeEach(() => {
@@ -553,7 +559,27 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
     await store.getState().login(LV1);
   }
 
-  it('makes each file, says its name, and changes nothing (AC-12.3, AC-12.4)', async () => {
+  /** SUBMIT PO through the UI, so the outbox holds the sealed submission an export reads. */
+  async function submitPo() {
+    fireEvent.click(screen.getByRole('button', { name: 'SUBMIT PO' }));
+    fireEvent.click(screen.getByRole('button', { name: 'KIRIM' }));
+    await screen.findByText('Tersimpan. Menunggu koneksi.');
+  }
+
+  it('is disabled until SUBMIT PO has sealed a submission (FR-12)', async () => {
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, ...noDefects(30));
+    renderHome();
+    for (const name of ['EXPORT PDF', 'EXPORT EXCEL']) {
+      expect(screen.getByRole('button', { name })).toBeDisabled();
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'EXPORT PDF' }));
+    await act(() => Promise.resolve());
+    expect(exportFile).not.toHaveBeenCalled();
+    expect(saveFile).not.toHaveBeenCalled();
+  });
+
+  it('makes each file of the sealed submission, says its name, and changes nothing (AC-12.3, AC-12.4)', async () => {
     await asLv1();
     await store.getState().addPo(PO, null);
     await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')), END, {
@@ -561,8 +587,10 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
       qty: 30,
     });
     renderHome(LV1);
-    const sessions = store.getState().sessions;
-    const before = await snapshot();
+    await submitPo();
+    // The sealed session became a fresh empty one; the file still says Qty Inspection 30.
+    expect(stat('Qty Inspection')).toBe('\u2014');
+    const afterSubmit = await snapshot();
 
     for (const [button, format] of [
       ['EXPORT PDF', 'pdf'],
@@ -579,63 +607,20 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
       expect(await screen.findByText(`File dibuat: ${name}`)).toBeInTheDocument();
     }
 
-    expect(store.getState().sessions).toBe(sessions);
-    expect(await snapshot()).toBe(before);
-    expect(stat('Qty Inspection')).toBe('30');
+    expect(await snapshot()).toBe(afterSubmit);
+    expect(stat('Qty Inspection')).toBe('\u2014');
   });
 
-  it('exports an empty session (doc 05 §8.5)', async () => {
-    await store.getState().addPo(PO, null);
-    renderHome();
-    fireEvent.click(screen.getByRole('button', { name: 'EXPORT EXCEL' }));
-    await waitFor(() => expect(saveFile).toHaveBeenCalledOnce());
-    expect(vi.mocked(exportFile).mock.lastCall![1].top5).toEqual([]);
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-  });
-
-  it('PSI lv.2 with a Top 5 photo missing: blocks both files and names the defects (BR-04)', async () => {
-    const a = entry('MAJOR', 'A01');
-    const b = entry('MINOR', 'A01');
-    await store.getState().addPo(PO, null);
-    await tap(PO.po, START_REWORK, defect(a), defect(a), defect(b));
-    await act(() =>
-      store.getState().savePhoto(PO.po, b.defectId, { blob: new Blob(['j']), sha256: 'h' }),
-    );
-    renderHome();
-    const before = await snapshot();
-
-    for (const button of ['EXPORT PDF', 'EXPORT EXCEL']) {
-      fireEvent.click(screen.getByRole('button', { name: button }));
-      const dialog = screen.getByRole('alertdialog', { name: 'Foto belum lengkap' });
-      expect(dialog).toHaveTextContent(
-        'PSI lv.2 wajib menambahkan foto pada Top 5 Defect. Belum ada foto untuk:',
-      );
-      expect(
-        within(dialog)
-          .getAllByRole('listitem')
-          .map((li) => li.textContent),
-      ).toEqual([nameOf(a)]);
-      // Must be answered: no close button, the scrim does not close it.
-      expect(within(dialog).queryByRole('button', { name: /tutup/i })).not.toBeInTheDocument();
-      fireEvent.click(screen.getByTestId('scrim'));
-      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Lengkapi foto' }));
-      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    }
-
-    expect(exportFile).not.toHaveBeenCalled();
-    expect(saveFile).not.toHaveBeenCalled();
-    expect(await snapshot()).toBe(before);
-  });
-
-  it('PSI lv.2 with every Top 5 photo exports', async () => {
+  it('exports the sealed submission with its photos (PSI lv.2, FR-10)', async () => {
     const a = entry('MAJOR', 'A01');
     await store.getState().addPo(PO, null);
-    await tap(PO.po, START_REWORK, defect(a));
+    await tap(PO.po, START_REWORK, defect(a), END, ...noDefects(29));
     await act(() =>
       store.getState().savePhoto(PO.po, a.defectId, { blob: new Blob(['j']), sha256: 'h' }),
     );
     renderHome();
+    await submitPo();
+
     fireEvent.click(screen.getByRole('button', { name: 'EXPORT PDF' }));
     await waitFor(() => expect(saveFile).toHaveBeenCalledOnce());
     expect(vi.mocked(exportFile).mock.lastCall![1].photos.map((p) => p.defectId)).toEqual([
@@ -646,7 +631,9 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
   it('says nothing when the save dialog is closed', async () => {
     vi.mocked(saveFile).mockResolvedValue('cancelled');
     await store.getState().addPo(PO, null);
+    await tap(PO.po, ...noDefects(30));
     renderHome();
+    await submitPo();
     fireEvent.click(screen.getByRole('button', { name: 'EXPORT PDF' }));
     await waitFor(() => expect(saveFile).toHaveBeenCalledOnce());
     await act(() => Promise.resolve());
@@ -657,9 +644,68 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12, doc 05 §8.5)', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     vi.mocked(saveFile).mockRejectedValue(new DOMException('full', 'QuotaExceededError'));
     await store.getState().addPo(PO, null);
+    await tap(PO.po, ...noDefects(30));
     renderHome();
+    await submitPo();
     fireEvent.click(screen.getByRole('button', { name: 'EXPORT EXCEL' }));
     expect(await screen.findByText('File gagal dibuat. Coba lagi.')).toBeInTheDocument();
+  });
+});
+
+describe('HAPUS DATA DEFECT (clears the open session only, BR-07)', () => {
+  it('asks first; BATAL changes nothing', async () => {
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')), END, ...noDefects(5));
+    renderHome();
+
+    fireEvent.click(screen.getByRole('button', { name: 'HAPUS DATA DEFECT' }));
+    const dialog = screen.getByRole('dialog', { name: 'Hapus data Defect?' });
+    expect(dialog).toHaveTextContent('Semua data input inspeksi PO 0903359388 akan dihapus');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'BATAL' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(stat('Qty Inspection')).toBe('6');
+    expect(await db.events.count()).toBeGreaterThan(0);
+  });
+
+  it('HAPUS deletes every defect and resets the results; the PO stays listed', async () => {
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')), END, ...noDefects(5));
+    renderHome();
+
+    fireEvent.click(screen.getByRole('button', { name: 'HAPUS DATA DEFECT' }));
+    fireEvent.click(screen.getByRole('button', { name: 'HAPUS' }));
+
+    await waitFor(() => expect(stat('Qty Inspection')).toBe('0'));
+    expect(await db.events.count()).toBe(0);
+    expect(await db.photos.count()).toBe(0);
+    expect(screen.getByText('Belum ada defect')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^0903359388/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'HAPUS DATA DEFECT' })).toBeDisabled();
+  });
+
+  it('leaves a sealed submission untouched (BR-07)', async () => {
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, ...noDefects(30));
+    renderHome();
+    fireEvent.click(screen.getByRole('button', { name: 'SUBMIT PO' }));
+    fireEvent.click(screen.getByRole('button', { name: 'KIRIM' }));
+    await screen.findByText('Tersimpan. Menunggu koneksi.');
+
+    // Wrong input again in the fresh session, then HAPUS: the outbox keeps the sealed submission.
+    await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')));
+    const sessionId = store.getState().sessions[PO.po]!.session.id;
+    fireEvent.click(screen.getByRole('button', { name: 'HAPUS DATA DEFECT' }));
+    fireEvent.click(screen.getByRole('button', { name: 'HAPUS' }));
+
+    await waitFor(async () =>
+      expect(await db.events.where('sessionId').equals(sessionId).count()).toBe(0),
+    );
+    // The sealed session's own events are its history and stay (BR-07).
+    expect(await db.events.count()).toBe(30);
+    expect(await db.outbox.count()).toBe(1);
+    expect(await db.outboxPhotos.count()).toBe(0);
+    expect(screen.getByRole('button', { name: /^0903359388/ })).toBeInTheDocument();
   });
 });
 

@@ -139,6 +139,11 @@ export interface AppState {
   /** HAPUS in the photo view (doc 05 §12.2). */
   removePhoto: (po: string, defectId: DefectId) => Promise<void>;
   /**
+   * HAPUS in the HAPUS DATA DEFECT dialog: deletes all of the PO's open-session data (events and photos),
+   * so its results are empty again. The session itself, the PO and sealed submissions stay (BR-07).
+   */
+  clearSessionData: (po: string) => Promise<void>;
+  /**
    * KIRIM (FR-11.3, doc 03 §4.6): seals the PO's open session into the outbox and gives the PO a new empty
    * session; the partial stays (doc 05 U10). Rejects with `SubmitBlockedError` when a check of doc 05 §13.1
    * fails, and with `repo.SessionChangedError` when the stored session differs from the state; nothing is
@@ -509,6 +514,24 @@ export function createAppStore(
             const rest = { ...photos };
             delete rest[defectId];
             return rest;
+          });
+        }),
+
+      clearSessionData: (po) =>
+        serial(async () => {
+          const username = requireUser();
+          const { session } = requireSession(po);
+          await repo.clearSessionData(db, username, session.id);
+          // The PO stays in the list with a fresh empty session (HAPUS only clears its data).
+          set((s) => {
+            const current = s.sessions[po];
+            if (!current) return {};
+            return {
+              sessions: {
+                ...s.sessions,
+                [po]: { session: current.session, events: [], state: emptyState(), photos: {} },
+              },
+            };
           });
         }),
 

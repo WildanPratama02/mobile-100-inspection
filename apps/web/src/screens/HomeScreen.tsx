@@ -4,9 +4,10 @@
  * (FR-04, FR-05); nothing here counts by itself.
  *
  * For PSI lv.2 the Top 5 rows carry the photo control (FR-10, doc 05 §8.3, §12); PSI lv.1 gets none.
- * EXPORT PDF / EXPORT EXCEL make a file of the open session on the tablet (FR-12, doc 05 §8.5). SUBMIT PO runs
- * the checks and the confirmation of S8, seals the session into the outbox and hands it to the outbox sender
- * (FR-11, doc 05 §13); the header counts the PSI's waiting submissions (AC-11.3).
+ * EXPORT PDF / EXPORT EXCEL make a file of the PO's sealed submission in the outbox, so they are only
+ * enabled once SUBMIT PO has sealed one (FR-12); SUBMIT PO runs the checks and the confirmation of S8,
+ * seals the session into the outbox and hands it to the outbox sender (FR-11, doc 05 §13); the header
+ * counts the PSI's waiting submissions (AC-11.3). HAPUS DATA DEFECT empties the PO's open session.
  */
 import { useRef, useState, type ChangeEvent } from 'react';
 import {
@@ -34,7 +35,8 @@ import { useToast } from '../app/toastContext';
 import { useOnline } from '../app/useOnline';
 import type { Auth, PhotoRow, PoRow } from '../db/schema';
 import { exportFile, type ExportFormat } from '../export/exportFile';
-import { exportReport } from '../export/report';
+import { sealedExport } from '../export/report';
+import { listOutboxPhotos } from '../db/repo';
 import { saveFile } from '../export/saveFile';
 import { useOutboxSender } from '../outbox/useOutboxSender';
 import { toJpeg } from '../photos/resize';
@@ -44,6 +46,7 @@ import {
   selectedPo,
   submitBlock,
   useAppStore,
+  useAppStoreApi,
   waitingCount,
   type PoSession,
 } from '../state/store';
@@ -94,7 +97,8 @@ type Open =
   | { kind: 'submit-active' }
   | { kind: 'submit-no-pairs' }
   | { kind: 'submit-empty' }
-  | { kind: 'submit-confirm' };
+  | { kind: 'submit-confirm' }
+  | { kind: 'clear-data' };
 type QtyOpen = { kind: 'qty' } | { kind: 'submit-qty'; issue: 'BELOW' | 'ABOVE' | 'IMPOSSIBLE' };
 
 export interface HomeScreenProps {
@@ -112,7 +116,10 @@ export function HomeScreen({ auth }: HomeScreenProps) {
   const savePhoto = useAppStore((s) => s.savePhoto);
   const removePhoto = useAppStore((s) => s.removePhoto);
   const submitPo = useAppStore((s) => s.submitPo);
+  const clearSessionData = useAppStore((s) => s.clearSessionData);
   const waiting = useAppStore(waitingCount);
+  const outbox = useAppStore((s) => s.outbox);
+  const db = useAppStoreApi().db;
   const sender = useOutboxSender();
   const toast = useToast();
   const [open, setOpen] = useState<Open | QtyOpen | null>(null);
@@ -153,16 +160,16 @@ export function HomeScreen({ auth }: HomeScreenProps) {
   // One export at a time: a second tap while the file is being made does nothing.
   const exporting = useRef(false);
 
-  /** Doc 05 §8.5. Reads the session only, so exporting never changes it (AC-12.4). */
+  // Exports describe the PO's sealed submission, never the open session; there is nothing until SUBMIT PO.
+  const sealed = po ? outbox.find((o) => o.po === po.po) : undefined;
+
+  /** Makes the file of the sealed submission (FR-12). Reads the outbox only, so it changes nothing (AC-12.4). */
   const onExport = async (format: ExportFormat) => {
-    if (!po || exporting.current) return;
+    if (!po || !sealed || exporting.current) return;
     exporting.current = true;
     try {
-      const report = exportReport({ po, session, auth, mapping, now: new Date() });
-      if (report.missingPhotos.length > 0) {
-        setOpen({ kind: 'missing-photos', names: report.missingPhotos });
-        return;
-      }
+      const photoBlobs = await listOutboxPhotos(db, sealed.submissionUuid);
+      const report = sealedExport({ po, item: sealed, mapping, photoBlobs, now: new Date() });
       const file = await exportFile(format, report);
       if ((await saveFile(file.name, file.blob)) === 'saved') toast(`File dibuat: ${file.name}`);
     } catch (error) {
@@ -328,10 +335,10 @@ export function HomeScreen({ auth }: HomeScreenProps) {
           ADD DEFECT
         </Button>
         <div className="home__exports">
-          <Button icon="download" disabled={!po} onClick={() => void onExport('pdf')}>
+          <Button icon="download" disabled={!sealed} onClick={() => void onExport('pdf')}>
             EXPORT PDF
           </Button>
-          <Button icon="download" disabled={!po} onClick={() => void onExport('xlsx')}>
+          <Button icon="download" disabled={!sealed} onClick={() => void onExport('xlsx')}>
             EXPORT EXCEL
           </Button>
         </div>
@@ -343,6 +350,14 @@ export function HomeScreen({ auth }: HomeScreenProps) {
           onClick={onSubmit}
         >
           SUBMIT PO
+        </Button>
+        <Button
+          variant="danger"
+          className="home__clear"
+          disabled={!po || !hasOpenData(session)}
+          onClick={() => setOpen({ kind: 'clear-data' })}
+        >
+          HAPUS DATA DEFECT
         </Button>
       </div>
 
@@ -433,6 +448,28 @@ export function HomeScreen({ auth }: HomeScreenProps) {
                 onClick={() => {
                   close();
                   removePo(open.po).catch(console.error);
+                }}
+              >
+                HAPUS
+              </Button>
+            </div>
+          </Dialog>
+        </Overlay>
+      ) : null}
+      {open?.kind === 'clear-data' && po ? (
+        <Overlay onDismiss={close}>
+          <Dialog title="Hapus data Defect?" onClose={close}>
+            <p className="dialog__text">
+              Semua data input inspeksi PO {po.po} akan dihapus: data Defect, Rework/Grade B, dan QTY
+              INSPECTION kembali kosong. Data yang sudah di-SUBMIT PO tidak terpengaruh.
+            </p>
+            <div className="dialog__actions">
+              <Button onClick={close}>BATAL</Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  close();
+                  clearSessionData(po.po).catch(console.error);
                 }}
               >
                 HAPUS

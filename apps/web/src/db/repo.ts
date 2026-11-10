@@ -297,6 +297,21 @@ export function listPhotos(db: M100Db, sessionId: string): Promise<PhotoRow[]> {
   return db.photos.where('sessionId').equals(sessionId).toArray();
 }
 
+// ---- HAPUS DATA DEFECT (HAPUS in the Home dialog) ----
+
+/**
+ * Deletes everything the PO's open session holds — its events and photos — in one transaction; the session
+ * itself and the PO stay (BR-07: a sealed submission never changes). Refused when the session is not the
+ * PSI's own open session, so sealed data is out of reach by construction.
+ */
+export function clearSessionData(db: M100Db, username: string, sessionId: string): Promise<void> {
+  return db.transaction('rw', db.sessions, db.events, db.photos, async () => {
+    await requireOpenSession(db, username, sessionId);
+    await db.events.where('sessionId').equals(sessionId).delete();
+    await db.photos.where('sessionId').equals(sessionId).delete();
+  });
+}
+
 // ---- Outbox (doc 03 §4.6) ----
 
 /** A PSI's own submissions, newest first (doc 05 §14, U14: the outbox is per author like sessions). */

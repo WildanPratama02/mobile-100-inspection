@@ -278,11 +278,12 @@
   gap: var(--space-3);
   padding: var(--space-3);
   grid-template-columns: clamp(180px, 22%, 280px) minmax(0, 1fr) auto clamp(240px, 28%, 340px);
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-rows: minmax(0, 1fr) auto auto auto;
   grid-template-areas:
     'polist top5 top5 stats'
     'polist notice notice notice'
-    'add add exports submit';
+    'add add exports submit'
+    'clear clear clear clear';
 }
 .home__pane-title {
   margin: 0 0 var(--space-2);
@@ -386,6 +387,9 @@
 }
 .home__submit {
   grid-area: submit;
+}
+.home__clear {
+  grid-area: clear;
 }
 
 /* ---- Dialogs on Home: S4 Add PO, S5 Partial, remove PO ---- */
@@ -756,14 +760,15 @@
   .home__body {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     /* Top 5 takes the spare height, so ADD DEFECT and SUBMIT PO sit at the bottom edge. */
-    grid-template-rows: auto auto auto 1fr auto auto;
+    grid-template-rows: auto auto auto 1fr auto auto auto;
     grid-template-areas:
       'polist polist'
       'exports exports'
       'stats stats'
       'top5 top5'
       'notice notice'
-      'add submit';
+      'add submit'
+      'clear clear';
     padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
   }
   .home__polist {
