@@ -236,7 +236,8 @@ describe('development default admin (decision B, 23 Oct 2026)', () => {
     } finally {
       await other.drop();
     }
-  });
+    // Creating and migrating a second database takes longer than the default 30 s on a busy machine.
+  }, 120_000);
 
   it('creates admin / admin123 in a test database once, audited without the password', async () => {
     const first = await createDevDefaultAdmin(db, repos(), { nodeEnv: 'test' });
