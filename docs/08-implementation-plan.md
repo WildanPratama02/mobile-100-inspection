@@ -362,6 +362,6 @@ Event `SET_NO_DEFECT{qty}`; command `setNoDefect(state, qty, po)`; `noDefectRun`
 - [x] `HomeScreen.test.tsx` (the `capture` check) and the photo tests updated.
 
 ### T8.5 End-to-end
-- [ ] Playwright, PSI lv.2: set NO DEFECT to 120, tap NO DEFECT once, UNDO twice (121 → 120 → previous total), set again, SUBMIT PO; the API stores `qty_no_defect` equal to the total.
-- [ ] Playwright, PSI lv.2: a photo attached through Pilih dari Galeri (`setInputFiles`) is accepted and SUBMIT PO succeeds.
+- [x] Playwright, PSI lv.2: set NO DEFECT to 120, tap NO DEFECT once, UNDO twice (121 → 120 → previous total), set again, SUBMIT PO; the API stores `qty_no_defect` equal to the total.
+- [x] Playwright, PSI lv.2: a photo attached through Pilih dari Galeri (`setInputFiles`) is accepted and SUBMIT PO succeeds.
 - [ ] T4.2 device checklist: both photo paths on a Redmi Pad 2 (manual).

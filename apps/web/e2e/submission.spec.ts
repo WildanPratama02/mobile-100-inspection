@@ -406,6 +406,9 @@ test('PSI lv.2 with seven defects needs seven photos; REWORK AND APPROVED is ent
   sql,
   tablet,
 }) => {
+  // Seven photos (each through the photo menu since ADR-023), a reload of the dev server and SUBMIT PO: close to
+  // the 30 s default when the suite runs in parallel.
+  test.setTimeout(60_000);
   await page.goto('/');
   await login(page, 'DEWI CONTOH');
   await addPo(page, PO);
