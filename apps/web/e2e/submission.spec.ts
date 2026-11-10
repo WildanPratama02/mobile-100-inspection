@@ -17,6 +17,8 @@ import {
   tapNoDefect,
   allDefect,
   photoSource,
+  stat,
+  toast,
 } from './helpers';
 
 const PO = '0903359388';
@@ -583,4 +585,126 @@ test('PO PARTIAL on, kept, then off: each submission stores the partial of that 
     [2, 1200, 'P2 1.200 OF 10.002'],
     [null, null, null],
   ]);
+});
+
+// ---- ADR-023: NO DEFECT total set with the number pad, defect photo from the gallery (T8.5) ----
+
+/** The NO DEFECT history row of PSI lv.2 on the Defect screen and its quantity. */
+const noDefectRow = (page: Page) => page.getByRole('button', { name: 'Ubah NO DEFECT' });
+const noDefectQty = (page: Page) => noDefectRow(page).locator('.m100-hist__q');
+
+/** S6a: tap the NO DEFECT row, type the new total on the app's number pad, SIMPAN (doc 05 §11.6). */
+async function setNoDefect(page: Page, qty: number) {
+  await noDefectRow(page).click();
+  const dialog = page.getByRole('dialog', { name: 'NO DEFECT (A-Grade)' });
+  const pad = dialog.getByRole('group', { name: 'Jumlah pasang tanpa defect' });
+  await pad.getByRole('button', { name: 'HAPUS', exact: true }).click();
+  for (const d of String(qty)) await pad.getByRole('button', { name: d, exact: true }).click();
+  await dialog.getByRole('button', { name: 'SIMPAN' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(toast(page)).toHaveText(`No Defect diubah menjadi ${qty.toLocaleString('id-ID')}`);
+  await expect(noDefectQty(page)).toHaveText(qty.toLocaleString('id-ID'));
+}
+
+test('PSI lv.2 sets the NO DEFECT total; UNDO steps back through taps and the set; the API stores the total (ADR-023)', async ({
+  page,
+  sql,
+  tablet,
+}) => {
+  await page.goto('/');
+  await login(page, 'DEWI CONTOH');
+  await addPo(page, PO);
+  // Three pairs tapped one by one: the total before the set.
+  await tapNoDefect(page, 3);
+
+  await page.getByRole('button', { name: 'INSPECTION', exact: true }).click();
+  await expect(noDefectQty(page)).toHaveText('3');
+  await setNoDefect(page, 120);
+
+  // A later tap adds one pair to the set total.
+  await page.getByRole('button', { name: 'NO DEFECT', exact: true }).click();
+  await expect(noDefectQty(page)).toHaveText('121');
+
+  // UNDO: first the tap (121 → 120), then the set (120 → 3, the total before it).
+  await bar(page, 'UNDO').click();
+  await expect(toast(page)).toHaveText('No Defect dibatalkan');
+  await expect(noDefectQty(page)).toHaveText('120');
+  await bar(page, 'UNDO').click();
+  await expect(toast(page)).toHaveText('Perubahan No Defect dibatalkan');
+  await expect(noDefectQty(page)).toHaveText('3');
+
+  // Set again, then SUBMIT PO from Home.
+  await setNoDefect(page, 45);
+  await bar(page, 'HOME').click();
+  await expect(stat(page, 'Qty A-Grade')).toHaveText('45');
+  await expect(stat(page, 'Qty Inspection')).toHaveText('45');
+
+  await submit(page, 1);
+  const [row] = await stored(sql, tablet, 1);
+  expect(row).toMatchObject({
+    level: 'PSI lv.2',
+    qty_no_defect: 45,
+    qty_inspection: 45,
+    qty_a_grade: 45,
+    qty_rework: 0,
+    qty_bgrade_inspections: 0,
+    qty_defect: 0,
+    rft: '1.00000',
+    defect_rate: '0.00000',
+    photo_count: 0,
+  });
+});
+
+test('PSI lv.2 attaches a defect photo through Pilih dari Galeri; it is resized and submitted (ADR-023, AC-10.7)', async ({
+  page,
+  sql,
+  tablet,
+}) => {
+  await page.goto('/');
+  await login(page, 'DEWI CONTOH');
+  await addPo(page, PO);
+  await inspect(page, 'REWORK', [['Medial Quarter', D035]]);
+  await tapNoDefect(page, 2);
+
+  // A large PNG from the gallery, not a camera JPEG.
+  const png = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 2400;
+    canvas.height = 1800;
+    const context = canvas.getContext('2d')!;
+    const gradient = context.createLinearGradient(0, 0, 2400, 1800);
+    gradient.addColorStop(0, 'teal');
+    gradient.addColorStop(1, 'gold');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 2400, 1800);
+    return canvas.toDataURL('image/png').split(',')[1]!;
+  });
+  await allDefect(page).getByRole('button', { name: 'Foto wajib' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await photoSource(page, 'Pilih dari Galeri');
+  const picker = await chooser;
+  // The gallery input has no `capture`, so the tablet offers its gallery and files (doc 05 §12.1).
+  expect(await picker.element().getAttribute('capture')).toBeNull();
+  expect(await picker.element().getAttribute('accept')).toBe('image/*');
+  await picker.setFiles({
+    name: 'IMG_20261110_101500.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(png, 'base64'),
+  });
+  await expect(page.getByText('Foto tersimpan')).toBeVisible();
+  await expect(allDefect(page).getByRole('button', { name: 'Foto wajib' })).toHaveCount(0);
+  const taken = await tabletPhotos(page);
+  expect(Object.keys(taken)).toEqual(['D035']);
+
+  await submit(page, 1);
+  const [row] = await stored(sql, tablet, 1);
+  expect(row).toMatchObject({ qty_no_defect: 2, qty_inspection: 3, photo_count: 1 });
+  const [photo, ...more] = await photos(sql, row!.id);
+  expect(more).toEqual([]);
+  expect(photo!.defect_id).toBe('D035');
+  // Stored as the tablet's JPEG (same pipeline as the camera): at most 500 KB, byte for byte.
+  const bytes = readFileSync(photoFile(photo!.object_key));
+  expect([...bytes.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+  expect(bytes.length).toBeLessThanOrEqual(500_000);
+  expect(createHash('sha256').update(bytes).digest('hex')).toBe(taken.D035);
 });

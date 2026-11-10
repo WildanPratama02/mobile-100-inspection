@@ -204,7 +204,7 @@ PowerShell `install.ps1` and `upgrade.ps1`, WinSW service definitions for Caddy 
 - [ ] **Restore test:** the nightly backup is restored on another machine; submission counts match and sample photos open (doc 03 §7.6).
 
 ### T4.2 Device checklist on a real Redmi Pad 2
-Install, setup-link storage visible in the installed app, camera `capture`, offline start, certificate trust, 1280 × 800 layout (doc 03 R8, R9).
+Install, setup-link storage visible in the installed app, camera `capture` and gallery pick (ADR-023: Ambil Foto and Pilih dari Galeri), offline start, certificate trust, 1280 × 800 layout (doc 03 R8, R9).
 - [ ] Every item passes, or the fallback of doc 03 §4.9 is applied.
 
 ### T4.3 Runbook and PSI instruction card
