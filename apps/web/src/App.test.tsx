@@ -301,6 +301,11 @@ describe('a new app version (doc 03 §4.8)', () => {
     await act(async () => {
       await store.getState().addPo(PO, null);
       await store.getState().tap(PO.po, { type: 'START', inspection: 'REWORK' });
+      // END INSPECTION needs a finding in the inspection (AC-06.3).
+      await store.getState().tap(PO.po, {
+        type: 'DEFECT',
+        entry: { areaId: 'A01', subAreaId: 'S01', familyId: 'F01', defectId: 'D001' },
+      });
     });
     needRefresh();
     expect(update).not.toHaveBeenCalled();

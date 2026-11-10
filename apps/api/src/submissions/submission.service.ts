@@ -254,6 +254,7 @@ function toNewSubmission(
     partial: r.partial,
     counts: r.counts,
     totals: valid.totals,
+    photoRule: valid.photoRule,
     findings: r.findings,
     photos,
   };

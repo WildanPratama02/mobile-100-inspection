@@ -16,6 +16,7 @@ import {
 import type {
   Cell,
   DefectId,
+  PhotoRule,
   PoPartial,
   PsiLevel,
   SubmissionCounts,
@@ -32,15 +33,18 @@ export type SubmitBlock =
   | { kind: 'NO_PAIRS' }
   /** BR-10, in the order of `checkQtyInspection`: IMPOSSIBLE, EMPTY, BELOW, ABOVE; `TAPPED`: ABOVE only. */
   | QtyInspectionIssue
-  /** PSI lv.2: the Top 5 defects without a photo, in rank order (BR-04). */
+  | { kind: 'REWORK_APPROVED_ABOVE'; max: number }
+  /** PSI lv.2: required defects without a photo, in rank order (BR-04). */
   | { kind: 'PHOTOS_MISSING'; defects: RankedDefect[] };
 
 export interface SubmitCheckInput {
   po: PoQuantities;
   state: SessionState;
   level: PsiLevel;
-  /** TOP 5 DEFECT of the session (`top5`). */
+  /** Ranked defects (`allDefects` for ALL). Name retained for existing Top 5 callers. */
   top: readonly RankedDefect[];
+  /** New sessions use ALL; TOP5 is only for legacy photo checks. */
+  photoRule?: PhotoRule;
   /** Defects of the session that have a photo. */
   photographed: ReadonlySet<DefectId>;
 }
@@ -52,14 +56,19 @@ export function checkSubmit({
   top,
   photographed,
   po,
+  photoRule = 'ALL',
 }: SubmitCheckInput): SubmitBlock | null {
   if (state.active) return { kind: 'ACTIVE' };
-  if (state.mode === 'TAPPED' && totals(state, po).qtyInspection === 0) return { kind: 'NO_PAIRS' };
+  const figures = totals(state, po);
+  if (state.mode === 'TAPPED' && figures.qtyInspection === 0) return { kind: 'NO_PAIRS' };
   // One priority rule for Home, S5b and SUBMIT PO: impossible limits before an empty value.
-  const issue = totals(state, po).qtyInspectionIssue;
+  const issue = figures.qtyInspectionIssue;
   if (issue) return issue;
+  if (figures.reworkApprovedIssue) {
+    return { kind: 'REWORK_APPROVED_ABOVE', max: figures.reworkApprovedIssue.max };
+  }
   if (takesPhotos(level)) {
-    const defects = missingPhotos(top, photographed);
+    const defects = missingPhotos(top, photographed, photoRule);
     if (defects.length > 0) return { kind: 'PHOTOS_MISSING', defects };
   }
   return null;
@@ -110,12 +119,13 @@ export interface SubmissionInput {
 export function buildSubmission(input: SubmissionInput): SubmissionRequest {
   const { state, user } = input;
   const { rework, bGrade } = state.counts;
+  const reworkApproved = state.reworkApproved ?? 0;
   let counts: SubmissionCounts;
   if (state.mode === 'TAPPED') {
-    counts = { rework, bGrade, noDefect: state.noDefect };
+    counts = { rework, bGrade, reworkApproved, noDefect: state.noDefect };
   } else {
     if (state.qtyInspection === null) throw new Error('Qty Inspection is not entered');
-    counts = { rework, bGrade, qtyInspection: state.qtyInspection };
+    counts = { rework, bGrade, reworkApproved, qtyInspection: state.qtyInspection };
   }
   return {
     submissionUuid: input.submissionUuid,
@@ -127,6 +137,7 @@ export function buildSubmission(input: SubmissionInput): SubmissionRequest {
     po: input.po,
     partial: input.partial ? { number: input.partial.number, qty: input.partial.qty } : null,
     counts,
+    ...(takesPhotos(user.level) ? { photoRule: 'ALL' as const } : {}),
     findings: findings(state).map((f) => ({
       ...f,
       firstRecordedAt: toWibIso(f.firstRecordedAt),

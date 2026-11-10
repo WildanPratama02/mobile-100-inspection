@@ -72,9 +72,7 @@ export function LoginScreen({ data }: LoginScreenProps) {
       <section className="login__brand">
         <div className="login__team">QIP Digital Team</div>
         <h1 className="login__title">
-          MOBILE 100%
-          <br />
-          INSPECTION
+          PSI Inspection Report
           <small>Input defect tanpa keyboard</small>
         </h1>
       </section>

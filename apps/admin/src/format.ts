@@ -5,6 +5,7 @@ import {
   formatRate,
   inspectionDate,
   type CountingRule,
+  type PhotoRule,
 } from '@m100/shared';
 
 export { NO_VALUE, formatCount, formatDate } from '@m100/shared';
@@ -12,6 +13,14 @@ export { NO_VALUE, formatCount, formatDate } from '@m100/shared';
 /** ADR-008 rows are tapped counts: PSI lv.2 since ADR-021, or any PSI before ADR-019. */
 export function countingRuleLabel(rule: CountingRule): string {
   return rule === 'ADR-019' ? 'Qty Inspection diisi PSI' : 'Hitung per tap (NO DEFECT)';
+}
+
+/**
+ * The stored `photo_rule` as `ALL` / `TOP5`; "-" for PSI lv.1 and PSI lv.2 rows sealed before
+ * ADR-022, read as the legacy Top 5 rule (doc 05 §20.3 A1b, doc 04 A19).
+ */
+export function photoRuleLabel(rule: PhotoRule | null): string {
+  return rule ?? NO_VALUE;
 }
 
 /** A rate of a submission; "—" when Qty Inspection is 0 (BR-02). */

@@ -76,7 +76,7 @@ const hasTools = ['pg_dump', 'pg_restore'].every(
     await db.client.query('SET ROLE m100_migrate');
     await migrate(
       db.client,
-      listMigrations().filter((m) => !m.version.startsWith('0006_')),
+      listMigrations().filter((m) => m.version < '0006'),
     );
     await seedMasterData(db.client);
     const legacy = submissionRow({ photo_count: 0 });

@@ -57,6 +57,21 @@ describe('StatRow', () => {
     expect(container.firstChild).toHaveClass('m100-stat--bad');
     expect(container.querySelector('b')).toHaveTextContent('18,8%');
   });
+
+  it('is a button named after its label when tappable', () => {
+    const onClick = vi.fn();
+    render(
+      <>
+        <StatRow label="Qty Inspection" value={null} onClick={onClick} />
+        <StatRow label="REWORK AND APPROVED" value="2" onClick={onClick} />
+        <StatRow label="INSPECTION REWORK QTY" value="3" />
+      </>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Ubah Qty Inspection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ubah REWORK AND APPROVED' }));
+    expect(onClick).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByRole('button')).toHaveLength(2);
+  });
 });
 
 describe('NumberPad', () => {

@@ -5,6 +5,7 @@
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { type ResourceSample, resourceSummary } from './load-monitor';
 import type { Attempt, SentItem } from './tablet-sim';
 
 /** Nearest-rank percentile (`p` in 0–100) of `values`; `null` for none. */
@@ -44,6 +45,8 @@ export interface LoadReport {
   writeRequestMs: Spread;
   /** `durationMs` of the API's `Submit PO` log lines answered `201` (server side, NFR-10). */
   serverWriteMs: Spread;
+  /** Memory and connection samples every 10 s (`load-monitor.ts`), when the run took them. */
+  resources?: ResourceSample[];
 }
 
 function tally(keys: readonly string[]): Record<string, number> {
@@ -58,6 +61,7 @@ export function summarise(input: {
   items: readonly SentItem[];
   attempts: readonly Attempt[];
   serverWriteMs: readonly number[];
+  resources?: readonly ResourceSample[];
 }): LoadReport {
   const sent = input.items.filter((i) => i.state === 'sent');
   return {
@@ -69,6 +73,7 @@ export function summarise(input: {
     perSubmissionMs: spread(sent.map((i) => i.doneAt - i.firstAttemptAt)),
     writeRequestMs: spread(input.attempts.filter((a) => a.status === 201).map((a) => a.latencyMs)),
     serverWriteMs: spread(input.serverWriteMs),
+    ...(input.resources === undefined ? {} : { resources: [...input.resources] }),
   };
 }
 
@@ -85,6 +90,9 @@ export function formatReport(report: LoadReport): string {
     row('per submission (to stored)', report.perSubmissionMs),
     row('write request (client)', report.writeRequestMs),
     row('write (API log durationMs)', report.serverWriteMs),
+    ...(report.resources === undefined
+      ? []
+      : [`  resources: ${resourceSummary(report.resources)}`]),
   ].join('\n');
 }
 

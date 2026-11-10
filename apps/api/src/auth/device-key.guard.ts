@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { type CanActivate, type ExecutionContext, Inject, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { isDbUnavailable } from '../db/database';
 import { ApiProblem } from '../errors/problem';
 import { ReadinessService, RETRY_MS } from '../master-data/readiness.service';
 import {
@@ -65,6 +66,9 @@ export class DeviceKeyGuard implements CanActivate {
     try {
       device = await this.devices.findByKeySha256(hash);
     } catch (error) {
+      // Only an unreachable database flips `DB` (as `SubmissionService.database`); any other error passes on and
+      // becomes `500 INTERNAL` (doc 03 §5.7).
+      if (!isDbUnavailable(error)) throw error;
       this.readiness.reportFailure('DB', error);
       const remembered = this.known.get(id);
       if (remembered) return remembered;

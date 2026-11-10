@@ -1,5 +1,5 @@
-/** Product name (ADR-010). Used as the page title, the web app manifest name and in exports. */
-export const APP_NAME = 'Mobile 100% Inspection';
+/** Product name (ADR-022). Used as the page title, the web app manifest name and in exports. */
+export const APP_NAME = 'PSI Inspection Report';
 
 export type * from './domain';
 export * from './mapping';

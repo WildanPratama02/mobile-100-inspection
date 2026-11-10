@@ -70,7 +70,7 @@ async function homeWithDefect(page: Page, name: string) {
     .getByRole('button', { name: 'HOME' })
     .click();
   if (!tapped) await setQtyInspection(page, 2);
-  await expect(page.getByRole('region', { name: 'TOP 5 DEFECT' })).toContainText(DEFECT);
+  await expect(page.getByRole('region', { name: 'ALL DEFECT' })).toContainText(DEFECT);
 }
 
 /** SUBMIT PO through the confirm dialog (S8), so the outbox holds the sealed submission exports read. */
@@ -106,7 +106,8 @@ test('PSI lv.1 exports Excel and PDF of the sealed submission, which stays as it
   await submitPo(page);
   // The sealed session became a fresh empty one; the files still describe Qty Inspection 2.
   const after = await results(page);
-  const base = `M100_0903359388_${wibDate()}`;
+  // The inspection date is the WIB date of sealedAt, which is today here (AC-12.3).
+  const base = `PSI_0903359388_${wibDate()}`;
 
   const xlsx = await exportVia(page, 'EXPORT EXCEL');
   expect(xlsx.suggestedFilename()).toBe(`${base}.xlsx`);
@@ -115,30 +116,56 @@ test('PSI lv.1 exports Excel and PDF of the sealed submission, which stays as it
   const workbook = Object.values(parts)
     .map((data) => strFromU8(data))
     .join('\n');
-  // One sheet only: no Daftar Defect, no Foto column (ADR-021).
-  expect(strFromU8(parts['xl/workbook.xml']!)).not.toContain('Daftar Defect');
+  // One sheet only, named PSI Report: no Daftar Defect, no Foto column (ADR-022).
+  const book = strFromU8(parts['xl/workbook.xml']!);
+  expect(book).toContain('name="PSI Report"');
+  expect(book).not.toContain('Daftar Defect');
+  expect(parts['xl/worksheets/sheet2.xml']).toBeUndefined();
   for (const text of [
-    '0903359388',
+    'PSI Inspection Report',
+    'Part I: General Data',
+    'PSI Name',
     'ANDI CONTOH (PSI lv.1)',
-    'F3-10',
-    'WIB',
-    'Qty Inspection',
-    'TOP 5 DEFECT',
+    'Part II: KPI Summary',
+    'Inspected Qty (Including Rework)',
+    'Rejected Order Qty',
+    'Not Reworkable Defect %',
+    'Total Approved Qty',
+    'Part III: Daily Inspection Summary',
+    'Qty Order',
+    'Offered Lot Qty',
+    'Rework and Approved',
+    'Pairs Not Reworkable',
+    'Balance Rework',
+    'Defect Findings List',
+    'Severity',
+    '% of QTY INSPECTION',
+    '0903359388',
     DEFECT,
   ]) {
     expect(workbook).toContain(text);
   }
-  expect(workbook).not.toContain('Foto');
+  for (const stale of ['TOP 5 DEFECT', 'DICETAK', 'Foto', 'WIB']) {
+    expect(workbook).not.toContain(stale);
+  }
 
   const pdf = await exportVia(page, 'EXPORT PDF');
   expect(pdf.suggestedFilename()).toBe(`${base}.pdf`);
   await expect(page.getByText(`File dibuat: ${base}.pdf`)).toBeVisible();
   const text = (await bytes(pdf)).toString('latin1');
   expect(text.startsWith('%PDF-')).toBe(true);
-  for (const value of ['MOBILE 100% INSPECTION', '0903359388', 'BROKEN STITCHING']) {
+  for (const value of [
+    'PSI INSPECTION REPORT',
+    'DATE INSPECTION',
+    'DEFECT FINDINGS',
+    '0903359388',
+    'BROKEN STITCHING',
+  ]) {
     expect(text).toContain(value);
   }
-  expect(text).not.toContain('DAFTAR DEFECT');
+  for (const stale of ['DAFTAR DEFECT', 'DICETAK', 'TOP 5']) {
+    expect(text).not.toContain(stale);
+  }
   // No photos for PSI lv.1 (AC-10.6).
   expect(text).not.toContain('/DCTDecode');
 
@@ -179,7 +206,7 @@ test('PSI lv.2 exports the sealed submission with its photo, and the PDF carries
   );
   const chooser = page.waitForEvent('filechooser');
   await page
-    .getByRole('region', { name: 'TOP 5 DEFECT' })
+    .getByRole('region', { name: 'ALL DEFECT' })
     .getByRole('button', { name: 'Foto wajib' })
     .click();
   await (await chooser).setFiles({ name: 'camera.jpg', mimeType: 'image/jpeg', buffer: jpeg });
@@ -191,13 +218,17 @@ test('PSI lv.2 exports the sealed submission with its photo, and the PDF carries
   const pdf = await exportVia(page, 'EXPORT PDF');
   const text = (await bytes(pdf)).toString('latin1');
   expect(text).toContain('FOTO DEFECT');
+  expect(text).toContain('DEFECT FINDINGS');
   expect(text).toContain('/DCTDecode');
   expect(text).toContain('BROKEN STITCHING');
+  expect(text).toContain('DEWI CONTOH');
+  expect(text).not.toContain('TOP 5');
 
   const xlsx = await exportVia(page, 'EXPORT EXCEL');
   const workbook = Object.values(unzipSync(new Uint8Array(await bytes(xlsx))))
     .map((data) => strFromU8(data))
     .join('\n');
   expect(workbook).toContain('DEWI CONTOH (PSI lv.2)');
+  expect(workbook).toContain('PSI Report');
   expect(workbook).not.toContain('Foto');
 });

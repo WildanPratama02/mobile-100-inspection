@@ -62,6 +62,56 @@ const jpeg = (size: number) => {
 // A non-ASCII character, so a decode/encode round trip would show in the hash.
 const JSON_PART = JSON.stringify({ submissionUuid: 'x', model: 'DURAMO SL2 M', note: 'é' });
 
+/**
+ * Sends one photo part per id and a JSON part padded so that the whole body is exactly `size` bytes, with its
+ * Content-Length, and answers the status and body text.
+ */
+function sendRaw(
+  ids: readonly string[],
+  photo: Buffer,
+  size: number,
+): Promise<{ status: number; body: string }> {
+  const boundary = 'm100boundary';
+  const head = (name: string, filename?: string) =>
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="${name}"` +
+        (filename ? `; filename="${filename}"\r\nContent-Type: image/jpeg` : '') +
+        '\r\n\r\n',
+    );
+  const photos = ids.flatMap((id) => [
+    head(`photo_${id}`, `${id}.jpg`),
+    photo,
+    Buffer.from('\r\n'),
+  ]);
+  const jsonHead = head('submission');
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  const fixed = [...photos, jsonHead, tail].reduce((n, b) => n + b.length, 0);
+  const pad = 'x'.repeat(size - fixed - JSON.stringify({ pad: '' }).length);
+  const body = Buffer.concat([...photos, jsonHead, Buffer.from(JSON.stringify({ pad })), tail]);
+  expect(body.length).toBe(size);
+  const { port } = server.address() as AddressInfo;
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      {
+        host: '127.0.0.1',
+        port,
+        method: 'POST',
+        headers: {
+          'content-type': `multipart/form-data; boundary=${boundary}`,
+          'content-length': body.length,
+        },
+      },
+      (res) => {
+        let text = '';
+        res.on('data', (c: Buffer) => (text += c.toString()));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: text }));
+      },
+    );
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
 describe('readSubmissionParts (doc 04 §4.1, doc 03 §5.6)', () => {
   it('keeps the JSON part byte for byte when it comes as a file part (a Blob on the tablet)', async () => {
     const photo = jpeg(200 * 1024);
@@ -100,10 +150,27 @@ describe('readSubmissionParts (doc 04 §4.1, doc 03 §5.6)', () => {
     });
   });
 
-  it('refuses a body over 8 MB by its Content-Length with 413', async () => {
+  it('has the doc 04 §7 limits: body 100 MB, photo 1 MB, 100 parts (ADR-022)', () => {
+    expect(MULTIPART_LIMITS).toEqual({ body: 100 * MB, photo: MB, parts: 100 });
+  });
+
+  it('accepts 98 photos of 1 MB in a body of exactly 100 MB and refuses 100 MB + 1 byte with 413', async () => {
+    const ids = Array.from({ length: 98 }, (_, i) => `D${String(i + 1).padStart(3, '0')}`);
+    const photo = jpeg(MB);
+    const sent = (size: number) => sendRaw(ids, photo, size);
+    const ok = await sent(100 * MB);
+    expect(ok.status).toBe(200);
+    expect(Object.keys((JSON.parse(ok.body) as Read).photos)).toHaveLength(98);
+    const over = await sent(100 * MB + 1);
+    expect(over.status).toBe(413);
+    expect((JSON.parse(over.body) as ProblemBody).code).toBe('PAYLOAD_TOO_LARGE');
+  }, 60_000);
+
+  it('refuses a body over the limit by its Content-Length with 413', async () => {
+    limits = { ...MULTIPART_LIMITS, body: 64 * 1024 };
     const res = await post()
       .field('submission', JSON_PART)
-      .attach('submission_extra', Buffer.alloc(8 * MB + 1), { filename: 'x' });
+      .attach('submission_extra', Buffer.alloc(64 * 1024 + 1), { filename: 'x' });
     expect(res.status).toBe(413);
     expect(problem(res).code).toBe('PAYLOAD_TOO_LARGE');
   });

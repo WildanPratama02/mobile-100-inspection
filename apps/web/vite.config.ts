@@ -88,7 +88,7 @@ export default defineConfig({
       manifest: {
         id: '/',
         name: APP_NAME,
-        short_name: 'M100',
+        short_name: 'PSI Inspection',
         lang: 'id',
         // Splash and status bar of the installed app match the white header strip (`bg`).
         background_color: lightColor('bg'),

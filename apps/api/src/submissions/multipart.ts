@@ -1,7 +1,7 @@
 /**
  * Reads the multipart body of `POST /submissions` (doc 04 §4.1) into memory: the `submission` JSON part as the
  * exact bytes the tablet sent (their SHA-256 is `payload_sha256`, doc 04 §4.3) and the photo parts
- * `photo_<DEFECT_ID>`. Sizes are checked here, before validation (doc 03 §5.6): the whole body ≤ 8 MB and each
+ * `photo_<DEFECT_ID>`. Sizes are checked here, before validation (doc 03 §5.6): the whole body ≤ 100 MB and each
  * photo ≤ 1 MB, else `413 PAYLOAD_TOO_LARGE`. Nothing is written to disk.
  */
 import { createHash } from 'node:crypto';
@@ -20,13 +20,16 @@ export interface MultipartLimits {
 }
 
 export const MULTIPART_LIMITS: MultipartLimits = {
-  body: 8 * 1024 * 1024,
+  body: 100 * 1024 * 1024,
   photo: 1024 * 1024,
   parts: 100,
 };
 
-/** A refused body is read and dropped up to this many times the body limit, then the connection is closed. */
-const DRAIN_FACTOR = 4;
+/**
+ * A refused body is read and dropped up to the body limit plus this much, then the connection is closed. A fixed
+ * margin rather than a multiple of the limit: four times 100 MB would read 400 MB for nothing.
+ */
+const DRAIN_MARGIN = 8 * 1024 * 1024;
 
 export const SUBMISSION_PART = 'submission';
 const PHOTO_PART = /^photo_D\d{3}$/;
@@ -79,7 +82,7 @@ export function readSubmissionParts(
     req.on('data', (chunk: Buffer) => {
       received += chunk.length;
       if (received > limits.body) fail(new ApiProblem('PAYLOAD_TOO_LARGE'));
-      if (received > limits.body * DRAIN_FACTOR) req.destroy();
+      if (received > limits.body + DRAIN_MARGIN) req.destroy();
     });
 
     if (!/^multipart\/form-data\b/i.test(req.headers['content-type'] ?? '')) {

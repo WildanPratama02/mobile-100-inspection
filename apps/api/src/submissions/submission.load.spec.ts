@@ -1,9 +1,10 @@
 /**
- * T3.7 load test (NFR-07, doc 03 §8 "Load", T12): `LOAD_TABLETS` (50) simulated tablets, each sending one PSI lv.2
- * submission with five photos of `LOAD_PHOTO_KB` (200) KB to the built API process: all at once, and spread over
- * `LOAD_WINDOW_SECONDS` (300). No loss, no duplicate; the p95 per submission is printed and written as JSON.
- * Runs only with `pnpm test:load`.
+ * T3.7 load test with T7.8's photo figure (NFR-07, doc 03 §8 "Load", T12): `LOAD_TABLETS` (50) simulated tablets,
+ * each sending one PSI lv.2 submission with `LOAD_PHOTOS` (15) photos of `LOAD_PHOTO_KB` (200) KB to the built API
+ * process: all at once, and spread over `LOAD_WINDOW_SECONDS` (300). No loss, no duplicate; the p95 per submission
+ * is printed and written as JSON. Runs only with `pnpm test:load`.
  */
+import { startResourceSampler } from '../testing/load-monitor';
 import { publishReport, summarise } from '../testing/load-report';
 import {
   checkStored,
@@ -13,17 +14,24 @@ import {
   startLoadRun,
   waitFor,
 } from '../testing/load-run';
-import { type Attempt, fiveDefectSubmission, runTablet } from '../testing/tablet-sim';
+import { type Attempt, psiSubmission, runTablet } from '../testing/tablet-sim';
 
 const TABLETS = envNumber('LOAD_TABLETS', 50);
 const WINDOW_MS = envNumber('LOAD_WINDOW_SECONDS', 300) * 1000;
+const PHOTO_COUNT = envNumber('LOAD_PHOTOS', 15);
 const PHOTO_BYTES = envNumber('LOAD_PHOTO_KB', 200) * 1024;
 
 let run: LoadRun;
 
 beforeAll(async () => {
   run = await startLoadRun();
-  await waitFor(async () => (await run.submitEnabled()) === true, 60_000, 'SUBMIT_ENABLED');
+  await waitFor(
+    async () => (await run.submitEnabled()) === true,
+    60_000,
+    'SUBMIT_ENABLED',
+    1_000,
+    () => run.lastStatus(),
+  );
 }, 120_000);
 
 afterAll(async () => {
@@ -32,9 +40,11 @@ afterAll(async () => {
 
 async function scenario(name: string, startOffset: () => number): Promise<void> {
   const tablets = await run.tablets(TABLETS);
-  const sealed = tablets.map(() => fiveDefectSubmission(PHOTO_BYTES));
+  const sealed = tablets.map(() => psiSubmission(PHOTO_BYTES, PHOTO_COUNT));
   const attempts: Attempt[] = [];
   const linesBefore = run.api.logLines().length;
+  // Memory and connections every 10 s, into the JSON report.
+  const sampler = startResourceSampler({ apiPid: run.api.pid, client: run.db.client });
   const t0 = Date.now();
 
   const items = (
@@ -55,7 +65,12 @@ async function scenario(name: string, startOffset: () => number): Promise<void> 
   publishReport(
     summarise({
       scenario: name,
-      settings: { tablets: TABLETS, windowSeconds: WINDOW_MS / 1000, photoKb: PHOTO_BYTES / 1024 },
+      settings: {
+        tablets: TABLETS,
+        windowSeconds: WINDOW_MS / 1000,
+        photos: PHOTO_COUNT,
+        photoKb: PHOTO_BYTES / 1024,
+      },
       items,
       attempts,
       serverWriteMs: await settledWriteDurations(
@@ -63,6 +78,7 @@ async function scenario(name: string, startOffset: () => number): Promise<void> 
         linesBefore,
         attempts.filter((a) => a.status === 201).length,
       ),
+      resources: await sampler.stop(),
     }),
   );
 
@@ -82,7 +98,7 @@ async function scenario(name: string, startOffset: () => number): Promise<void> 
   expect(stored).toMatchObject({ notOnce: [], incomplete: [], badFiles: [], orphanFiles: [] });
 }
 
-describe(`load: ${String(TABLETS)} tablets, five photos each (T3.7, NFR-07)`, () => {
+describe(`load: ${String(TABLETS)} tablets, ${String(PHOTO_COUNT)} photos each (T3.7, NFR-07, T7.8)`, () => {
   let sentSoFar = 0;
 
   it(

@@ -34,9 +34,9 @@ export function Shell({ username, children }: { username: string; children: Reac
         <a className="adm-skip" href="#main">
           Lewati ke konten
         </a>
-        <Link href={BASE} className="adm-brand" aria-label="M100 Admin, ke Submission">
+        <Link href={BASE} className="adm-brand" aria-label="PSI Inspection Admin, ke Submission">
           <img src={logoUrl} alt="" className="adm-logo" />
-          <span>M100 Admin</span>
+          <span>PSI Inspection Admin</span>
         </Link>
         <Button
           size="sm"

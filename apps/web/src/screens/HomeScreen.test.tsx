@@ -111,8 +111,8 @@ function stat(label: string): string {
 const infoValue = (label: string) =>
   within(screen.getByLabelText('Info PO')).getByText(label).nextElementSibling?.textContent;
 
-const top5Names = () =>
-  within(screen.getByRole('region', { name: 'TOP 5 DEFECT' }))
+const defectNames = () =>
+  within(screen.getByRole('region', { name: 'ALL DEFECT' }))
     .queryAllByRole('listitem')
     .map((row) => row.querySelector('.m100-t5__nm')?.firstChild?.textContent);
 
@@ -241,7 +241,7 @@ describe('results panel (FR-04, AC-04.1)', () => {
   });
 });
 
-describe('TOP 5 DEFECT (FR-05)', () => {
+describe('ALL DEFECT (FR-05, ADR-022)', () => {
   it('orders by quantity, then CRITICAL › MAJOR › MINOR, then first recorded (AC-05.1)', async () => {
     await store.getState().addPo(PO, null);
     renderHome();
@@ -256,7 +256,7 @@ describe('TOP 5 DEFECT (FR-05)', () => {
     await tap(PO.po, START_REWORK, defect(minor), defect(major), defect(critical));
     await tap(PO.po, defect(minorTwice), defect(minorTwice), defect(minorLater));
 
-    expect(top5Names()).toEqual([
+    expect(defectNames()).toEqual([
       nameOf(minorTwice),
       nameOf(critical),
       nameOf(major),
@@ -272,7 +272,7 @@ describe('TOP 5 DEFECT (FR-05)', () => {
     const toe = mapping.map.find((e) => e.areaId === 'A01' && e.defectId === vamp.defectId)!;
     await tap(PO.po, START_REWORK, defect(vamp), defect(toe), defect(toe));
 
-    const [row] = within(screen.getByRole('region', { name: 'TOP 5 DEFECT' })).getAllByRole(
+    const [row] = within(screen.getByRole('region', { name: 'ALL DEFECT' })).getAllByRole(
       'listitem',
     );
     expect(row).toHaveTextContent('VAMP, TOE BOX');
@@ -282,13 +282,130 @@ describe('TOP 5 DEFECT (FR-05)', () => {
     expect(within(row!).getByRole('button', { name: 'Foto wajib' })).toBeInTheDocument();
   });
 
-  it('shows five defects at most', async () => {
+  it('lists every defect, not only five, in a list that scrolls inside its pane', async () => {
     await store.getState().addPo(PO, null);
     renderHome();
     const seen: AreaMapEntry[] = [];
     for (let i = 0; i < 7; i++) seen.push(entry('MINOR', 'A01', seen));
     await tap(PO.po, START_REWORK, ...seen.map(defect));
-    expect(top5Names()).toHaveLength(5);
+    // All MINOR with one finding each: first recorded first (AC-05.1).
+    expect(defectNames()).toEqual(seen.map(nameOf));
+    const pane = screen.getByRole('region', { name: 'ALL DEFECT' });
+    expect(within(pane).getByRole('heading', { name: 'ALL DEFECT' })).toBeInTheDocument();
+    expect(within(pane).getByRole('list')).toHaveClass('home__dlist');
+    expect(screen.queryByText('TOP 5 DEFECT')).not.toBeInTheDocument();
+  });
+});
+
+describe('INSPECTION REWORK QTY and REWORK AND APPROVED (FR-16, BR-11, doc 05 §8.1, §8.2)', () => {
+  const row = (label: string) =>
+    within(screen.getByRole('region', { name: 'Hasil' }))
+      .getByText(label)
+      .closest('.m100-stat')!;
+  const editButton = () => screen.queryByRole('button', { name: 'Ubah REWORK AND APPROVED' });
+  const setApproved = (qty: number | null) =>
+    act(async () => {
+      expect(
+        await store.getState().tap(PO.po, { type: 'SET_REWORK_APPROVED', qty }),
+      ).not.toBeNull();
+    });
+  const NOTICE =
+    'REWORK AND APPROVED melebihi INSPECTION REWORK QTY. Ubah angkanya sebelum SUBMIT PO.';
+
+  it('lists the nine results in the order of doc 05 §8.1', async () => {
+    await store.getState().addPo(PO, null);
+    renderHome();
+    const labels = screen
+      .getByRole('region', { name: 'Hasil' })
+      .querySelectorAll('.m100-stat > span');
+    expect([...labels].map((label) => label.textContent)).toEqual([
+      'Qty PO Order',
+      'Qty Inspection',
+      'Qty Defect',
+      'Qty A-Grade',
+      'Qty B-Grade',
+      'INSPECTION REWORK QTY',
+      'REWORK AND APPROVED',
+      'Defect Rate',
+      'Pass Rate (RFT)',
+    ]);
+  });
+
+  it('without a PO: both rows read-only', () => {
+    renderHome();
+    expect(stat('INSPECTION REWORK QTY')).toBe('0');
+    expect(stat('REWORK AND APPROVED')).toBe('—');
+    expect(editButton()).not.toBeInTheDocument();
+  });
+
+  it('at 0 rework: disabled, grey, and says why', async () => {
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, START_BGRADE, defect(entry('MAJOR', 'A01')), END);
+    renderHome();
+    expect(stat('INSPECTION REWORK QTY')).toBe('0');
+    expect(stat('REWORK AND APPROVED')).toBe('—');
+    expect(editButton()).not.toBeInTheDocument();
+    expect(row('REWORK AND APPROVED')).toHaveClass('home__stat--off');
+    expect(screen.getByText('Belum ada inspeksi REWORK.')).toBeInTheDocument();
+  });
+
+  it('with rework: INSPECTION REWORK QTY is read-only; REWORK AND APPROVED opens S5c and shows the value', async () => {
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')), END, START_REWORK);
+    renderHome();
+    expect(stat('INSPECTION REWORK QTY')).toBe('2');
+    expect(screen.queryByRole('button', { name: 'Ubah INSPECTION REWORK QTY' })).toBeNull();
+    expect(stat('REWORK AND APPROVED')).toContain('—');
+    expect(screen.getByText('Ketuk untuk isi')).toBeInTheDocument();
+    expect(screen.queryByText('Belum ada inspeksi REWORK.')).not.toBeInTheDocument();
+    fireEvent.click(editButton()!);
+    expect(screen.getByRole('dialog', { name: 'REWORK AND APPROVED' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'BATAL' }));
+
+    await setApproved(2);
+    expect(stat('REWORK AND APPROVED')).toContain('2');
+    expect(row('REWORK AND APPROVED')).not.toHaveClass('m100-stat--bad');
+    expect(screen.queryByText('Ketuk untuk isi')).not.toBeInTheDocument();
+    // No rework term in the existing formulas (ADR-022 decisions 5, 6): one pair ended, with a defect.
+    expect(stat('Qty Inspection')).toBe('1');
+    expect(stat('Defect Rate')).toBe('100,0%');
+  });
+
+  it('not valid after UNDO: keeps the value in bad tone, warns, stays tappable at 0 rework, and SUBMIT PO refuses', async () => {
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, NO_DEFECT, START_REWORK);
+    await setApproved(1);
+    await tap(PO.po, { type: 'UNDO' });
+    renderHome();
+    expect(stat('INSPECTION REWORK QTY')).toBe('0');
+    expect(stat('REWORK AND APPROVED')).toContain('1');
+    expect(row('REWORK AND APPROVED')).toHaveClass('m100-stat--bad');
+    expect(screen.getByText(NOTICE)).toBeInTheDocument();
+    expect(screen.queryByText('Belum ada inspeksi REWORK.')).not.toBeInTheDocument();
+    expect(editButton()).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'SUBMIT PO' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'REWORK AND APPROVED tidak valid' });
+    expect(dialog).toHaveTextContent(NOTICE);
+    // Must be answered: no close button, the scrim does not close it.
+    expect(within(dialog).queryByRole('button', { name: /tutup/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('scrim'));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Ubah REWORK AND APPROVED' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'REWORK AND APPROVED' })).toHaveTextContent(
+      '(maks. 0)',
+    );
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('PSI lv.1 has the same rows (both levels)', async () => {
+    await asLv1();
+    await store.getState().addPo(PO, null);
+    await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')), END);
+    renderHome(LV1);
+    expect(stat('INSPECTION REWORK QTY')).toBe('1');
+    expect(editButton()).toBeInTheDocument();
   });
 });
 
@@ -396,7 +513,7 @@ describe('photos (FR-10, doc 05 §12)', () => {
   });
 
   const rows = () =>
-    within(screen.getByRole('region', { name: 'TOP 5 DEFECT' })).getAllByRole('listitem');
+    within(screen.getByRole('region', { name: 'ALL DEFECT' })).getAllByRole('listitem');
   const camera = () => screen.getByTestId<HTMLInputElement>('camera');
   const stored = () => store.getState().sessions[PO.po]!.photos;
 
@@ -411,7 +528,7 @@ describe('photos (FR-10, doc 05 §12)', () => {
     for (const e of entries) await store.getState().tap(PO.po, defect(e));
   }
 
-  it('marks a Top 5 row without a photo and counts the missing photos (AC-10.3)', async () => {
+  it('marks a row without a photo and counts the missing photos (AC-10.3)', async () => {
     const a = entry('MAJOR', 'A01');
     const b = entry('MINOR', 'A01');
     await withDefects(a, b);
@@ -423,9 +540,7 @@ describe('photos (FR-10, doc 05 §12)', () => {
     }
     expect(screen.getByText('2 foto belum ada.')).toBeInTheDocument();
     expect(
-      screen.getByText(
-        /PSI lv.2 wajib melampirkan foto pada setiap Top 5 Defect sebelum SUBMIT PO/,
-      ),
+      screen.getByText(/PSI lv.2 wajib melampirkan foto pada setiap defect sebelum SUBMIT PO/),
     ).toBeInTheDocument();
   });
 
@@ -504,7 +619,7 @@ describe('photos (FR-10, doc 05 §12)', () => {
     expect(within(rows()[0]!).getByRole('button', { name: 'Foto wajib' })).toBeInTheDocument();
   });
 
-  it('keeps the photo of a defect that leaves the Top 5, without showing it (AC-10.4)', async () => {
+  it('keeps the photo of a defect whose rank drops below five, and still shows it (AC-10.4)', async () => {
     const seen: AreaMapEntry[] = [];
     for (let i = 0; i < 6; i++) seen.push(entry('MINOR', 'A01', seen));
     const [first, ...others] = seen as [AreaMapEntry, ...AreaMapEntry[]];
@@ -514,12 +629,14 @@ describe('photos (FR-10, doc 05 §12)', () => {
     returnFromCamera(shot());
     await screen.findByText('Foto tersimpan');
 
-    // Five other defects, twice each, push the photographed one out of the Top 5.
+    // Five other defects, twice each, push the photographed one to rank 6; it stays in ALL DEFECT.
     for (const e of others) await tap(PO.po, defect(e), defect(e));
 
-    expect(top5Names()).not.toContain(nameOf(first));
+    expect(defectNames()[5]).toBe(nameOf(first));
     expect(stored()[first.defectId]?.sha256).toBe('hash-1');
-    expect(screen.queryByRole('button', { name: /^Lihat foto/ })).not.toBeInTheDocument();
+    expect(
+      within(rows()[5]!).getByRole('button', { name: `Lihat foto ${nameOf(first)}` }),
+    ).toBeInTheDocument();
     expect(screen.getByText('5 foto belum ada.')).toBeInTheDocument();
   });
 
@@ -538,7 +655,7 @@ describe('photos (FR-10, doc 05 §12)', () => {
 });
 
 describe('EXPORT PDF / EXPORT EXCEL (FR-12): files of the sealed submission', () => {
-  const FILE = /^M100_0903359388_\d{8}\.(pdf|xlsx)$/;
+  const FILE = /^PSI_0903359388_\d{8}\.(pdf|xlsx)$/;
 
   beforeEach(() => {
     vi.mocked(exportFile).mockReset();
@@ -601,6 +718,9 @@ describe('EXPORT PDF / EXPORT EXCEL (FR-12): files of the sealed submission', ()
       const [usedFormat, report] = vi.mocked(exportFile).mock.lastCall!;
       expect(usedFormat).toBe(format);
       expect(report.results.find((r) => r.label === 'Qty Inspection')?.value).toBe(30);
+      // The date is the submission's inspection date (its sealedAt in WIB), never the export time (AC-12.3).
+      expect(report.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(report.psiName).toBe('ANDI CONTOH (PSI lv.1)');
       const name = vi.mocked(saveFile).mock.lastCall![0];
       expect(name).toMatch(FILE);
       expect(name.endsWith(`.${format}`)).toBe(true);
@@ -772,20 +892,26 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
     expect(await db.outbox.count()).toBe(0);
   });
 
-  it('lists the Top 5 defects without a photo for PSI lv.2 (BR-04)', async () => {
-    const a = entry('MAJOR', 'A01');
-    const b = entry('MINOR', 'A01');
+  it('lists every defect without a photo for PSI lv.2: 7 defects need 7 photos (BR-04, ADR-022)', async () => {
+    const seen: AreaMapEntry[] = [];
+    for (let i = 0; i < 7; i++) seen.push(entry('MINOR', 'A01', seen));
     await store.getState().addPo(PO, null);
-    await tap(PO.po, START_REWORK, defect(a), defect(b), defect(b), END, ...noDefects(27));
-    await act(() => store.getState().savePhoto(PO.po, a.defectId, jpeg));
+    await tap(PO.po, START_REWORK, ...seen.map(defect), END, ...noDefects(27));
+    for (const e of seen.slice(0, 5)) {
+      await act(() => store.getState().savePhoto(PO.po, e.defectId, jpeg));
+    }
     renderHome();
+    expect(screen.getByText('2 foto belum ada.')).toBeInTheDocument();
     submit();
     const dialog = screen.getByRole('alertdialog', { name: 'Foto belum lengkap' });
+    expect(dialog).toHaveTextContent(
+      'PSI lv.2 wajib menambahkan foto pada setiap defect. Belum ada foto untuk:',
+    );
     expect(
       within(dialog)
         .getAllByRole('listitem')
         .map((li) => li.textContent),
-    ).toEqual([nameOf(b)]);
+    ).toEqual(seen.slice(5).map(nameOf));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Lengkapi foto' }));
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(await db.outbox.count()).toBe(0);
@@ -806,6 +932,8 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
     expect(summary('Qty Defect')).toBe('1');
     expect(summary('Qty A-Grade')).toBe('29');
     expect(summary('Qty B-Grade')).toBe('1');
+    expect(summary('INSPECTION REWORK QTY')).toBe('0');
+    expect(summary('REWORK AND APPROVED')).toBe('0');
     expect(summary('Defect Rate')).toBe('3,3%');
     expect(summary('Pass Rate (RFT)')).toBe('96,7%');
     expect(summary('Foto')).toBe('1');

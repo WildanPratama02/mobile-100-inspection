@@ -9,6 +9,7 @@ import type {
   CountingRule,
   DefectId,
   InspectionType,
+  PhotoRule,
   PsiLevel,
 } from '@m100/shared';
 import type { Database, Queryable } from '../db/database';
@@ -64,6 +65,10 @@ export interface SubmissionRow {
   defectRate: string;
   photoCount: number;
   countingRule: CountingRule;
+  /** Rework and Approved (ADR-022); `null` for rows sealed before it. */
+  qtyReworkApproved: number | null;
+  /** `null` for PSI lv.1 and for PSI lv.2 rows sealed before ADR-022 (Top 5 rule). */
+  photoRule: PhotoRule | null;
 }
 
 export interface SubmissionFindingRow {
@@ -133,7 +138,8 @@ const COLUMNS = `
   v.qty_rework AS "qtyRework", v.qty_bgrade_inspections AS "qtyBGradeInspections",
   v.qty_no_defect AS "qtyNoDefect", v.qty_inspection AS "qtyInspection", v.qty_a_grade AS "qtyAGrade",
   v.qty_b_grade AS "qtyBGrade", v.qty_defect AS "qtyDefect", v.rft::text AS rft,
-  v.defect_rate::text AS "defectRate", v.photo_count AS "photoCount", v.counting_rule AS "countingRule"`;
+  v.defect_rate::text AS "defectRate", v.photo_count AS "photoCount", v.counting_rule AS "countingRule",
+  v.qty_rework_approved AS "qtyReworkApproved", v.photo_rule AS "photoRule"`;
 const FROM = `FROM v_submissions v JOIN submissions s ON s.id = v.id`;
 const ORDER = `ORDER BY s.sealed_at DESC, v.display_no DESC`;
 

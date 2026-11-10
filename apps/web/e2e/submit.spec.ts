@@ -89,7 +89,7 @@ async function shootTop5(page: Page) {
     return canvas.toDataURL('image/jpeg', 0.9).split(',')[1]!;
   });
   const chooser = page.waitForEvent('filechooser');
-  await top5(page).getByRole('button', { name: 'Foto wajib' }).click();
+  await allDefect(page).getByRole('button', { name: 'Foto wajib' }).click();
   await (
     await chooser
   ).setFiles({
@@ -160,7 +160,7 @@ test.beforeEach(async ({ page }) => {
   await page.context().route('**/v1/submissions', (route) => route.abort('internetdisconnected'));
 });
 
-const top5 = (page: Page) => page.getByRole('region', { name: 'TOP 5 DEFECT' });
+const allDefect = (page: Page) => page.getByRole('region', { name: 'ALL DEFECT' });
 const submitPo = (page: Page) => page.getByRole('button', { name: 'SUBMIT PO' }).click();
 const confirm = (page: Page) => page.getByRole('dialog', { name: 'Submit PO' });
 const badge = (page: Page) => page.getByLabel(/pengiriman menunggu/);
@@ -194,7 +194,7 @@ test('PSI lv.2: checks in order, confirmation, KIRIM into the outbox, kept after
   await page.getByRole('button', { name: 'END INSPECTION' }).click();
   await goHome(page);
 
-  // BR-04: the Top 5 defect has no photo.
+  // BR-04: the defect has no photo.
   await submitPo(page);
   const photos = page.getByRole('alertdialog', { name: 'Foto belum lengkap' });
   await expect(photos.getByRole('listitem')).toHaveText([DEFECT]);
@@ -218,7 +218,7 @@ test('PSI lv.2: checks in order, confirmation, KIRIM into the outbox, kept after
   await expect(page.getByText('Tersimpan. Menunggu koneksi.')).toBeVisible();
   await expect(badge(page)).toHaveText('1');
   await expect(results(page)).toContainText(/Qty Inspection\s*0/);
-  await expect(top5(page)).toContainText('Belum ada defect');
+  await expect(allDefect(page)).toContainText('Belum ada defect');
 
   const sealed = await stored(page);
   expect(sealed.outbox).toHaveLength(1);
@@ -233,8 +233,8 @@ test('PSI lv.2: checks in order, confirmation, KIRIM into the outbox, kept after
     photos: Array<{ defectId: string; part: string }>;
   };
   expect(payload.sealedAt).toMatch(/\+07:00$/);
-  // PSI lv.2 sends tapped counts (ADR-021).
-  expect(payload.counts).toEqual({ rework: 1, bGrade: 0, noDefect: 0 });
+  // PSI lv.2 sends tapped counts (ADR-021) and REWORK AND APPROVED, empty as 0 (ADR-022).
+  expect(payload.counts).toEqual({ rework: 1, bGrade: 0, reworkApproved: 0, noDefect: 0 });
   expect(payload.findings).toHaveLength(1);
   expect(payload.photos.map((p) => p.part)).toEqual([`photo_${payload.findings[0]!.defectId}`]);
   expect(sealed.outboxPhotos).toEqual([payload.findings[0]!.defectId]);

@@ -15,6 +15,8 @@ import type { TestDatabase } from './database';
 export interface ApiProcess {
   baseUrl: string;
   photoDir: string;
+  /** The API's process id, for its memory figures (`load-monitor.ts`). */
+  pid: number | undefined;
   /** The JSON log lines written so far. */
   logLines(): Record<string, unknown>[];
   stop(): Promise<void>;
@@ -129,5 +131,5 @@ export async function startApiProcess(db: TestDatabase): Promise<ApiProcess> {
     await stop();
     throw error;
   }
-  return { baseUrl, photoDir, logLines: () => lines, stop };
+  return { baseUrl, photoDir, pid: api.pid, logLines: () => lines, stop };
 }

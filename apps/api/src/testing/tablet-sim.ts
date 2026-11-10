@@ -190,15 +190,12 @@ async function send(
 
 const mapping = defaultMapping();
 
-/** Five mapped defects, D049 among them (it shares its name with D071, ADR-009). */
-const DEFECTS: readonly DefectId[] = [
-  'D035',
-  'D049',
-  'D082',
-  ...[...new Set(mapping.map.map((e) => e.defectId))]
-    .filter((id) => !['D035', 'D049', 'D071', 'D082'].includes(id))
-    .slice(0, 2),
-];
+/**
+ * The mapped defect IDs of the bundled mapping, first-seen order; the sim's findings draw from this list.
+ */
+function mappedDefects(count: number): readonly DefectId[] {
+  return [...new Set(mapping.map.map((e) => e.defectId))].slice(0, count);
+}
 
 /** A JPEG-signed part of `bytes` random bytes; the API checks the signature only (doc 03 §5.4). */
 function jpeg(bytes: number): Buffer {
@@ -209,23 +206,32 @@ function jpeg(bytes: number): Buffer {
 }
 
 /**
- * A PSI lv.2 submission of `TEST BUDI` on `F 1`/`F1-1` and PO `0902028839` (the fixture master data) with five
- * defects, all in the Top 5, and their five photos of `photoBytes` each.
+ * A PSI lv.2 submission of `TEST BUDI` on `F 1`/`F1-1` and PO `CX-0902368685` (the fixture master data) as a new
+ * PSI lv.2 tablet seals it (ADR-022, `buildSubmission` in `@m100/shared`): `photoRule: 'ALL'`,
+ * `counts.reworkApproved`, and `photoCount` mapped defects, each with one finding and one photo of `photoBytes`
+ * (every defect with a finding is photographed, so the ALL rule passes whatever the count is). The load tests
+ * default to 15 (`LOAD_PHOTOS`, T7.8); five is the old T3.7 shape.
  */
-export function fiveDefectSubmission(photoBytes: number): SealedSubmission {
+export function psiSubmission(photoBytes: number, photoCount = 5): SealedSubmission {
   const submissionUuid = randomUUID();
-  const findings: Array<Omit<Finding, 'familyId'>> = DEFECTS.map((defectId, i) => {
+  const defects = mappedDefects(photoCount);
+  if (defects.length < photoCount) {
+    throw new Error(
+      `the mapping has only ${String(defects.length)} defects, ${String(photoCount)} asked`,
+    );
+  }
+  const findings: Array<Omit<Finding, 'familyId'>> = defects.map((defectId, i) => {
     const entry = mapping.map.find((e) => e.defectId === defectId)!;
     return {
       inspectionType: i === 2 ? 'B-GRADE' : 'REWORK',
       areaId: entry.areaId,
       subAreaId: entry.subAreaId,
       defectId,
-      qty: 5 - i,
-      firstRecordedAt: `2026-10-16T13:00:0${String(i + 1)}.250+07:00`,
+      qty: 1,
+      firstRecordedAt: `2026-10-16T13:00:${String(i + 1).padStart(2, '0')}.250+07:00`,
     };
   });
-  const photos = DEFECTS.map((defectId) => ({
+  const photos = defects.map((defectId) => ({
     defectId,
     part: `photo_${defectId}`,
     jpeg: jpeg(photoBytes),
@@ -237,11 +243,14 @@ export function fiveDefectSubmission(photoBytes: number): SealedSubmission {
     user: { username: 'TEST BUDI', level: 'PSI lv.2' },
     factory: 'F 1',
     cell: 'F1-1',
-    // Qty Order 1.200: the 30 tapped pairs are within the maximum (ADR-021).
+    // PO's Qty Order 1.200: the 30 tapped pairs are within the maximum (ADR-021); tapped counts need not match
+    // the findings' quantities.
     po: 'CX-0902368685',
     partial: null,
-    // 15 defects: 12 during REWORK, 3 during B-GRADE (one pair); 30 inspected.
-    counts: { rework: 10, bGrade: 1, noDefect: 19 },
+    // `photoCount` findings of qty 1: the third (i = 2) during B-GRADE, the rest during REWORK. 30 pairs tapped:
+    // 10 REWORK (4 of them approved; BR-11 allows 0 to 10), 1 B-GRADE, 19 NO DEFECT.
+    counts: { rework: 10, bGrade: 1, reworkApproved: 4, noDefect: 19 },
+    photoRule: 'ALL',
     findings,
     photos: photos.map((p) => ({ defectId: p.defectId, part: p.part, sha256: sha256Hex(p.jpeg) })),
   };

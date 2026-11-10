@@ -5,11 +5,12 @@ import type {
   CountingRule,
   DefectId,
   InspectionType,
+  PhotoRule,
   Po,
   PsiLevel,
 } from '@m100/shared';
 
-export type { Classification, DefectId, PsiLevel };
+export type { Classification, DefectId, PhotoRule, PsiLevel };
 
 /** One entry of a problem's `errors` list (409, 422). */
 export interface ProblemError {
@@ -155,7 +156,19 @@ export interface AdminSubmissionDetail extends AdminSubmissionSummary {
   podd: string | null;
   crd: string | null;
   partial: { number: number; qty: number } | null;
-  counts: { rework: number; bGrade: number; noDefect: number | null; qtyInspection: number };
+  counts: {
+    rework: number;
+    bGrade: number;
+    noDefect: number | null;
+    qtyInspection: number;
+    /** `null` for rows sealed before ADR-022 (doc 04 A19); the detail shows "-". */
+    reworkApproved: number | null;
+  };
+  /**
+   * Stored `photo_rule`: `ALL` / `TOP5`, `null` for PSI lv.1 and PSI lv.2 rows sealed before
+   * ADR-022 (the legacy Top 5 rule); the detail shows "-".
+   */
+  photoRule: PhotoRule | null;
   findings: AdminFinding[];
   top5: {
     rank: number;

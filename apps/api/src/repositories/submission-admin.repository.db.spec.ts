@@ -166,3 +166,20 @@ describe('PgSubmissionAdminRepository.exportBatch', () => {
     expect(batch.map((r) => r.id)).toEqual([ids.other, ids.midnight]);
   });
 });
+
+describe('PgSubmissionAdminRepository: ADR-022 columns', () => {
+  it('reads Rework and Approved and the photo rule; a row sealed before ADR-022 has both null', async () => {
+    expect(await repo.findById(ids.midnight)).toMatchObject({
+      qtyReworkApproved: null,
+      photoRule: null,
+    });
+    // Inserted last, so the list and count tests above keep their four rows.
+    const marked = await insertSubmission(
+      db.client,
+      submissionRow({ inspection_date: '2026-07-03', qty_rework_approved: 4, photo_rule: 'ALL' }),
+    );
+    expect(await repo.findById(marked)).toMatchObject({ qtyReworkApproved: 4, photoRule: 'ALL' });
+    const [exported] = await repo.exportBatch({ to: '2026-07-03' }, null, 10);
+    expect(exported).toMatchObject({ id: marked, qtyReworkApproved: 4, photoRule: 'ALL' });
+  });
+});

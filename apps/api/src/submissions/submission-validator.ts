@@ -8,6 +8,7 @@ import {
   computeTotals,
   type DefectId,
   type Finding,
+  type PhotoRule,
   type SubmissionRequest,
   type Totals,
 } from '@m100/shared';
@@ -21,7 +22,7 @@ import {
 } from '../repositories/master-data.repository';
 import { PO_REPOSITORY, type PoRepository } from '../repositories/po.repository';
 import type { SubmissionParts } from './multipart';
-import { checkSubmission, type KnownDefect } from './submission-checks';
+import { checkSubmission, type KnownDefect, storedPhotoRule } from './submission-checks';
 import { type ParsedSubmission, submissionSchema } from './submission-schema';
 
 export interface ValidPhoto {
@@ -40,6 +41,8 @@ export interface ValidSubmission {
   photos: ValidPhoto[];
   /** Totals computed by the API using the payload's counting rule (doc 04 §4.1). */
   totals: Totals;
+  /** The rule the photos were checked with, stored as `photo_rule` (ADR-022); `null` for PSI lv.1. */
+  photoRule: PhotoRule | null;
 }
 
 interface MasterResult {
@@ -82,6 +85,7 @@ export class SubmissionValidator {
         return { defectId, bytes, sha256, size: bytes.length };
       }),
       totals: computeTotals(request.counts, request.findings),
+      photoRule: storedPhotoRule(request),
     };
   }
 
