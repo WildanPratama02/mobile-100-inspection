@@ -61,7 +61,7 @@ export async function setQtyInspection(page: Page, qty: number) {
  */
 export async function tapNoDefect(page: Page, times: number) {
   await page.getByRole('button', { name: 'INSPECTION', exact: true }).click();
-  const button = page.getByRole('button', { name: 'NO DEFECT' });
+  const button = page.getByRole('button', { name: 'NO DEFECT', exact: true });
   for (let i = 0; i < times; i++) await button.click();
   await page
     .getByRole('navigation', { name: 'Navigasi input defect' })

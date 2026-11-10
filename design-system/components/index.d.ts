@@ -19,7 +19,7 @@ export interface PhotoButtonProps { state?: 'add' | 'required' | 'attached'; src
 export interface Top5RowProps { no: number; name: string; classification: Classification; areas?: string; qty: number; photo?: PhotoButtonProps | null; flag?: string; className?: string }
 export interface OptionRowProps { kind?: 'nav' | 'defect'; title: string; sub?: string; count?: number; classification?: Classification; qty?: number; flash?: boolean; disabled?: boolean; onClick?: () => void; className?: string }
 export interface BreadcrumbProps { items: Array<string | { label: string; onClick?: () => void }>; className?: string }
-export interface HistoryRowProps { head?: boolean; no?: number; name?: string; path?: string; classification?: Classification; qty?: number; flash?: boolean; className?: string }
+export interface HistoryRowProps { head?: boolean; no?: number; name?: string; path?: string; classification?: Classification; qty?: number; flash?: boolean; className?: string; onClick?: () => void }
 export interface AreaPillProps { style?: React.CSSProperties; label?: string; lines?: string[]; selected?: boolean; count?: number; general?: boolean; disabled?: boolean; onClick?: () => void; className?: string }
 export interface ListProps { children?: React.ReactNode; role?: string; className?: string }
 export interface PaneProps { children?: React.ReactNode; label?: string; className?: string }
@@ -28,7 +28,7 @@ export interface ShoeMapArea { id: string; lines: string[]; anchor: [number, num
 export interface ShoeMapProps { src: string; areas?: Record<string, ShoeMapAreaState>; disabled?: boolean; onSelect?: (areaId: string) => void; imageBox?: [number, number, number, number]; layout?: ShoeMapArea[]; label?: string; className?: string }
 export interface CheckboxRowProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>,'onChange'> { checked: boolean; label: string; sub?: string; onChange?: (checked: boolean) => void; className?: string }
 export interface StepperProps { label?: string; value: number; min?: number; max?: number; format?: (v: number) => string; disabled?: boolean; onChange?: (v: number) => void; className?: string }
-export interface NumberPadProps { label?: string; value: string; min?: number; max?: number; unit?: string; placeholder?: string; hint?: string; onChange?: (digits: string) => void; className?: string }
+export interface NumberPadProps { label?: string; value: string; min?: number; max?: number; unit?: string; placeholder?: string; hint?: string; overMessage?: string; onChange?: (digits: string) => void; className?: string }
 export declare const CheckboxRow: React.FC<CheckboxRowProps>;
 export declare const Stepper: React.FC<StepperProps>;
 export declare const NumberPad: React.FC<NumberPadProps>;

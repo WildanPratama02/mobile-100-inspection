@@ -118,7 +118,7 @@ test('records a REWORK with two defects, survives a reload and updates Home (AC-
   await expect(toast(page)).toHaveText('Inspeksi selesai. 1 defect tercatat');
 
   // PSI lv.2 (ADR-021): each ended pair counts, NO DEFECT adds an A-Grade pair.
-  await page.getByRole('button', { name: 'NO DEFECT' }).click();
+  await page.getByRole('button', { name: 'NO DEFECT', exact: true }).click();
   await expect(toast(page)).toHaveText('No Defect tercatat. A-Grade +1');
 
   await bar(page, 'HOME').click();
@@ -135,7 +135,7 @@ test('UNDO, BACK and the back gesture (FR-08)', async ({ page }) => {
   await openDefectScreen(page);
   await expect(bar(page, 'UNDO')).toBeDisabled();
   // PSI lv.2: UNDO right after NO DEFECT cancels that pair (ADR-021).
-  await page.getByRole('button', { name: 'NO DEFECT' }).click();
+  await page.getByRole('button', { name: 'NO DEFECT', exact: true }).click();
   await bar(page, 'UNDO').click();
   await expect(toast(page)).toHaveText('No Defect dibatalkan');
   await expect(bar(page, 'UNDO')).toBeDisabled();
@@ -184,9 +184,12 @@ test('PSI lv.2: NO DEFECT shows in the history; UNDO takes back extra taps one b
 }) => {
   await openDefectScreen(page);
   const history = page.getByRole('region', { name: 'Riwayat defect' });
-  await expect(history).toContainText('Belum ada data tercatat.');
-  for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'NO DEFECT' }).click();
   const row = history.getByRole('listitem');
+  // Since ADR-023 the NO DEFECT row is shown at 0 too.
+  await expect(row).toHaveCount(1);
+  await expect(row.locator('.m100-hist__q')).toHaveText('0');
+  for (let i = 0; i < 3; i++)
+    await page.getByRole('button', { name: 'NO DEFECT', exact: true }).click();
   await expect(row).toHaveCount(1);
   await expect(row).toContainText('NO DEFECT');
   await expect(row.locator('.m100-hist__q')).toHaveText('3');
@@ -259,7 +262,7 @@ test('PSI lv.1: END INSPECTION waits for a defect and the list is per inspection
   page,
 }) => {
   await openDefectScreen(page, 'ANDI CONTOH');
-  await expect(page.getByRole('button', { name: 'NO DEFECT' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'NO DEFECT', exact: true })).toHaveCount(0);
 
   const end = page.getByRole('button', { name: 'END INSPECTION' });
   await page.getByRole('button', { name: 'REWORK' }).click();

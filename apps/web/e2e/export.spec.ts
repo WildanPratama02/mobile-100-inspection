@@ -64,7 +64,7 @@ async function homeWithDefect(page: Page, name: string) {
   await page.getByRole('button', { name: 'END INSPECTION' }).click();
   // Two pairs: PSI lv.2 taps NO DEFECT (ADR-021), PSI lv.1 enters Qty Inspection (ADR-019).
   const tapped = name === 'DEWI CONTOH';
-  if (tapped) await page.getByRole('button', { name: 'NO DEFECT' }).click();
+  if (tapped) await page.getByRole('button', { name: 'NO DEFECT', exact: true }).click();
   await page
     .getByRole('navigation', { name: 'Navigasi input defect' })
     .getByRole('button', { name: 'HOME' })

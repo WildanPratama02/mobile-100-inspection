@@ -781,6 +781,20 @@ button.m100-stat > b {
 .m100-hist > * {
   padding: 5px 8px;
 }
+button.m100-hist {
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  font: inherit;
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+button.m100-hist:active {
+  background: var(--accent-soft);
+}
 .m100-hist .m100-hist__no {
   color: var(--ink-3);
   font-size: 12px;

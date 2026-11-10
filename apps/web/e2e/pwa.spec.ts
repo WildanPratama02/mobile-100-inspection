@@ -161,7 +161,8 @@ test('after the first load, inspection, photos, results, export and SUBMIT PO wo
   await expect(choice(page, DEFECT)).toContainText('2');
   await page.getByRole('button', { name: 'END INSPECTION' }).click();
   // PSI lv.2 counts the other 29 pairs with NO DEFECT (ADR-021).
-  for (let i = 0; i < 29; i++) await page.getByRole('button', { name: 'NO DEFECT' }).click();
+  for (let i = 0; i < 29; i++)
+    await page.getByRole('button', { name: 'NO DEFECT', exact: true }).click();
   await bar(page, 'HOME').click();
 
   // Home (S3): results and ALL DEFECT.

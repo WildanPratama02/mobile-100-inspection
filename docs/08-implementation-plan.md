@@ -351,10 +351,10 @@ Event `SET_NO_DEFECT{qty}`; command `setNoDefect(state, qty, po)`; `noDefectRun`
 - [x] `ENTERED` (PSI lv.1) ignores `SET_NO_DEFECT`; a session without the event replays to the same state as before.
 
 ### T8.3 Tablet Defect screen (web)
-- [ ] `HistoryRow` gets the optional `onClick` (button, ≥ `--tap-min`) in `apps/web/src/ui`, `design-system/components/index.d.ts` and its README.
-- [ ] PSI lv.2 with no inspection running: the NO DEFECT row shows at 0, after taps and at the maximum, and opens S6a; hidden during an inspection; PSI lv.1 never sees it; the empty text "Belum ada data tercatat." is removed.
-- [ ] S6a: pre-filled, "Maksimum {max} pasang", above the maximum "Melebihi maksimum {max} pasang" and SIMPAN disabled, empty saves 0; SIMPAN writes the event to IndexedDB before closing (NFR-05), toast "No Defect diubah menjadi {n}"; BATAL changes nothing; UNDO toast "Perubahan No Defect dibatalkan".
-- [ ] Vitest for the row and the dialog.
+- [x] `HistoryRow` gets the optional `onClick` (button, ≥ `--tap-min`) in `apps/web/src/ui`, `design-system/components/index.d.ts` and its README.
+- [x] PSI lv.2 with no inspection running: the NO DEFECT row shows at 0, after taps and at the maximum, and opens S6a; hidden during an inspection; PSI lv.1 never sees it; the empty text "Belum ada data tercatat." is removed.
+- [x] S6a: pre-filled, "Maksimum {max} pasang", above the maximum "Melebihi maksimum {max} pasang" and SIMPAN disabled, empty saves 0; SIMPAN writes the event to IndexedDB before closing (NFR-05), toast "No Defect diubah menjadi {n}"; BATAL changes nothing; UNDO toast "Perubahan No Defect dibatalkan".
+- [x] Vitest for the row and the dialog.
 
 ### T8.4 Tablet photo menu (web)
 - [ ] The photo button and GANTI FOTO open "Foto defect" with Ambil Foto (input with `capture="environment"`) and Pilih dari Galeri (input without `capture`), both `accept="image/*"`; BATAL or a cancelled picker changes nothing.

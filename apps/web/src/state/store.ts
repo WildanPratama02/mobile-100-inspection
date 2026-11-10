@@ -20,6 +20,7 @@ import {
   findings,
   noDefect,
   recordDefect,
+  setNoDefect,
   setQtyInspection,
   setReworkApproved,
   replay,
@@ -63,6 +64,8 @@ export type TapCommand =
   | { type: 'START'; inspection: InspectionType }
   /** PSI lv.2 only (ADR-021). */
   | { type: 'NO_DEFECT' }
+  /** SIMPAN in the NO DEFECT dialog (S6a): the new NO DEFECT total, PSI lv.2 only (ADR-023). */
+  | { type: 'SET_NO_DEFECT'; qty: number }
   | { type: 'SET_QTY_INSPECTION'; qty: number }
   /** SIMPAN in REWORK AND APPROVED (FR-16, both levels); `null` saves it empty. */
   | { type: 'SET_REWORK_APPROVED'; qty: number | null }
@@ -230,6 +233,8 @@ function toPayload(
       return startInspection(state, command.inspection, po);
     case 'NO_DEFECT':
       return noDefect(state, po);
+    case 'SET_NO_DEFECT':
+      return setNoDefect(state, command.qty, po);
     case 'SET_QTY_INSPECTION':
       return setQtyInspection(state, command.qty, po);
     case 'SET_REWORK_APPROVED':
