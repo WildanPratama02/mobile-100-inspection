@@ -133,7 +133,7 @@ class Taps {
       po: PO.po,
       partial: PO.partial,
       state: this.state(),
-      photos: Object.values(this.photos).map((p) => ({ defectId: p.defectId, sha256: p.sha256 })),
+      photos: Object.values(this.photos).map((p) => ({ defectId: p!.defectId, sha256: p!.sha256 })),
     });
     return {
       submissionUuid: 'u-1',
@@ -157,7 +157,7 @@ class Taps {
 
   /** The photo blobs stored with the submission (`outboxPhotos`). */
   photoBlobs(): Pick<OutboxPhotoRow, 'defectId' | 'blob'>[] {
-    return Object.values(this.photos).map(({ defectId, blob }) => ({ defectId, blob }));
+    return (Object.values(this.photos) as PhotoRow[]).map(({ defectId, blob }) => ({ defectId, blob }));
   }
 }
 

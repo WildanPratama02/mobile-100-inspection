@@ -7,7 +7,6 @@ import {
   APP_NAME,
   computeTotals,
   fileDate,
-  findings,
   formatDateTime,
   formatPartial,
   missingPhotos,
@@ -76,7 +75,7 @@ export interface SealedExportInput {
 
 /** The report of a sealed submission (FR-12): only what was sent at SUBMIT PO. */
 export function sealedExport({ po, item, mapping, photoBlobs, now }: SealedExportInput): ExportReport {
-  const submission: SubmissionRequest = JSON.parse(item.payloadJson);
+  const submission = JSON.parse(item.payloadJson) as SubmissionRequest;
   if (submission.po !== po.po) throw new Error(`Outbox item is for PO ${submission.po}, not ${po.po}`);
 
   const defectOf = (id: DefectId) => {
