@@ -24,7 +24,9 @@ Each entry records one decision: the situation, what was decided, and what it co
 | 018 | PostgreSQL + object storage (MinIO or another S3-compatible store) replace Google Sheets and Drive | Accepted (photo store: plain folder for release 1; PostgreSQL version amended by 020) | 20 Oct 2026 |
 | 019 | Qty Inspection is entered by the PSI; NO DEFECT removed; Qty Defect counts findings; Qty A-Grade = Qty Inspection − Qty Defect | Accepted (revised 28 Oct 2026) | 27–28 Oct 2026 |
 | 020 | PostgreSQL 18 as the production version baseline (amends ADR-018 decision 1) | Approved in principle; in effect after its verification requirements pass | 29 Oct 2026 |
-| 022 | PSI Inspection Report: all-defect list and photos (PSI lv.2), Inspection Rework QTY and Rework and Approved, exports in the template layout (amends 010, 021) | Accepted | 30 Oct 2026 |
+| 021 | PSI lv.2 counts Qty Inspection with taps (NO DEFECT, ADR-008 calculation); data per factory and cell; slimmer exports (amends 019; NO DEFECT amended by 023) | Accepted | 29 Oct 2026 |
+| 022 | PSI Inspection Report: all-defect list and photos (PSI lv.2), Inspection Rework QTY and Rework and Approved, exports in the template layout (amends 010, 021; photo source amended by 023) | Accepted | 30 Oct 2026 |
+| 023 | PSI lv.2 sets the NO DEFECT total with the number pad on the Defect screen; defect photos from the camera or the gallery (amends 021, 022) | Accepted | 10 Nov 2026 |
 
 ---
 
@@ -346,13 +348,13 @@ Defect Rate = Qty Defect ÷ Qty Inspection. Pass Rate (RFT) = Qty A-Grade ÷ Qty
 | Figure | PSI lv.2 rule |
 |---|---|
 | Qty Inspection | NO DEFECT taps + ended REWORK and B-GRADE inspections (a pair counts at END INSPECTION; the active one not yet) |
-| Qty A-Grade | NO DEFECT taps |
+| Qty A-Grade | NO DEFECT taps (amended 10 Nov 2026, ADR-023: NO DEFECT pairs, tapped or set as a total on S6) |
 | Qty Defect | REWORK findings + B-GRADE findings (+1 per defect tapped, as ADR-019) |
 | Qty B-Grade | B-GRADE findings (as ADR-019) |
 
 Defect Rate = Qty Defect ÷ Qty Inspection; Pass Rate (RFT) = Qty A-Grade ÷ Qty Inspection; both shown live, `0,0%` while Qty Inspection is 0. Defect Rate + Pass Rate need not be 100% (a pair with several findings), as under ADR-008.
 
-2. **NO DEFECT** is back on the Defect screen (S6), for PSI lv.2 only, next to REWORK and B-GRADE: it records one A-Grade pair at once (no END INSPECTION), is disabled during an inspection, and UNDO right after it cancels that pair ("No Defect dibatalkan"). Amended 10 Nov 2026: UNDO repeats, one pair per UNDO, back through the latest consecutive NO DEFECT taps; a REWORK / B-GRADE start ends that run, so UNDO still never reaches an ended inspection (PRD FR-08). The QTY INSPECTION row on Home is not a button for PSI lv.2.
+2. **NO DEFECT** is back on the Defect screen (S6), for PSI lv.2 only, next to REWORK and B-GRADE: it records one A-Grade pair at once (no END INSPECTION), is disabled during an inspection, and UNDO right after it cancels that pair ("No Defect dibatalkan"). Amended 10 Nov 2026: UNDO repeats, one pair per UNDO, back through the latest consecutive NO DEFECT taps; a REWORK / B-GRADE start ends that run, so UNDO still never reaches an ended inspection (PRD FR-08). The QTY INSPECTION row on Home is not a button for PSI lv.2. **Amended 10 Nov 2026 (ADR-023):** the PSI can also set the NO DEFECT total with the number pad on the Defect screen; an edit is one step of the UNDO run.
 3. **Upper limit (product owner's choice).** NO DEFECT, REWORK and B-GRADE are disabled once the pairs tapped (the active one included) reach the PO's partial quantity, otherwise its Qty Order; a notice says why. A defect tap inside an open inspection is never refused. SUBMIT PO is refused with no pair counted ("Belum ada pasang diinspeksi") and above the maximum (only possible after the partial was lowered). The API refuses tapped counts above the maximum on its own (`counts`, `INVALID`, doc 04 §4.2).
 4. **Payload and storage.** A PSI lv.2 session submits `counts: { rework, bGrade, noDefect }`, which the API already calculates and stores with the ADR-008 rules (`counting_rule = 'ADR-008'`, `qty_no_defect` set). No database migration. The admin app labels these rows "Hitung per tap (NO DEFECT)"; `level` tells PSI lv.2 rows from rows sealed before ADR-019.
 5. **Events of the other mode.** A PSI lv.2 session replays `NO_DEFECT` events and ignores `SET_QTY_INSPECTION` (a value entered under ADR-019 before the update; the PSI taps NO DEFECT for the pairs that passed). A PSI lv.1 session keeps ignoring `NO_DEFECT` (ADR-019 decision 9).
@@ -379,7 +381,7 @@ Defect Rate = Qty Defect ÷ Qty Inspection; Pass Rate (RFT) = Qty A-Grade ÷ Qty
 **Decision.**
 1. **Name.** User-visible name "PSI Inspection Report" (`APP_NAME`): browser title, PWA manifest `name` (`short_name` "PSI Inspection"), login brand, PDF and Excel titles, PDF creator. The admin app is "PSI Inspection Admin". Repository, package names, the domain `m100.qdms.web.id`, cookie and database names stay. Export file name `PSI_<PO>_<yyyyMMdd>`, the date being the inspection date.
 2. **ALL DEFECT.** Home lists every defect of the session (English label `ALL DEFECT`, replaces TOP 5 DEFECT), in the existing ranking order (quantity, then CRITICAL > MAJOR > MINOR, then first recorded; grouped by `DEFECT_ID`, ADR-009), scrolling inside its pane. Both PSI levels.
-3. **Photos (PSI lv.2 only).** One photo is required for every defect with a finding, not only the Top 5. PSI lv.1 still takes no photos (ADR-019). SUBMIT PO and the exports are refused while a photo is missing. The tablet resizes photos to at most 500 KB (the API limit per photo stays 1 MB, never re-encoded); the API body limit rises from 8 MB to 100 MB (98 photos + the JSON part, 99 parts ≤ 100).
+3. **Photos (PSI lv.2 only).** One photo is required for every defect with a finding, not only the Top 5. PSI lv.1 still takes no photos (ADR-019). SUBMIT PO and the exports are refused while a photo is missing. The tablet resizes photos to at most 500 KB (the API limit per photo stays 1 MB, never re-encoded); the API body limit rises from 8 MB to 100 MB (98 photos + the JSON part, 99 parts ≤ 100). **Amended 10 Nov 2026 (ADR-023):** the photo can come from the camera or from the tablet's gallery / files.
 4. **Photo rule marker.** A new payload carries `photoRule: 'ALL'`; the API applies the every-defect rule only then and the Top 5 rule without it, so payloads sealed by an older app in an outbox are still accepted. Stored as `submissions.photo_rule` (`'TOP5'` / `'ALL'`, NULL for PSI lv.1), set at insert; existing PSI lv.2 rows are backfilled `'TOP5'`.
    **Amended 30 Oct 2026:** no backfill; existing rows keep NULL, read as the Top 5 rule for PSI lv.2 (hard rule 2).
    **Clarified 31 Oct 2026:** only PSI lv.2 payloads carry `photoRule: 'ALL'`; PSI lv.1 payloads carry none.
@@ -424,3 +426,31 @@ Submissions sealed before this ADR show "–" for Rework and Approved and the fi
 - PSI lv.2 takes more photos per PO; submissions grow (about 11 photos for a typical PO). The T3.7 load test is rerun with 15 photos per PSI lv.2 submission.
 - AC-06.3 (an inspection may end with no defect) no longer holds for new sessions.
 - Work: doc 08 Phase 7 (T7.1–T7.8).
+
+## ADR-023 — PSI lv.2 sets the NO DEFECT total on the Defect screen; defect photos from the camera or the gallery
+
+**Status: Accepted** by the product owner on 10 Nov 2026 (settled question by question on 10 Nov 2026). Amends ADR-021 decisions 1 and 2 (NO DEFECT no longer only by tapping) and ADR-022 decision 3 / FR-10 (photo source). PSI lv.1 is not affected.
+
+**Situation.** The product owner asked (10 Nov 2026) for:
+1. The NO DEFECT (A-Grade) quantity can be changed on the Defect screen. Today a PSI lv.2 taps NO DEFECT once per passed pair, which is slow for a large lot and needs many UNDOs after a miscount.
+2. The defect photo can be taken from the tablet's gallery or files, not only with the camera.
+
+**Decision.**
+1. **Scope.** PSI lv.2 only. A PSI lv.1 has no NO DEFECT; its Qty A-Grade follows from the QTY INSPECTION it already enters on Home (ADR-019).
+2. **Where.** On the Defect screen (S6), while no REWORK / B-GRADE inspection is running, the history row "NO DEFECT · A-Grade" is always shown, also with Qty `0`, and is always tappable, also when the maximum is reached. Tapping it opens the NO DEFECT dialog (doc 05 §11.6, S6a) with the app's number pad. The empty text "Belum ada data tercatat." is no longer used.
+3. **What the number means.** The value entered is the **new total** of NO DEFECT pairs in the session, not an amount to add. SIMPAN writes one event `SET_NO_DEFECT{qty}` before the dialog closes (NFR-05). On replay it replaces the NO DEFECT count so far; later NO DEFECT taps add one pair each on top of it. An unchanged value writes nothing. The `ENTERED` mode (PSI lv.1) ignores the event, as it ignores `NO_DEFECT`.
+4. **Limit.** An integer with 0 ≤ value ≤ (the partial quantity, else Qty Order) − the REWORK and B-GRADE pairs counted, so Qty Inspection stays within the maximum of ADR-021 decision 3. Empty saves 0. Lowering is always allowed, which also clears the ABOVE state after the partial quantity was lowered.
+5. **Formulas unchanged.** Qty Inspection = NO DEFECT + ended REWORK / B-GRADE inspections; Qty A-Grade = NO DEFECT; Defect Rate and Pass Rate follow (ADR-021 decision 1). A set total moves all of them at once.
+6. **UNDO.** A `SET_NO_DEFECT` is one step of the NO DEFECT run (ADR-021 decision 2 as amended 10 Nov 2026). UNDO takes back the latest step: a tap (one pair, "No Defect dibatalkan") or a set total (back to the total before it, "Perubahan No Defect dibatalkan"), then the steps before it. A REWORK / B-GRADE start still ends the run, so UNDO never reaches an ended inspection.
+7. **Payload and storage unchanged.** The session still submits `counts.noDefect` (ADR-008 calculation, `counting_rule = 'ADR-008'`); the API keeps checking it against the maximum. Nothing records whether the pairs were tapped or set (product owner's choice); the tablet's event list still shows it until SUBMIT PO.
+8. **Photo source (PSI lv.2).** The photo button of an ALL DEFECT row and GANTI FOTO open a small menu: "Ambil Foto" (camera, `capture="environment"`) and "Pilih dari Galeri" (gallery or files, no `capture`), plus BATAL. Both accept `image/*` only. Cancelling changes nothing.
+9. **No provenance check.** A gallery photo is accepted without a date or EXIF check (the canvas re-encode drops EXIF; a gallery file's date is unreliable). Every photo goes through the same pipeline: at most 960 px, JPEG at most 500 KB, SHA-256 (AC-10.1). An image the browser can't decode gets the toast "Foto tidak bisa dibaca. Pilih foto JPG atau PNG.". The API limits stay as they are.
+
+**Consequences.**
+- Tablet-only change: no database migration, no API or contract change (doc 02 and doc 04 unchanged), exports and admin app unchanged.
+- A new event type `SET_NO_DEFECT` in IndexedDB. An older app version would ignore it and show other totals, so the tablet app is not downgraded after the update (as ADR-021).
+- A report can't tell tapped NO DEFECT pairs from a set total (accepted risk).
+- A PSI could attach an old or unrelated gallery photo (accepted risk; the reviewer sees every photo in the admin app).
+- The design-system `HistoryRow` gets an optional `onClick` (doc 05 §11.1).
+- Risk R8 (doc 03): the gallery is now a feature, not a fallback; the device checklist (T4.2) checks both paths on the Redmi Pad 2.
+- Work: doc 08 Phase 8 (T8.1–T8.5).
