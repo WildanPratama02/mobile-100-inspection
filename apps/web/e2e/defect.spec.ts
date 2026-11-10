@@ -35,7 +35,7 @@ async function openDefectScreen(page: Page, name = 'DEWI CONTOH') {
   await dialog.getByRole('option', { name: /^0903359388/ }).click();
   await dialog.getByRole('button', { name: 'ADD TO PO LIST' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.getByRole('button', { name: 'ADD DEFECT' }).click();
+  await page.getByRole('button', { name: 'INSPECTION', exact: true }).click();
   await expect(page.getByText('Mulai inspeksi')).toBeVisible();
 }
 
@@ -158,11 +158,11 @@ test('UNDO, BACK and the back gesture (FR-08)', async ({ page }) => {
   await page.goBack();
   await expect(page.getByText('Pilih area sepatu')).toBeVisible();
   await bar(page, 'BACK').click();
-  await expect(page.getByRole('button', { name: 'ADD DEFECT' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'INSPECTION', exact: true })).toBeVisible();
   await expect(page.getByText(/^Inspeksi berjalan\./)).toBeVisible();
 
   // AC-06.3: UNDO of the empty start removes the inspection; no pair is counted (ADR-021).
-  await page.getByRole('button', { name: 'ADD DEFECT' }).click();
+  await page.getByRole('button', { name: 'INSPECTION', exact: true }).click();
   await bar(page, 'UNDO').click();
   await expect(toast(page)).toHaveText('Inspeksi dibatalkan');
   await expect(page.getByText('Mulai inspeksi')).toBeVisible();
@@ -177,6 +177,30 @@ test('UNDO, BACK and the back gesture (FR-08)', async ({ page }) => {
   await expect(stat(page, 'Qty Inspection')).toHaveText('0');
   await expect(stat(page, 'Qty Defect')).toHaveText('0');
   await expect(stat(page, 'INSPECTION REWORK QTY')).toHaveText('0');
+});
+
+test('PSI lv.2: NO DEFECT shows in the history; UNDO takes back extra taps one by one (FR-08, FR-09)', async ({
+  page,
+}) => {
+  await openDefectScreen(page);
+  const history = page.getByRole('region', { name: 'Riwayat defect' });
+  await expect(history).toContainText('Belum ada data tercatat.');
+  for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'NO DEFECT' }).click();
+  const row = history.getByRole('listitem');
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText('NO DEFECT');
+  await expect(row.locator('.m100-hist__q')).toHaveText('3');
+
+  // Two too many: UNDO twice, each takes back one pair.
+  await bar(page, 'UNDO').click();
+  await expect(row.locator('.m100-hist__q')).toHaveText('2');
+  await bar(page, 'UNDO').click();
+  await expect(row.locator('.m100-hist__q')).toHaveText('1');
+  await expect(bar(page, 'UNDO')).toBeEnabled();
+
+  await bar(page, 'HOME').click();
+  await expect(stat(page, 'Qty A-Grade')).toHaveText('1');
+  await expect(stat(page, 'Qty Inspection')).toHaveText('1');
 });
 
 test('a defect tap gives feedback within 100 ms (NFR-03, AC-07.2)', async ({ page }) => {
@@ -258,7 +282,7 @@ test('PSI lv.1: END INSPECTION waits for a defect and the list is per inspection
   await bar(page, 'HOME').click();
   await expect(stat(page, 'Qty Defect')).toHaveText('1');
   const before = await results(page);
-  await page.getByRole('button', { name: 'ADD DEFECT' }).click();
+  await page.getByRole('button', { name: 'INSPECTION', exact: true }).click();
 
   // A new inspection starts with an empty list; the ended one stays on Home.
   await page.getByRole('button', { name: 'B-GRADE' }).click();

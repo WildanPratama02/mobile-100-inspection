@@ -58,6 +58,11 @@ export interface SessionState {
   counts: InspectionCounts;
   /** NO DEFECT taps (`TAPPED`); always 0 in `ENTERED`. */
   noDefect: number;
+  /**
+   * The latest consecutive NO DEFECT taps not undone yet (`TAPPED`): how far UNDO may still go back through
+   * them, one per UNDO. A REWORK / B-GRADE start ends the run, so UNDO never reaches an ended inspection (FR-08).
+   */
+  noDefectRun: number;
   /** Entered by the PSI (FR-15, `ENTERED`); `null` until the first SET_QTY_INSPECTION, always in `TAPPED`. */
   qtyInspection: number | null;
   /** Entered approval for both PSI levels (FR-16); null is empty, counted as 0 in report figures. */
@@ -74,6 +79,7 @@ export function emptySession(mode: CountingMode): SessionState {
     mode,
     counts: { rework: 0, bGrade: 0 },
     noDefect: 0,
+    noDefectRun: 0,
     qtyInspection: null,
     reworkApproved: null,
     active: null,
@@ -238,6 +244,7 @@ export function applyEvent(state: SessionState, event: SessionEvent): SessionSta
         ...state,
         counts: addStarted(counts, type, 1),
         active: { type, startedAt: event.at, defects: [] },
+        noDefectRun: 0,
         undo: 'INSPECTION',
       };
     }
@@ -245,7 +252,12 @@ export function applyEvent(state: SessionState, event: SessionEvent): SessionSta
       // `ENTERED`: left by an app version from before ADR-019 in a session that was open during the update; it
       // changes no figure and no UNDO state (ADR-019 decision 9). `TAPPED`: one A-Grade pair (ADR-021).
       if (state.mode !== 'TAPPED' || active) return state;
-      return { ...state, noDefect: state.noDefect + 1, undo: 'NO_DEFECT' };
+      return {
+        ...state,
+        noDefect: state.noDefect + 1,
+        noDefectRun: state.noDefectRun + 1,
+        undo: 'NO_DEFECT',
+      };
     case 'DEFECT': {
       if (!active) return state;
       const { areaId, subAreaId, familyId, defectId } = event;
@@ -281,9 +293,9 @@ export function applyEvent(state: SessionState, event: SessionEvent): SessionSta
 }
 
 /**
- * FR-08: the last defect of the active inspection; with none, the inspection itself; right after NO DEFECT
- * (`TAPPED`), that pair. A cancelled inspection leaves UNDO disabled, so it never reaches an ended inspection.
- * An entered Qty Inspection is never changed.
+ * FR-08: the last defect of the active inspection; with none, the inspection itself; after NO DEFECT (`TAPPED`),
+ * one pair per UNDO back through the latest consecutive NO DEFECT taps (10 Nov 2026). A cancelled inspection
+ * leaves UNDO disabled, so it never reaches an ended inspection. An entered Qty Inspection is never changed.
  */
 function applyUndo(state: SessionState): SessionState {
   const { counts, active } = state;
@@ -301,9 +313,16 @@ function applyUndo(state: SessionState): SessionState {
     case 'INSPECTION':
       if (!active) return state;
       return { ...state, counts: addStarted(counts, active.type, -1), active: null, undo: null };
-    case 'NO_DEFECT':
-      if (active || state.noDefect < 1) return state;
-      return { ...state, noDefect: state.noDefect - 1, undo: null };
+    case 'NO_DEFECT': {
+      if (active || state.noDefect < 1 || state.noDefectRun < 1) return state;
+      const noDefectRun = state.noDefectRun - 1;
+      return {
+        ...state,
+        noDefect: state.noDefect - 1,
+        noDefectRun,
+        undo: noDefectRun > 0 ? 'NO_DEFECT' : null,
+      };
+    }
     case null:
       return state;
   }

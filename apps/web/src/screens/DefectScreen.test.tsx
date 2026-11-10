@@ -74,6 +74,8 @@ const historyRows = () =>
   within(screen.getByRole('region', { name: 'Riwayat defect' })).queryAllByRole('listitem');
 const END_HINT = 'Catat minimal 1 defect sebelum END INSPECTION.';
 const EMPTY_HISTORY = 'Belum ada defect tercatat untuk inspeksi ini.';
+/** PSI lv.2 with no inspection running and no NO DEFECT yet (FR-09, 10 Nov 2026). */
+const EMPTY_LV2 = 'Belum ada data tercatat.';
 const session = () => store.getState().sessions[PO.po]!.state;
 
 /** The toast; a Notice (also a status) may be shown next to it. */
@@ -110,7 +112,7 @@ describe('command states (doc 05 §11.2)', () => {
     expect(pill('GENERAL')).toBeDisabled();
     expect(screen.getByText('Mulai inspeksi')).toBeVisible();
     expect(screen.getByText(/atau NO DEFECT untuk pasang tanpa defect\.$/)).toBeVisible();
-    expect(screen.getByText(EMPTY_HISTORY)).toBeVisible();
+    expect(screen.getByText(EMPTY_LV2)).toBeVisible();
     expect(screen.queryByText(END_HINT)).not.toBeInTheDocument();
   });
 
@@ -156,6 +158,9 @@ describe('command states (doc 05 §11.2)', () => {
     renderDefect();
     expect(screen.queryByRole('button', { name: 'NO DEFECT' })).not.toBeInTheDocument();
     expect(screen.getByText(/isi QTY INSPECTION di Home\.$/)).toBeVisible();
+    // No NO DEFECT row for PSI lv.1, even with a legacy NO_DEFECT event (ADR-019 decision 9).
+    expect(historyRows()).toHaveLength(0);
+    expect(screen.getByText(EMPTY_HISTORY)).toBeVisible();
     await startRework();
     expect(button('END INSPECTION')).toBeDisabled();
     await openFamily();
@@ -183,6 +188,46 @@ describe('command states (doc 05 §11.2)', () => {
 });
 
 describe('NO DEFECT, PSI lv.2 (ADR-021)', () => {
+  it('shows the NO DEFECT pairs as one history row; UNDO takes them back one at a time (FR-08, FR-09)', async () => {
+    renderDefect();
+    for (let i = 1; i <= 3; i++) {
+      fireEvent.click(button('NO DEFECT'));
+      await waitFor(() => expect(session().noDefect).toBe(i));
+    }
+    const row = () => historyRows()[0]!;
+    expect(historyRows()).toHaveLength(1);
+    expect(row()).toHaveTextContent('NO DEFECT');
+    expect(row()).toHaveTextContent('A-Grade');
+    expect(row().querySelector('.m100-hist__q')).toHaveTextContent('3');
+
+    fireEvent.click(bar('UNDO'));
+    await waitFor(() => expect(session().noDefect).toBe(2));
+    expect(row().querySelector('.m100-hist__q')).toHaveTextContent('2');
+    expect(bar('UNDO')).toBeEnabled();
+    fireEvent.click(bar('UNDO'));
+    await waitFor(() => expect(session().noDefect).toBe(1));
+    fireEvent.click(bar('UNDO'));
+    await waitFor(() => expect(session().noDefect).toBe(0));
+    expect(historyRows()).toHaveLength(0);
+    expect(screen.getByText(EMPTY_LV2)).toBeVisible();
+    expect(bar('UNDO')).toBeDisabled();
+  });
+
+  it('hides the NO DEFECT row while an inspection runs, and UNDO stops at it', async () => {
+    renderDefect();
+    fireEvent.click(button('NO DEFECT'));
+    await toast('No Defect tercatat. A-Grade +1');
+    await startRework();
+    expect(historyRows()).toHaveLength(0);
+    expect(screen.getByText(EMPTY_HISTORY)).toBeVisible();
+    fireEvent.click(bar('UNDO'));
+    await toast('Inspeksi dibatalkan');
+    // Back to no inspection: the row shows again, but UNDO does not reach the earlier NO DEFECT.
+    expect(historyRows()).toHaveLength(1);
+    expect(historyRows()[0]!.querySelector('.m100-hist__q')).toHaveTextContent('1');
+    expect(bar('UNDO')).toBeDisabled();
+  });
+
   it('records one A-Grade pair at once; UNDO right after cancels it', async () => {
     renderDefect();
     fireEvent.click(button('NO DEFECT'));

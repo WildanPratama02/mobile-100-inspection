@@ -36,7 +36,7 @@ async function homeWithDefect(page: Page, name: string) {
   await dialog.getByRole('button', { name: 'ADD TO PO LIST' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'ADD DEFECT' }).click();
+  await page.getByRole('button', { name: 'INSPECTION', exact: true }).click();
   await page.getByRole('button', { name: 'REWORK' }).click();
   await page
     .getByRole('group', { name: 'Pilih area sepatu' })

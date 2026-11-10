@@ -177,13 +177,13 @@ async function tapDefect(page: Page, name: string, qty = 1) {
   await expect(choice(page, name)).toContainText(String(qty));
 }
 
-/** ADD DEFECT, one inspection of `type` with the defects of `taps` in Quarter › Stitching, END, back on Home. */
+/** INSPECTION, one inspection of `type` with the defects of `taps` in Quarter › Stitching, END, back on Home. */
 async function inspect(
   page: Page,
   type: 'REWORK' | 'B-GRADE',
   taps: Array<[subArea: 'Medial Quarter' | 'Lateral Quarter', defect: string]>,
 ) {
-  await page.getByRole('button', { name: 'ADD DEFECT' }).click();
+  await page.getByRole('button', { name: 'INSPECTION', exact: true }).click();
   await page.getByRole('button', { name: type }).click();
   let at: string | undefined;
   for (const [subArea, defect] of taps) {

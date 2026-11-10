@@ -8,7 +8,7 @@ import type { Auth, PoRow } from '../db/schema';
 import { photosToSubmit, type PoSession } from '../state/store';
 import { Button, Dialog, StatRow } from '../ui';
 
-/** "Inspeksi masih berjalan" (must answer): `Ke ADD DEFECT` opens S6. */
+/** "Inspeksi masih berjalan" (must answer): `Ke INSPECTION` opens S6. */
 export function SubmitActiveDialog({ onAddDefect }: { onAddDefect: () => void }) {
   return (
     <Overlay>
@@ -16,7 +16,7 @@ export function SubmitActiveDialog({ onAddDefect }: { onAddDefect: () => void })
         <p className="dialog__text">Selesaikan inspeksi dulu (END INSPECTION).</p>
         <div className="dialog__actions">
           <Button variant="primary" onClick={onAddDefect}>
-            Ke ADD DEFECT
+            Ke INSPECTION
           </Button>
         </div>
       </Dialog>
@@ -24,7 +24,7 @@ export function SubmitActiveDialog({ onAddDefect }: { onAddDefect: () => void })
   );
 }
 
-/** PSI lv.2 has tapped no pair yet (ADR-021): `Ke ADD DEFECT` opens S6, where NO DEFECT is. */
+/** PSI lv.2 has tapped no pair yet (ADR-021): `Ke INSPECTION` opens S6, where NO DEFECT is. */
 export function SubmitNoPairsDialog({ onAddDefect }: { onAddDefect: () => void }) {
   return (
     <Overlay>
@@ -35,7 +35,7 @@ export function SubmitNoPairsDialog({ onAddDefect }: { onAddDefect: () => void }
         </p>
         <div className="dialog__actions">
           <Button variant="primary" onClick={onAddDefect}>
-            Ke ADD DEFECT
+            Ke INSPECTION
           </Button>
         </div>
       </Dialog>

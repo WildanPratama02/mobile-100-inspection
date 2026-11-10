@@ -332,7 +332,7 @@ export function HomeScreen({ auth }: HomeScreenProps) {
 
         {active ? (
           <Notice tone="warning" className="home__notice">
-            Inspeksi berjalan. Lanjutkan di ADD DEFECT atau selesaikan dengan END INSPECTION.
+            Inspeksi berjalan. Lanjutkan di INSPECTION atau selesaikan dengan END INSPECTION.
           </Notice>
         ) : null}
 
@@ -342,7 +342,7 @@ export function HomeScreen({ auth }: HomeScreenProps) {
           disabled={!po}
           onClick={() => void setView({ screen: 'defect', defectPath: NO_PATH })}
         >
-          ADD DEFECT
+          INSPECTION
         </Button>
         <div className="home__exports">
           <Button icon="download" disabled={!sealed} onClick={() => void onExport('pdf')}>
@@ -591,7 +591,7 @@ function AllDefect({ po, session, mapping, photos, onTakePhoto, onViewPhoto }: A
       {!po ? (
         <Empty title="Belum ada PO" hint="Tekan tombol + di PO List untuk menambahkan PO." />
       ) : rows.length === 0 ? (
-        <Empty title="Belum ada defect" hint="Tekan ADD DEFECT untuk mulai input." />
+        <Empty title="Belum ada defect" hint="Tekan INSPECTION untuk mulai input." />
       ) : (
         <div className="home__dlist" role="list">
           {rows.map((row, i) => (

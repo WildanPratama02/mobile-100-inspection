@@ -762,13 +762,13 @@
     order: 3;
     padding: var(--space-2) var(--space-3) var(--space-2) 0;
   }
-  /* PO strip, exports, results, ALL DEFECT; ADD DEFECT and SUBMIT PO stay at the screen edge. */
+  /* PO strip, exports, results, ALL DEFECT; INSPECTION and SUBMIT PO stay at the screen edge. */
   .home {
     height: auto;
   }
   .home__body {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    /* ALL DEFECT takes the spare height, so ADD DEFECT and SUBMIT PO sit at the bottom edge. */
+    /* ALL DEFECT takes the spare height, so INSPECTION and SUBMIT PO sit at the bottom edge. */
     grid-template-rows: auto auto auto 1fr auto auto auto;
     grid-template-areas:
       'polist polist'

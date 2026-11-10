@@ -182,9 +182,9 @@ export function UiKitPage() {
             </Button>
           </State>
         </div>
-        <State label="lg block (ADD DEFECT bar)">
+        <State label="lg block (INSPECTION bar)">
           <Button size="lg" block icon="plus">
-            ADD DEFECT
+            INSPECTION
           </Button>
         </State>
       </Section>

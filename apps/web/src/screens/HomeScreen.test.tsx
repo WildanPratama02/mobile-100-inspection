@@ -116,7 +116,7 @@ const defectNames = () =>
     .queryAllByRole('listitem')
     .map((row) => row.querySelector('.m100-t5__nm')?.firstChild?.textContent);
 
-const BOTTOM = ['ADD DEFECT', 'EXPORT PDF', 'EXPORT EXCEL', 'SUBMIT PO', 'HAPUS DATA DEFECT'];
+const BOTTOM = ['INSPECTION', 'EXPORT PDF', 'EXPORT EXCEL', 'SUBMIT PO', 'HAPUS DATA DEFECT'];
 
 describe('Home states (doc 05 §8.2)', () => {
   it('without a PO: says how to add one, shows "-" and empty results, disables the bottom row', () => {
@@ -136,7 +136,7 @@ describe('Home states (doc 05 §8.2)', () => {
     await store.getState().addPo(PO, null);
     renderHome();
     expect(screen.getByText('Belum ada defect')).toBeInTheDocument();
-    expect(screen.getByText('Tekan ADD DEFECT untuk mulai input.')).toBeInTheDocument();
+    expect(screen.getByText('Tekan INSPECTION untuk mulai input.')).toBeInTheDocument();
     expect(infoValue('PO NUMBER')).toBe('0903359388');
     expect(infoValue('ARTIKEL')).toBe(PO.article);
     expect(infoValue('MODEL')).toBe(PO.model);
@@ -147,7 +147,7 @@ describe('Home states (doc 05 §8.2)', () => {
     expect(screen.queryByRole('button', { name: 'Ubah Qty Inspection' })).not.toBeInTheDocument();
     expect(screen.queryByText('Ketuk untuk isi')).not.toBeInTheDocument();
     expect(stat('Pass Rate (RFT)')).toBe('0,0%');
-    for (const name of ['ADD DEFECT', 'SUBMIT PO']) {
+    for (const name of ['INSPECTION', 'SUBMIT PO']) {
       expect(screen.getByRole('button', { name })).toBeEnabled();
     }
     // Exports wait for SUBMIT PO (FR-12); HAPUS DATA DEFECT has nothing to clear yet.
@@ -175,7 +175,7 @@ describe('Home states (doc 05 §8.2)', () => {
     expect(row).toHaveTextContent('Inspeksi berjalan · B-GRADE');
     expect(
       screen.getByText(
-        'Inspeksi berjalan. Lanjutkan di ADD DEFECT atau selesaikan dengan END INSPECTION.',
+        'Inspeksi berjalan. Lanjutkan di INSPECTION atau selesaikan dengan END INSPECTION.',
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'SUBMIT PO' })).toBeEnabled();
@@ -849,7 +849,7 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
     };
   }
 
-  it('blocks while an inspection is active; Ke ADD DEFECT opens the Defect screen', async () => {
+  it('blocks while an inspection is active; Ke INSPECTION opens the Defect screen', async () => {
     await store.getState().addPo(PO, null);
     await tap(PO.po, START_REWORK, defect(entry('MAJOR', 'A01')));
     renderHome();
@@ -863,19 +863,19 @@ describe('SUBMIT PO (FR-11, doc 05 §13)', () => {
     fireEvent.click(screen.getByTestId('scrim'));
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
 
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Ke ADD DEFECT' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Ke INSPECTION' }));
     await waitFor(() => expect(store.getState().view.screen).toBe('defect'));
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(await stored()).toEqual(before);
   });
 
-  it('PSI lv.2: blocks while no pair is tapped; Ke ADD DEFECT opens the Defect screen (ADR-021)', async () => {
+  it('PSI lv.2: blocks while no pair is tapped; Ke INSPECTION opens the Defect screen (ADR-021)', async () => {
     await store.getState().addPo(PO, null);
     renderHome();
     submit();
     const dialog = screen.getByRole('alertdialog', { name: 'Belum ada pasang diinspeksi' });
     expect(dialog).toHaveTextContent('Tekan NO DEFECT untuk pasang tanpa defect');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Ke ADD DEFECT' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Ke INSPECTION' }));
     await waitFor(() => expect(store.getState().view.screen).toBe('defect'));
     expect(await db.outbox.count()).toBe(0);
   });

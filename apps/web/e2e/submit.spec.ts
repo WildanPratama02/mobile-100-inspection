@@ -69,7 +69,7 @@ async function goHome(page: Page) {
 /** One ended REWORK with one defect, back on Home. */
 async function homeWithEndedInspection(page: Page, name: string) {
   await homeWithPo(page, name);
-  await page.getByRole('button', { name: 'ADD DEFECT' }).click();
+  await page.getByRole('button', { name: 'INSPECTION', exact: true }).click();
   await reworkWithDefect(page);
   await page.getByRole('button', { name: 'END INSPECTION' }).click();
   await goHome(page);
@@ -178,19 +178,19 @@ test('PSI lv.2: checks in order, confirmation, KIRIM into the outbox, kept after
 }) => {
   await homeWithPo(page, 'DEWI CONTOH');
 
-  // No pair tapped yet (ADR-021): Ke ADD DEFECT opens S6.
+  // No pair tapped yet (ADR-021): Ke INSPECTION opens S6.
   await submitPo(page);
   const empty = page.getByRole('alertdialog', { name: 'Belum ada pasang diinspeksi' });
   await expect(empty).toContainText('Tekan NO DEFECT untuk pasang tanpa defect');
-  await empty.getByRole('button', { name: 'Ke ADD DEFECT' }).click();
+  await empty.getByRole('button', { name: 'Ke INSPECTION' }).click();
 
-  // An inspection is active: checked before the missing photo; Ke ADD DEFECT opens S6.
+  // An inspection is active: checked before the missing photo; Ke INSPECTION opens S6.
   await reworkWithDefect(page);
   await goHome(page);
   await submitPo(page);
   const active = page.getByRole('alertdialog', { name: 'Inspeksi masih berjalan' });
   await expect(active).toContainText('Selesaikan inspeksi dulu (END INSPECTION).');
-  await active.getByRole('button', { name: 'Ke ADD DEFECT' }).click();
+  await active.getByRole('button', { name: 'Ke INSPECTION' }).click();
   await page.getByRole('button', { name: 'END INSPECTION' }).click();
   await goHome(page);
 

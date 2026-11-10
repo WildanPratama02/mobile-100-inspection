@@ -34,7 +34,7 @@ for (const qty of [null, 2]) {
       .click();
     await partial.getByRole('button', { name: 'SIMPAN' }).click();
     await expect(partial).toHaveCount(0);
-    await page.getByRole('button', { name: 'ADD DEFECT' }).click();
+    await page.getByRole('button', { name: 'INSPECTION', exact: true }).click();
     await page.getByRole('button', { name: 'REWORK', exact: true }).click();
     await openFamily(page, 'QUARTER', 'Medial Quarter', 'Stitching');
     for (let i = 0; i < 3; i++) await choice(page, BROKEN).click();
@@ -103,7 +103,7 @@ test('ADR-019: partial PO, three findings, manual Qty Inspection and real submis
     ['REWORK', [BROKEN, THREAD]],
     ['B-GRADE', [BROKEN]],
   ] as const) {
-    await page.getByRole('button', { name: 'ADD DEFECT' }).click();
+    await page.getByRole('button', { name: 'INSPECTION', exact: true }).click();
     await expect(page.getByRole('button', { name: 'NO DEFECT', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: type, exact: true }).click();
     await openFamily(page, 'QUARTER', 'Medial Quarter', 'Stitching');

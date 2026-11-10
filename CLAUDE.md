@@ -57,7 +57,7 @@ Tests: Vitest (unit), Playwright (web end-to-end), Jest (NestJS default; reposit
 
 ## UI rules
 
-- Screen text in Bahasa Indonesia. These labels stay English and uppercase: ADD DEFECT, REWORK, B-GRADE, NO DEFECT, END INSPECTION, BACK, HOME, UNDO, SUBMIT PO, LOGIN, EXPORT PDF, EXPORT EXCEL, ALL DEFECT, INSPECTION REWORK QTY, REWORK AND APPROVED, QTY INSPECTION, DEFECT RATE, PASS RATE (RFT).
+- Screen text in Bahasa Indonesia. These labels stay English and uppercase: INSPECTION, REWORK, B-GRADE, NO DEFECT, END INSPECTION, BACK, HOME, UNDO, SUBMIT PO, LOGIN, EXPORT PDF, EXPORT EXCEL, ALL DEFECT, INSPECTION REWORK QTY, REWORK AND APPROVED, QTY INSPECTION, DEFECT RATE, PASS RATE (RFT).
 - Defect names exactly as in the mapping (case and brackets kept).
 - Numbers `id-ID` (2.400; 18,8%), times WIB (Asia/Jakarta).
 - No device keyboard on the tablet app except the PO search box (the admin app at `/admin/` may use the keyboard, doc 05 U17); numbers (the PO partial quantity, ADR-013; QTY INSPECTION, ADR-019; REWORK AND APPROVED, ADR-022) use the app's own number pad. Every tappable element ≥ 44 × 44 px (`--tap-min`).

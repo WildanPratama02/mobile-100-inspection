@@ -67,7 +67,7 @@ test('adds a PO with PO PARTIAL, keeps it over a reload, changes and removes it 
 }) => {
   await login(page);
   await expect(page.getByText('Belum ada PO')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'ADD DEFECT' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'INSPECTION', exact: true })).toBeDisabled();
   await expect(textFields(page)).toHaveCount(0);
 
   const dialog = await openSearch(page, '0903359');

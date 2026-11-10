@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Version | 0.9.1 — 10 Nov 2026: exports from the sealed submission, enabled after SUBMIT PO (FR-12, AC-12.1–12.4); HAPUS DATA DEFECT (AC-04.3). 0.9 — 30 Oct 2026 (ADR-022): ALL DEFECT and photos per defect, INSPECTION REWORK QTY, REWORK AND APPROVED (FR-16, BR-11), END INSPECTION requires a finding, template exports. v0.8 — 29 Oct 2026 (ADR-021): PSI lv.2 counts Qty Inspection with NO DEFECT and END INSPECTION again (A-Grade = NO DEFECT, upper limit); PSI lv.1 keeps FR-15; tablet data per factory and cell (AC-02.4); exports without Foto column and defect list (FR-12). v0.7 — Qty Inspection entered by the PSI, NO DEFECT removed, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026; FR-15, BR-01, BR-02, BR-10). v0.6: backend moved to PostgreSQL + photo store; admin screens added (ADR-018) |
+| Version | 0.9.2 — 10 Nov 2026: Home button ADD DEFECT renamed INSPECTION; UNDO repeats through the latest NO DEFECT taps (FR-08); NO DEFECT row in the history (FR-09). 0.9.1 — 10 Nov 2026: exports from the sealed submission, enabled after SUBMIT PO (FR-12, AC-12.1–12.4); HAPUS DATA DEFECT (AC-04.3). 0.9 — 30 Oct 2026 (ADR-022): ALL DEFECT and photos per defect, INSPECTION REWORK QTY, REWORK AND APPROVED (FR-16, BR-11), END INSPECTION requires a finding, template exports. v0.8 — 29 Oct 2026 (ADR-021): PSI lv.2 counts Qty Inspection with NO DEFECT and END INSPECTION again (A-Grade = NO DEFECT, upper limit); PSI lv.1 keeps FR-15; tablet data per factory and cell (AC-02.4); exports without Foto column and defect list (FR-12). v0.7 — Qty Inspection entered by the PSI, NO DEFECT removed, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026; FR-15, BR-01, BR-02, BR-10). v0.6: backend moved to PostgreSQL + photo store; admin screens added (ADR-018) |
 | Date | 30 Oct 2026 |
 | Owner | QIP Digital Team, PT Parkland World Indonesia |
 | Related | [00 Document Map](00-document-map.md), [07 Decision Log](07-decision-log.md), clickable prototype "Mobile 100% Inspection" v3 |
@@ -74,7 +74,7 @@ flowchart TD
   L[Login: name, factory, cell] --> H[Home: PO list and results]
   H -->|+ in PO list| A[Add PO: search, check details, ADD TO PO LIST]
   A --> H
-  H -->|ADD DEFECT| D[Defect screen]
+  H -->|INSPECTION| D[Defect screen]
   D -->|REWORK or B-GRADE| I[Inspection active: areas enabled]
   I -->|tap area, sub-area, family, defect| I
   I -->|END INSPECTION| D
@@ -192,7 +192,7 @@ Both PSI levels enter the number of REWORK pairs repaired, re-inspected and pass
 A table on Home lists every defect with a finding in the session, grouped by DEFECT_ID across all areas and inspection types and ranked by total quantity descending, scrolling inside its pane: number, defect name, classification chip (MINOR / MAJOR / CRITICAL), the areas it was found in, quantity, and the photo control (FR-10).
 
 - AC-05.1 Ties are ordered by severity (CRITICAL, MAJOR, MINOR), then by which defect was recorded first.
-- AC-05.2 With no defects, the table says "Belum ada defect" and how to start (tap ADD DEFECT).
+- AC-05.2 With no defects, the table says "Belum ada defect" and how to start (tap INSPECTION).
 
 ### FR-06 Starting and ending an inspection (M)
 
@@ -228,14 +228,14 @@ The defect screen has REWORK and B-GRADE buttons (and NO DEFECT for PSI lv.2, AD
 - **UNDO**:
   - during an active inspection with recorded defects, it removes the last defect recorded in that inspection;
   - during an active inspection with no defects, it cancels the inspection (it no longer counts as a REWORK or B-GRADE pair);
-  - right after NO DEFECT (PSI lv.2), it cancels that pair (ADR-021);
+  - after NO DEFECT (PSI lv.2), it cancels one pair per UNDO, back through the latest consecutive NO DEFECT taps, so a PSI who tapped too many can take back each extra one; a REWORK / B-GRADE start ends that run (ADR-021, repeatable since 10 Nov 2026);
   - otherwise it is disabled. UNDO never reaches an inspection that has already ended, and never changes an entered Qty Inspection (that is changed on Home, FR-15).
 
 - AC-08.1 Every UNDO shows a short message saying what was undone.
 
 ### FR-09 Defect history (M)
 
-Below the drill-down list, the defect screen shows only the current inspection's recorded defects, starting empty at every REWORK / B-GRADE start: number, defect name, area › sub-area · family · inspection type, classification, and quantity.
+Below the drill-down list, the defect screen shows only the current inspection's recorded defects, starting empty at every REWORK / B-GRADE start: number, defect name, area › sub-area · family · inspection type, classification, and quantity. PSI lv.2, while no inspection is running: one row "NO DEFECT" (A-Grade) with the session's NO DEFECT pairs as its quantity (= Qty A-Grade), updated by every NO DEFECT tap and UNDO (10 Nov 2026).
 
 - AC-09.1 The row just changed is highlighted and scrolled into view.
 - AC-09.2 One row per area + sub-area + defect + inspection type within the current inspection. Submission findings still aggregate the whole session by these keys.

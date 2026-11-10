@@ -53,7 +53,7 @@ for (const { layout, width, height } of LAYOUTS) {
     const poList = await box(page.getByRole('region', { name: 'PO LIST' }));
     const defects = await box(page.getByRole('region', { name: 'ALL DEFECT' }));
     const results = await box(page.getByRole('region', { name: 'Hasil' }));
-    const add = await box(page.getByRole('button', { name: 'ADD DEFECT' }));
+    const add = await box(page.getByRole('button', { name: 'INSPECTION', exact: true }));
     const submit = await box(page.getByRole('button', { name: 'SUBMIT PO' }));
     const exportPdf = await box(page.getByRole('button', { name: 'EXPORT PDF' }));
     const pos = page
@@ -63,7 +63,7 @@ for (const { layout, width, height } of LAYOUTS) {
     const logo = page.locator('.home__header img');
 
     if (layout === 'Stacked') {
-      // Info strip, PO list as a horizontal strip, results, ALL DEFECT; ADD DEFECT and SUBMIT PO in a bar at the
+      // Info strip, PO list as a horizontal strip, results, ALL DEFECT; INSPECTION and SUBMIT PO in a bar at the
       // screen edge, the exports above the results.
       expect(po2.left, 'POs side by side').toBeGreaterThan(po1.right - 1);
       expect(Math.abs(po2.top - po1.top)).toBeLessThan(1);
@@ -85,7 +85,7 @@ for (const { layout, width, height } of LAYOUTS) {
         expect(button.top).toBeGreaterThanOrEqual(Math.max(defects.bottom, results.bottom) - 1);
         expect(Math.abs(button.top - add.top)).toBeLessThan(1);
       }
-      // ADD DEFECT is the wide one: under the PO column and into the ALL DEFECT column.
+      // INSPECTION is the wide one: under the PO column and into the ALL DEFECT column.
       expect(Math.abs(add.left - poList.left)).toBeLessThan(1);
       expect(add.right).toBeGreaterThan(defects.left);
       expect(add.width).toBeGreaterThan(exportPdf.width);
@@ -97,7 +97,7 @@ for (const { layout, width, height } of LAYOUTS) {
     await common(page, `home-${layout}`);
 
     // ---- Defect screen (doc 05 §11.1) ----
-    await page.getByRole('button', { name: 'ADD DEFECT' }).click();
+    await page.getByRole('button', { name: 'INSPECTION', exact: true }).click();
     await page.getByRole('button', { name: 'REWORK' }).click();
     await openFamily(page, 'QUARTER', 'Medial Quarter', 'Stitching');
     await choice(page, DEFECT).click();

@@ -70,6 +70,9 @@ const CHIP_TONE = {
   CRITICAL: 'critical',
 } as const satisfies Record<Classification, ChipClassification>;
 
+/** The history row key of the NO DEFECT pairs; no finding key can look like it. */
+const NO_DEFECT_KEY = 'NO_DEFECT';
+
 const TYPE_TONE = { REWORK: 'rework', 'B-GRADE': 'bgrade' } as const satisfies Record<
   InspectionType,
   ChipClassification | 'rework' | 'bgrade'
@@ -135,6 +138,11 @@ export function DefectScreen({ po }: DefectScreenProps) {
   const defects = active?.defects ?? [];
   /** AC-06.3: only the current inspection is listed; ended ones stay on Home and in the export. */
   const history = active ? findingsOf(active.defects) : [];
+  /**
+   * PSI lv.2 (FR-09, 10 Nov 2026): while no inspection runs, the session's NO DEFECT pairs (Qty A-Grade) are one
+   * history row, so a tap or UNDO is visible.
+   */
+  const noDefectRow = state.mode === 'TAPPED' && !active && state.noDefect > 0;
   /** Why END INSPECTION is disabled, while the inspection has no finding yet (doc 05 §15). */
   const endHint = active !== null && defects.length === 0;
 
@@ -183,6 +191,7 @@ export function DefectScreen({ po }: DefectScreenProps) {
   const noDefect = () =>
     run({ type: 'NO_DEFECT' }, () => {
       go(NO_PATH);
+      flashHistory(NO_DEFECT_KEY);
       toast('No Defect tercatat. A-Grade +1');
     });
 
@@ -209,6 +218,7 @@ export function DefectScreen({ po }: DefectScreenProps) {
         go(NO_PATH);
         toast('Inspeksi dibatalkan');
       } else {
+        if (after.noDefect > 0) flashHistory(NO_DEFECT_KEY);
         toast('No Defect dibatalkan');
       }
     });
@@ -323,8 +333,30 @@ export function DefectScreen({ po }: DefectScreenProps) {
         <section className="defect__hist" aria-label="Riwayat defect">
           <HistoryRow head />
           <div className="defect__hist-body" role="list" ref={historyRef}>
-            {history.length === 0 ? (
-              <p className="defect__hist-empty">Belum ada defect tercatat untuk inspeksi ini.</p>
+            {noDefectRow ? (
+              <div
+                key={
+                  historyFlash?.key === NO_DEFECT_KEY
+                    ? `${NO_DEFECT_KEY}#${historyFlash.n}`
+                    : NO_DEFECT_KEY
+                }
+                role="listitem"
+                data-key={NO_DEFECT_KEY}
+              >
+                <HistoryRow
+                  no={1}
+                  name="NO DEFECT"
+                  path="A-Grade"
+                  qty={state.noDefect}
+                  flash={historyFlash?.key === NO_DEFECT_KEY}
+                />
+              </div>
+            ) : history.length === 0 ? (
+              <p className="defect__hist-empty">
+                {active || state.mode !== 'TAPPED'
+                  ? 'Belum ada defect tercatat untuk inspeksi ini.'
+                  : 'Belum ada data tercatat.'}
+              </p>
             ) : (
               history.map((f, i) => {
                 const key = historyKey(f);

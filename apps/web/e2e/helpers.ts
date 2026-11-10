@@ -56,11 +56,11 @@ export async function setQtyInspection(page: Page, qty: number) {
   await expect(dialog).toHaveCount(0);
 }
 /**
- * PSI lv.2 (ADR-021): taps NO DEFECT `times` times on the Defect screen, opened from Home with ADD DEFECT, and
+ * PSI lv.2 (ADR-021): taps NO DEFECT `times` times on the Defect screen, opened from Home with INSPECTION, and
  * returns Home.
  */
 export async function tapNoDefect(page: Page, times: number) {
-  await page.getByRole('button', { name: 'ADD DEFECT' }).click();
+  await page.getByRole('button', { name: 'INSPECTION', exact: true }).click();
   const button = page.getByRole('button', { name: 'NO DEFECT' });
   for (let i = 0; i < times; i++) await button.click();
   await page

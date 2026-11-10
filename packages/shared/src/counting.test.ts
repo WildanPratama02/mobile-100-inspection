@@ -642,19 +642,52 @@ describe('PSI lv.2 counts Qty Inspection with taps (ADR-021)', () => {
       expect(noDefect(new Tablet().state, PO)).toBeNull();
     });
 
-    it('UNDO right after it removes that pair; then UNDO is disabled', () => {
-      const t = lv2().noDefect(2);
+    it('UNDO takes back one pair at a time through the latest NO DEFECT taps, then is disabled', () => {
+      const t = lv2().noDefect(3);
       expect(t.state.undo).toBe('NO_DEFECT');
+      expect(t.state.noDefectRun).toBe(3);
       t.undo();
-      expect(quantities(t.totals)).toEqual([1, 1, 0, 0]);
+      expect(quantities(t.totals)).toEqual([2, 2, 0, 0]);
+      expect(t.state.undo).toBe('NO_DEFECT');
+      t.undo().undo();
+      expect(quantities(t.totals)).toEqual([0, 0, 0, 0]);
       expect(t.state.undo).toBeNull();
       expect(undo(t.state)).toBeNull();
+    });
+
+    it('UNDO stops at an ended inspection: earlier NO DEFECT taps and that inspection stay', () => {
+      const t = lv2().noDefect(2).rework().defect('D035').end().noDefect();
+      expect(quantities(t.totals)).toEqual([4, 3, 1, 0]);
+      t.undo();
+      expect(quantities(t.totals)).toEqual([3, 2, 1, 0]);
+      expect(t.state.undo).toBeNull();
+      expect(undo(t.state)).toBeNull();
+    });
+
+    it('a NO DEFECT after UNDO starts counting again from the new tap', () => {
+      const t = lv2().noDefect(2).undo().noDefect();
+      expect(t.state.noDefectRun).toBe(2);
+      t.undo().undo();
+      expect(quantities(t.totals)).toEqual([0, 0, 0, 0]);
+      expect(t.state.undo).toBeNull();
     });
 
     it('UNDO never reaches a NO DEFECT before an inspection', () => {
       const t = lv2().noDefect().rework().undo();
       expect(t.state.undo).toBeNull();
       expect(quantities(t.totals)).toEqual([1, 1, 0, 0]);
+    });
+
+    it('entering REWORK AND APPROVED or Qty Inspection leaves the NO DEFECT run alone', () => {
+      const t = lv2().noDefect(2).push({ type: 'SET_REWORK_APPROVED', qty: null });
+      expect(t.state.undo).toBe('NO_DEFECT');
+      t.undo().undo();
+      expect(quantities(t.totals)).toEqual([0, 0, 0, 0]);
+    });
+
+    it('replaying the stored events gives the same state (nothing new is stored)', () => {
+      const t = lv2().noDefect(3).undo().rework().defect('D035').end().noDefect(2).undo();
+      expect(replay(t.events, 'TAPPED')).toEqual(t.state);
     });
   });
 
