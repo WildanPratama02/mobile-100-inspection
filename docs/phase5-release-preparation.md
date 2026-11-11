@@ -325,7 +325,12 @@ migration-history guard). Record each result (date, operator, command output or 
 true and follow section 8.3; Caddy (ingestion) stays stopped until G7 passes.
 
 ```powershell
-$zip = 'D:\Project\mobile-100-inspection v0.1\.claude\worktrees\release-5a374ec\release\m100-2026.11.11-5a374ec.zip'
+# The build output lives in a temporary git worktree: copy the zip to a permanent folder first.
+$built = 'D:\Project\mobile-100-inspection v0.1\.claude\worktrees\release-5a374ec\release\m100-2026.11.11-5a374ec.zip'
+New-Item -ItemType Directory -Force D:\m100_incoming | Out-Null
+Copy-Item $built D:\m100_incoming\
+$zip = 'D:\m100_incoming\m100-2026.11.11-5a374ec.zip'
+(Get-FileHash $zip -Algorithm SHA256).Hash   # must be 2850AACB1B754335FCAEE11EECAD89FBA3B80B90F253F216A78CECACCF86A65F
 $new = 'D:\m100_incoming\2026.11.11-5a374ec'   # any empty folder outside D:\Project\M100
 Expand-Archive $zip -DestinationPath $new
 Set-Location (Join-Path $new 'deploy\windows')
@@ -335,7 +340,7 @@ Set-Location (Join-Path $new 'deploy\windows')
 |---|---|---|---|---|
 | G0 | Preconditions | 1. The OWNER decisions of 8.4 that block go-live are recorded as approved, or their risk is accepted in writing. 2. Redmi Pad 2 evidence for **Ambil Foto** (camera opens, photo stored) and **Pilih dari Galeri** (gallery or files open, photo stored, an unreadable image shows "Foto tidak bisa dibaca. Pilih foto JPG atau PNG.") is recorded with date, operator, Android and Chrome versions (T4.2, T8.5). 3. Every PSI has submitted every open session and every tablet's waiting counter is 0; nobody clears site data or reinstalls the app. 4. The window is announced. 5. **Current state, read-only:** `Get-NetTCPConnection -State Listen -LocalPort 443, 3000 \| Select LocalAddress, LocalPort, OwningProcess`; for each process `Get-CimInstance Win32_Process -Filter "ProcessId=<pid>" \| Select ProcessId, CommandLine`; the database level with `MIGRATE_DATABASE_URL`: `SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1` | All five recorded; case A or B stated; the release behind the two listeners named | NOT EXECUTED |
 | G1 | Merge | PR #29 and the documentation follow-up PR #30 merged into `main` | On the merged code: `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm test` (with `TEST_ADMIN_DATABASE_URL`), `pnpm e2e` green, no retries | **DONE 11 Nov 2026**: #29 merged as `356a996` (tree of `8c1ff38`), #30 as `5a374ec` (docs only). Full verification green on `8c1ff38` and on `e980bb2` (same code; one e2e setup failure from the dev server, rerun green). No review approval recorded on GitHub for #29 |
-| G2 | New release zip | From a clean checkout of `main` after the merges: `pnpm release` | Name has no `-dirty`; `<sha>` is on `main`; the zip contains migrations 0001–0007 and `deploy\windows`; hash recorded and checked on the server | **DONE 11 Nov 2026**: `m100-2026.11.11-5a374ec.zip`, SHA-256 `2850AACB1B754335FCAEE11EECAD89FBA3B80B90F253F216A78CECACCF86A65F`, built on this server from a clean detached checkout of `5a374ec` (path in the block above); no `.env`, `secrets\` or key files inside; migration files identical to `79a0dd3`. Check the hash again before G6: `(Get-FileHash $zip -Algorithm SHA256).Hash` |
+| G2 | New release zip | From a clean checkout of `main` after the merges: `pnpm release` | Name has no `-dirty`; `<sha>` is on `main`; the zip contains migrations 0001–0007 and `deploy\windows`; hash recorded and checked on the server | **DONE 11 Nov 2026**: `m100-2026.11.11-5a374ec.zip`, SHA-256 `2850AACB1B754335FCAEE11EECAD89FBA3B80B90F253F216A78CECACCF86A65F`, built on this server from a clean detached checkout of `5a374ec` (it lives in a temporary git worktree: copy it as in the block above); no `.env`, `secrets\` or key files inside; migration files identical to `79a0dd3`. Check the hash again before G6: `(Get-FileHash $zip -Algorithm SHA256).Hash` |
 | G3 | Versions (C0) | `& 'C:\Program Files\PostgreSQL\18\bin\postgres.exe' --version`; `& 'C:\Program Files\PostgreSQL\18\bin\pg_dump.exe' --version`; `(Get-Content D:\Project\M100\install.json -Raw \| ConvertFrom-Json).PostgresBin` | All 18.x; `PostgresBin` is the 18 `bin` folder | NOT EXECUTED |
 | G4 | Pre-checks and storage permissions (C1, C5) | From `$new\deploy\windows`: `.\precheck.ps1 -Root D:\Project\M100 -BackupDir D:\m100_backup`; then `icacls D:\Project\M100`; `icacls D:\Project\M100\secrets`; `icacls D:\Project\M100\.env`; `icacls D:\m100_backup`; and the photo folder of `PHOTO_DIR`; as a non-admin user `Get-Content D:\Project\M100\secrets\jwt.key` must fail | precheck: no FAIL (port 443 is reported in use while the unmanaged Caddy runs: record it, it is cleared in G6), every MANUAL line confirmed in writing; ACLs as `install.ps1` sets them (secrets: Administrators F, SYSTEM F, `NT SERVICE\m100-api` RX); the API account can write `PHOTO_DIR`, the nightly task (SYSTEM) can write `D:\m100_backup`; the non-admin read is refused | NOT EXECUTED |
 | G5 | Backup **and restore rehearsal** (C6, same server) | After G0 step 3: `D:\Project\M100\current\deploy\windows\m100.ps1 backup --kind pre-upgrade`; then `.\restore.ps1 -From <that backup folder> -PgBin 'C:\Program Files\PostgreSQL\18\bin'` (scratch database `m100_restore_*`, dropped afterwards; **never** `-Full`); time it | Restore verifies the dump SHA-256, row counts and photo files; record the backup folder, its `manifest.json`, the photo mirror size and the restore duration (against the provisional 4 h RTO) | NOT EXECUTED |
@@ -381,7 +386,9 @@ Coordinated recovery constraints:
 3. **Case B, upgrade stopped between 0006 and 0007** (0006 committed, 0007 failed): the database is at 0006. No
    release on the server matches it except `71b9ff0` and `3e57b57-dirty`, which are not candidates; the new API
    waits for 0007. Keep services stopped, fix the cause and run the migrations of the new release again
-   (`db:migrate` applies only 0007), then G7. Restore is not needed for this case.
+   (`db:migrate` applies only 0007), then G7. Restore is not needed for this case. If 0006 itself failed, the
+   database is unchanged at 0005: the same procedure applies; a fallback to `79a0dd3` would start but refuse
+   submissions (its readiness check expects 0007).
 4. **Database damaged after G6:** restore the most recent complete backup **with the new release** into a new
    database (runbook "Coordinated application/database restore"); keep the damaged database read-only.
 5. **Back to a release below the database's level** (for example `ce37679`) only together with a backup taken at
