@@ -61,7 +61,7 @@ export async function setQtyInspection(page: Page, qty: number) {
  */
 export async function tapNoDefect(page: Page, times: number) {
   await page.getByRole('button', { name: 'INSPECTION', exact: true }).click();
-  const button = page.getByRole('button', { name: 'NO DEFECT' });
+  const button = page.getByRole('button', { name: 'NO DEFECT', exact: true });
   for (let i = 0; i < times; i++) await button.click();
   await page
     .getByRole('navigation', { name: 'Navigasi input defect' })
@@ -91,6 +91,13 @@ export const stat = (page: Page, label: string) =>
     .locator('b');
 
 export const allDefect = (page: Page) => page.getByRole('region', { name: 'ALL DEFECT' });
+
+/**
+ * Picks a source in the S7a photo menu ("Foto defect", ADR-023) that the photo button or GANTI FOTO opened;
+ * call it inside the wait for the file chooser.
+ */
+export const photoSource = (page: Page, source: 'Ambil Foto' | 'Pilih dari Galeri') =>
+  page.getByRole('dialog', { name: 'Foto defect' }).getByRole('button', { name: source }).click();
 
 /** Every value of the results box on Home, in order (FR-04). */
 export async function expectResults(

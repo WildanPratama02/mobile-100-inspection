@@ -411,6 +411,12 @@
   gap: var(--space-2);
 }
 
+/* ---- S7a photo menu (ADR-023) ---- */
+.photo-source__choices {
+  display: grid;
+  gap: var(--space-2);
+}
+
 /* ---- S7b photo view ---- */
 .photo-view__defect {
   display: flex;

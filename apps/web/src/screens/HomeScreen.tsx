@@ -40,7 +40,7 @@ import { sealedExport } from '../export/report';
 import { listOutboxPhotos } from '../db/repo';
 import { saveFile } from '../export/saveFile';
 import { useOutboxSender } from '../outbox/useOutboxSender';
-import { toJpeg } from '../photos/resize';
+import { PhotoDecodeError, toJpeg } from '../photos/resize';
 import { usePhotoUrl } from '../photos/usePhotoUrl';
 import {
   hasOpenData,
@@ -68,6 +68,7 @@ import { AddPoDialog } from './AddPoDialog';
 import { NO_PATH } from './drilldown';
 import { MissingPhotosDialog } from './MissingPhotosDialog';
 import { PartialDialog } from './PartialDialog';
+import { PhotoSourceDialog } from './PhotoSourceDialog';
 import { PhotoViewDialog } from './PhotoViewDialog';
 import { ReworkApprovedDialog } from './ReworkApprovedDialog';
 import { SettingsDialog } from './SettingsDialog';
@@ -96,6 +97,8 @@ type Open =
   | { kind: 'partial' }
   | { kind: 'remove'; po: string }
   | { kind: 'photo'; defectId: DefectId }
+  /** S7a menu (ADR-023); `fromView` when GANTI FOTO opened it, so it returns to the photo. */
+  | { kind: 'photo-source'; defectId: DefectId; fromView: boolean }
   | { kind: 'missing-photos'; names: string[] }
   | { kind: 'submit-active' }
   | { kind: 'submit-no-pairs' }
@@ -133,15 +136,22 @@ export function HomeScreen({ auth }: HomeScreenProps) {
   const session = po ? sessions[po.po] : undefined;
   const active = session?.state.active ?? null;
 
-  // S7a (doc 05 §12.1): the system camera through a file input; the defect it is for waits here.
+  // S7a (doc 05 §12.1, ADR-023): a menu offers the system camera or the gallery, each through its own file
+  // input; the defect the photo is for waits here.
   const photos = takesPhotos(auth.level);
   const camera = useRef<HTMLInputElement>(null);
+  const gallery = useRef<HTMLInputElement>(null);
   const shooting = useRef<{ po: string; defectId: DefectId } | null>(null);
 
-  const takePhoto = (defectId: DefectId) => {
+  const takePhoto = (defectId: DefectId, fromView = false) =>
+    setOpen({ kind: 'photo-source', defectId, fromView });
+
+  /** Opens the picker from the menu tap itself (a picker needs the user's tap); the menu closes. */
+  const pickPhoto = (source: 'camera' | 'gallery', defectId: DefectId, fromView: boolean) => {
     if (!po) return;
     shooting.current = { po: po.po, defectId };
-    camera.current?.click();
+    (source === 'camera' ? camera : gallery).current?.click();
+    setOpen(fromView ? { kind: 'photo', defectId } : null);
   };
 
   const onPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -158,7 +168,13 @@ export function HomeScreen({ auth }: HomeScreenProps) {
       toast('Foto tersimpan');
     } catch (error) {
       console.error(error);
-      toast('Foto gagal disimpan. Coba lagi.', 'error');
+      // AC-10.7: an image the browser can't decode (for example HEIC from the gallery) is refused by name.
+      toast(
+        error instanceof PhotoDecodeError
+          ? 'Foto tidak bisa dibaca. Pilih foto JPG atau PNG.'
+          : 'Foto gagal disimpan. Coba lagi.',
+        'error',
+      );
     }
   };
 
@@ -233,6 +249,8 @@ export function HomeScreen({ auth }: HomeScreenProps) {
 
   const viewed = open?.kind === 'photo' ? session?.photos[open.defectId] : undefined;
   const viewedDefect = viewed ? mapping.defect(viewed.defectId) : undefined;
+  const choosing = open?.kind === 'photo-source' ? open : null;
+  const choosingDefect = choosing ? mapping.defect(choosing.defectId) : undefined;
 
   const info: Array<[label: string, value: string, mono?: boolean]> = [
     ['PO NUMBER', po?.po ?? '-', true],
@@ -372,14 +390,36 @@ export function HomeScreen({ auth }: HomeScreenProps) {
       </div>
 
       {photos ? (
-        <input
-          ref={camera}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          hidden
-          data-testid="camera"
-          onChange={(event) => void onPhoto(event)}
+        <>
+          <input
+            ref={camera}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            hidden
+            data-testid="camera"
+            onChange={(event) => void onPhoto(event)}
+          />
+          <input
+            ref={gallery}
+            type="file"
+            accept="image/*"
+            hidden
+            data-testid="gallery"
+            onChange={(event) => void onPhoto(event)}
+          />
+        </>
+      ) : null}
+
+      {choosing && choosingDefect && po ? (
+        <PhotoSourceDialog
+          name={choosingDefect.name}
+          classification={CHIP_TONE[choosingDefect.classification]}
+          onCamera={() => pickPhoto('camera', choosing.defectId, choosing.fromView)}
+          onGallery={() => pickPhoto('gallery', choosing.defectId, choosing.fromView)}
+          onClose={() =>
+            setOpen(choosing.fromView ? { kind: 'photo', defectId: choosing.defectId } : null)
+          }
         />
       ) : null}
 
@@ -388,7 +428,7 @@ export function HomeScreen({ auth }: HomeScreenProps) {
           photo={viewed}
           name={viewedDefect.name}
           classification={CHIP_TONE[viewedDefect.classification]}
-          onReplace={() => takePhoto(viewed.defectId)}
+          onReplace={() => takePhoto(viewed.defectId, true)}
           onRemove={() => {
             close();
             removePhoto(po.po, viewed.defectId)

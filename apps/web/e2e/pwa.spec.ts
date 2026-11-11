@@ -4,6 +4,7 @@ import { type Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import {
   addPo,
+  photoSource,
   bar,
   expectResults,
   expectAllDefect,
@@ -161,7 +162,8 @@ test('after the first load, inspection, photos, results, export and SUBMIT PO wo
   await expect(choice(page, DEFECT)).toContainText('2');
   await page.getByRole('button', { name: 'END INSPECTION' }).click();
   // PSI lv.2 counts the other 29 pairs with NO DEFECT (ADR-021).
-  for (let i = 0; i < 29; i++) await page.getByRole('button', { name: 'NO DEFECT' }).click();
+  for (let i = 0; i < 29; i++)
+    await page.getByRole('button', { name: 'NO DEFECT', exact: true }).click();
   await bar(page, 'HOME').click();
 
   // Home (S3): results and ALL DEFECT.
@@ -187,8 +189,9 @@ test('after the first load, inspection, photos, results, export and SUBMIT PO wo
     context2d.fillRect(0, 0, 1200, 900);
     return canvas.toDataURL('image/jpeg', 0.9).split(',')[1]!;
   });
-  const chooser = page.waitForEvent('filechooser');
   await allDefect(page).getByRole('button', { name: 'Foto wajib' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await photoSource(page, 'Ambil Foto');
   await (
     await chooser
   ).setFiles({ name: 'camera.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpeg, 'base64') });

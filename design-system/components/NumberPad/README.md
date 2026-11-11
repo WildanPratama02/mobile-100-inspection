@@ -11,3 +11,5 @@ An in-app digit pad with a large readout. The tablet keyboard never opens.
 - Don't add a decimal or sign key.
 
 Optional `min` defaults to 1. A nonempty value below it displays "Minimal {min} pasang" in the danger style.
+
+Optional `overMessage` replaces "Maksimum {max} pasang" above `max`, when the hint already says the maximum: the NO DEFECT dialog shows the hint "Maksimum {max} pasang" and above it "Melebihi maksimum {max} pasang" (doc 05 §11.6).

@@ -204,7 +204,7 @@ PowerShell `install.ps1` and `upgrade.ps1`, WinSW service definitions for Caddy 
 - [ ] **Restore test:** the nightly backup is restored on another machine; submission counts match and sample photos open (doc 03 §7.6).
 
 ### T4.2 Device checklist on a real Redmi Pad 2
-Install, setup-link storage visible in the installed app, camera `capture`, offline start, certificate trust, 1280 × 800 layout (doc 03 R8, R9).
+Install, setup-link storage visible in the installed app, camera `capture` and gallery pick (ADR-023: Ambil Foto and Pilih dari Galeri), offline start, certificate trust, 1280 × 800 layout (doc 03 R8, R9).
 - [ ] Every item passes, or the fallback of doc 03 §4.9 is applied.
 
 ### T4.3 Runbook and PSI instruction card
@@ -330,3 +330,38 @@ Migration `0007`: `submissions.qty_rework_approved` (NULL allowed, CHECK 0 ≤ v
 
 ### T7.8 Load test
 - [x] `pnpm test:load` with 15 photos per PSI lv.2 submission (`LOAD_PHOTOS`, default 15) passes the T3.7 targets; figures recorded in the PR.
+
+## Phase 8 — NO DEFECT total with the number pad, defect photo from the gallery (ADR-023) · In progress
+
+A change request of 10 Nov 2026 to code that is already built (Phase 7). Spec: ADR-023; PRD v0.9.3 FR-06, FR-08, FR-09 (AC-09.3), FR-10 (AC-10.7), BR-01; doc 03 v0.6.3 §4.2, §4.5, R8; doc 05 §11.1, §11.2, §11.4, §11.6 (S6a), §12.1, §12.2, §G. Tablet only: no database migration, no API or contract change, exports and admin app unchanged. One branch (`phase-8-no-defect-photo-source`, in a worktree), one PR, one release. Order: T8.1 → T8.2 → T8.3 / T8.4 → T8.5.
+
+### T8.1 Docs (ADR-023)
+Bring every spec in line with ADR-023 before code; no code in this task.
+- [x] ADR-023 in doc 07 (and the missing ADR-021 row of its summary table); amendment notes on ADR-021 decisions 1 and 2 and ADR-022 decision 3.
+- [x] PRD v0.9.3: FR-06, FR-08 (UNDO of a set total), FR-09 and AC-09.3 (NO DEFECT row and its limit), FR-10 and AC-10.7 (camera or gallery, unreadable image), BR-01, BR-02 and the glossary ("NO DEFECT pairs").
+- [x] Doc 03 v0.6.3: event `SET_NO_DEFECT{qty}`, `setNoDefect`, `noDefectRun` as a list of steps, the two photo inputs, R8.
+- [x] Doc 05: the always-shown NO DEFECT row (`HistoryRow onClick`), S6a, UNDO toast, the photo menu for add and GANTI FOTO, copy in §G.
+- [x] `CLAUDE.md`: ADR range up to 023, hard rules 5 and 6.
+
+### T8.2 Shared rules (`packages/shared`)
+Event `SET_NO_DEFECT{qty}`; command `setNoDefect(state, qty, po)`; `noDefectRun` becomes the list of the run's steps (tap, or set with the total before it).
+- [x] `TAPPED`: `SET_NO_DEFECT` replaces the NO DEFECT pairs counted so far; later `NO_DEFECT` taps add one each; Qty Inspection, Qty A-Grade and both rates follow; `buildSubmission` sends the set value in `counts.noDefect` and `totals` equals `computeTotals` of the submitted counts.
+- [x] `setNoDefect` accepts integers 0 ≤ qty ≤ (partial or Qty Order) − REWORK − B-GRADE pairs; refuses above it and during an inspection; accepts lowering when the maximum is already exceeded (ABOVE cleared); returns no event for an unchanged value.
+- [x] UNDO after taps, a set and more taps takes back the later taps one by one, then the set (back to the total before it), then the earlier taps; a REWORK / B-GRADE start ends the run; UNDO is disabled once the run is empty.
+- [x] `ENTERED` (PSI lv.1) ignores `SET_NO_DEFECT`; a session without the event replays to the same state as before.
+
+### T8.3 Tablet Defect screen (web)
+- [x] `HistoryRow` gets the optional `onClick` (button, ≥ `--tap-min`) in `apps/web/src/ui`, `design-system/components/index.d.ts` and its README.
+- [x] PSI lv.2 with no inspection running: the NO DEFECT row shows at 0, after taps and at the maximum, and opens S6a; hidden during an inspection; PSI lv.1 never sees it; the empty text "Belum ada data tercatat." is removed.
+- [x] S6a: pre-filled, "Maksimum {max} pasang", above the maximum "Melebihi maksimum {max} pasang" and SIMPAN disabled, empty saves 0; SIMPAN writes the event to IndexedDB before closing (NFR-05), toast "No Defect diubah menjadi {n}"; BATAL changes nothing; UNDO toast "Perubahan No Defect dibatalkan".
+- [x] Vitest for the row and the dialog.
+
+### T8.4 Tablet photo menu (web)
+- [x] The photo button and GANTI FOTO open "Foto defect" with Ambil Foto (input with `capture="environment"`) and Pilih dari Galeri (input without `capture`), both `accept="image/*"`; BATAL or a cancelled picker changes nothing.
+- [x] An image that can't be decoded → toast "Foto tidak bisa dibaca. Pilih foto JPG atau PNG.", nothing stored; a gallery photo goes through the same resize (≤ 960 px, ≤ 500 KB).
+- [x] `HomeScreen.test.tsx` (the `capture` check) and the photo tests updated.
+
+### T8.5 End-to-end
+- [x] Playwright, PSI lv.2: set NO DEFECT to 120, tap NO DEFECT once, UNDO twice (121 → 120 → previous total), set again, SUBMIT PO; the API stores `qty_no_defect` equal to the total.
+- [x] Playwright, PSI lv.2: a photo attached through Pilih dari Galeri (`setInputFiles`) is accepted and SUBMIT PO succeeds.
+- [ ] T4.2 device checklist: both photo paths on a Redmi Pad 2 (manual).

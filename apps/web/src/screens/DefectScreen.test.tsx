@@ -72,10 +72,10 @@ const option = (title: string) =>
   within(pick()).getByRole('button', { name: new RegExp(`^${escape(title)}`) });
 const historyRows = () =>
   within(screen.getByRole('region', { name: 'Riwayat defect' })).queryAllByRole('listitem');
+/** The NO DEFECT history row of PSI lv.2, a button since ADR-023. */
+const noDefectRow = () => screen.getByRole('button', { name: 'Ubah NO DEFECT' });
 const END_HINT = 'Catat minimal 1 defect sebelum END INSPECTION.';
 const EMPTY_HISTORY = 'Belum ada defect tercatat untuk inspeksi ini.';
-/** PSI lv.2 with no inspection running and no NO DEFECT yet (FR-09, 10 Nov 2026). */
-const EMPTY_LV2 = 'Belum ada data tercatat.';
 const session = () => store.getState().sessions[PO.po]!.state;
 
 /** The toast; a Notice (also a status) may be shown next to it. */
@@ -112,7 +112,10 @@ describe('command states (doc 05 §11.2)', () => {
     expect(pill('GENERAL')).toBeDisabled();
     expect(screen.getByText('Mulai inspeksi')).toBeVisible();
     expect(screen.getByText(/atau NO DEFECT untuk pasang tanpa defect\.$/)).toBeVisible();
-    expect(screen.getByText(EMPTY_LV2)).toBeVisible();
+    // PSI lv.2: the NO DEFECT row is shown at 0 (ADR-023); the old empty text is gone.
+    expect(noDefectRow()).toHaveTextContent('NO DEFECT');
+    expect(noDefectRow().querySelector('.m100-hist__q')).toHaveTextContent('0');
+    expect(screen.queryByText('Belum ada data tercatat.')).not.toBeInTheDocument();
     expect(screen.queryByText(END_HINT)).not.toBeInTheDocument();
   });
 
@@ -160,6 +163,7 @@ describe('command states (doc 05 §11.2)', () => {
     expect(screen.getByText(/isi QTY INSPECTION di Home\.$/)).toBeVisible();
     // No NO DEFECT row for PSI lv.1, even with a legacy NO_DEFECT event (ADR-019 decision 9).
     expect(historyRows()).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: 'Ubah NO DEFECT' })).not.toBeInTheDocument();
     expect(screen.getByText(EMPTY_HISTORY)).toBeVisible();
     await startRework();
     expect(button('END INSPECTION')).toBeDisabled();
@@ -208,8 +212,9 @@ describe('NO DEFECT, PSI lv.2 (ADR-021)', () => {
     await waitFor(() => expect(session().noDefect).toBe(1));
     fireEvent.click(bar('UNDO'));
     await waitFor(() => expect(session().noDefect).toBe(0));
-    expect(historyRows()).toHaveLength(0);
-    expect(screen.getByText(EMPTY_LV2)).toBeVisible();
+    // The row stays at 0 (ADR-023).
+    expect(historyRows()).toHaveLength(1);
+    expect(row().querySelector('.m100-hist__q')).toHaveTextContent('0');
     expect(bar('UNDO')).toBeDisabled();
   });
 
@@ -370,7 +375,9 @@ describe('BACK, HOME, UNDO (FR-08)', () => {
     fireEvent.click(button('END INSPECTION'));
     await toast('Inspeksi selesai. 1 defect tercatat');
     expect(bar('UNDO')).toBeDisabled();
-    expect(historyRows()).toHaveLength(0);
+    // The ended inspection's findings leave the list; PSI lv.2 keeps only the NO DEFECT row (ADR-023).
+    expect(historyRows()).toHaveLength(1);
+    expect(historyRows()[0]).toHaveTextContent('NO DEFECT');
   });
 
   it('BACK goes up one level, a crumb goes to its level, and BACK at the top returns Home', async () => {
@@ -410,5 +417,156 @@ describe('BACK, HOME, UNDO (FR-08)', () => {
     fireEvent.click(bar('HOME'));
     await waitFor(() => expect(store.getState().view.screen).toBe('home'));
     expect(session().active?.type).toBe('REWORK');
+  });
+});
+
+describe('NO DEFECT total, S6a (PSI lv.2, ADR-023)', () => {
+  const dialog = () => screen.getByRole('dialog', { name: 'NO DEFECT (A-Grade)' });
+  const queryDialog = () => screen.queryByRole('dialog', { name: 'NO DEFECT (A-Grade)' });
+  const key = (name: string) => fireEvent.click(within(dialog()).getByRole('button', { name }));
+  const typed = (digits: string) => {
+    key('HAPUS');
+    for (const d of digits) key(d);
+  };
+  const readout = () => dialog().querySelector('.m100-pad__out')!;
+  const simpan = () => within(dialog()).getByRole('button', { name: 'SIMPAN' });
+  const qtyOfRow = () => noDefectRow().querySelector('.m100-hist__q');
+  const setEvents = async () =>
+    (await db.events.toArray()).filter((e) => e.type === 'SET_NO_DEFECT');
+
+  async function endedRework() {
+    await startRework();
+    await openFamily();
+    fireEvent.click(option(D1!.name));
+    await toast('+1 Defect');
+    fireEvent.click(button('END INSPECTION'));
+    await toast('Inspeksi selesai. 1 defect tercatat');
+  }
+
+  it('opens pre-filled from the row with the maximum, and SIMPAN stores the total first', async () => {
+    renderDefect();
+    fireEvent.click(noDefectRow());
+    expect(dialog()).toHaveTextContent('PO 0903359388');
+    expect(
+      within(dialog()).getByRole('group', { name: 'Jumlah pasang tanpa defect' }),
+    ).toBeVisible();
+    expect(readout()).toHaveTextContent('0');
+    expect(within(dialog()).getByText('Maksimum 10.002 pasang')).toBeVisible();
+
+    typed('120');
+    fireEvent.click(simpan());
+    await toast('No Defect diubah menjadi 120');
+    expect(queryDialog()).not.toBeInTheDocument();
+    // NFR-05: the event is in IndexedDB.
+    expect((await setEvents()).map((e) => e.type === 'SET_NO_DEFECT' && e.qty)).toEqual([120]);
+    expect(totals(session(), { orderQty: PO.orderQty, partial: null })).toMatchObject({
+      qtyInspection: 120,
+      qtyAGrade: 120,
+    });
+    expect(qtyOfRow()).toHaveTextContent('120');
+    expect(noDefectRow()).toHaveClass('m100-flash');
+
+    // Later taps add one each; the dialog then opens with the new total.
+    fireEvent.click(button('NO DEFECT'));
+    await waitFor(() => expect(session().noDefect).toBe(121));
+    fireEvent.click(noDefectRow());
+    expect(readout()).toHaveTextContent('121');
+  });
+
+  it('shows the partial and the maximum minus REWORK / B-GRADE pairs; above it SIMPAN is disabled', async () => {
+    await store.getState().setPartial(PO.po, { number: 1, qty: 1200 });
+    renderDefect();
+    await endedRework();
+    fireEvent.click(noDefectRow());
+    expect(dialog()).toHaveTextContent('P1 · 1.200 dari 10.002');
+    expect(within(dialog()).getByText('Maksimum 1.199 pasang')).toBeVisible();
+    typed('1200');
+    expect(within(dialog()).getByText('Melebihi maksimum 1.199 pasang')).toHaveClass(
+      'm100-pad__msg--bad',
+    );
+    expect(simpan()).toBeDisabled();
+    typed('1199');
+    expect(simpan()).toBeEnabled();
+    fireEvent.click(simpan());
+    await toast('No Defect diubah menjadi 1.199');
+    expect(totals(session(), store.getState().pos[0]).qtyInspection).toBe(1200);
+  });
+
+  it('saves empty as 0; an unchanged value closes without an event or toast', async () => {
+    renderDefect();
+    for (let i = 1; i <= 2; i++) {
+      fireEvent.click(button('NO DEFECT'));
+      await waitFor(() => expect(session().noDefect).toBe(i));
+    }
+    fireEvent.click(noDefectRow());
+    fireEvent.click(simpan());
+    await waitFor(() => expect(queryDialog()).not.toBeInTheDocument());
+    expect(await setEvents()).toHaveLength(0);
+    expect(screen.queryByText(/No Defect diubah/)).not.toBeInTheDocument();
+
+    fireEvent.click(noDefectRow());
+    key('HAPUS');
+    fireEvent.click(simpan());
+    await toast('No Defect diubah menjadi 0');
+    expect(session().noDefect).toBe(0);
+    expect(qtyOfRow()).toHaveTextContent('0');
+  });
+
+  it('BATAL, the close button and Escape change nothing', async () => {
+    renderDefect();
+    for (const close of [
+      () => fireEvent.click(within(dialog()).getByRole('button', { name: 'BATAL' })),
+      () => fireEvent.click(within(dialog()).getByRole('button', { name: 'Tutup' })),
+      () => fireEvent.keyDown(document, { key: 'Escape' }),
+    ]) {
+      fireEvent.click(noDefectRow());
+      typed('55');
+      close();
+      await waitFor(() => expect(queryDialog()).not.toBeInTheDocument());
+    }
+    expect(await setEvents()).toHaveLength(0);
+    expect(session().noDefect).toBe(0);
+  });
+
+  it('UNDO takes a saved total back to the total before it', async () => {
+    renderDefect();
+    fireEvent.click(button('NO DEFECT'));
+    await toast('No Defect tercatat. A-Grade +1');
+    fireEvent.click(noDefectRow());
+    typed('120');
+    fireEvent.click(simpan());
+    await toast('No Defect diubah menjadi 120');
+    fireEvent.click(button('NO DEFECT'));
+    await waitFor(() => expect(session().noDefect).toBe(121));
+
+    fireEvent.click(bar('UNDO'));
+    await toast('No Defect dibatalkan');
+    expect(qtyOfRow()).toHaveTextContent('120');
+    fireEvent.click(bar('UNDO'));
+    await toast('Perubahan No Defect dibatalkan');
+    expect(qtyOfRow()).toHaveTextContent('1');
+    expect(session().noDefect).toBe(1);
+    expect(bar('UNDO')).toBeEnabled();
+  });
+
+  it('is hidden during an inspection and stays tappable at the maximum, so the total can be lowered', async () => {
+    await store.getState().setPartial(PO.po, { number: 1, qty: 3 });
+    renderDefect();
+    fireEvent.click(noDefectRow());
+    typed('3');
+    fireEvent.click(simpan());
+    await toast('No Defect diubah menjadi 3');
+    expect(button('NO DEFECT')).toBeDisabled();
+    expect(screen.getByText(/Qty Inspection sudah 3 pasang, maksimum PO ini/)).toBeVisible();
+
+    fireEvent.click(noDefectRow());
+    typed('2');
+    fireEvent.click(simpan());
+    await toast('No Defect diubah menjadi 2');
+    expect(button('REWORK')).toBeEnabled();
+
+    await startRework();
+    expect(screen.queryByRole('button', { name: 'Ubah NO DEFECT' })).not.toBeInTheDocument();
+    expect(screen.getByText(EMPTY_HISTORY)).toBeVisible();
   });
 });

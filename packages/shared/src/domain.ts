@@ -155,6 +155,11 @@ export type SessionEvent = SessionEventBase &
      * before ADR-019, and is ignored (ADR-019 decision 9).
      */
     | { type: 'NO_DEFECT' }
+    /**
+     * SIMPAN in the NO DEFECT dialog of PSI lv.2 (ADR-023): the new total of NO DEFECT pairs, replacing the count
+     * so far. Ignored in a PSI lv.1 session, as NO_DEFECT is.
+     */
+    | { type: 'SET_NO_DEFECT'; qty: number }
     | ({ type: 'DEFECT' } & AreaMapEntry)
     | { type: 'END' }
     | { type: 'UNDO' }

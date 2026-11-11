@@ -2,6 +2,7 @@
 import { type Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { undersized } from './tap';
+import { photoSource } from './helpers';
 
 const VIEWPORTS = [
   { width: 1280, height: 800 },
@@ -78,10 +79,11 @@ async function cameraJpeg(page: Page, width: number, height: number): Promise<Bu
   return Buffer.from(base64, 'base64');
 }
 
-/** Taps a control that opens the camera and hands it a file, as the system camera would. */
+/** Taps a control that opens the photo menu, then Ambil Foto, and hands the camera's file over. */
 async function shoot(page: Page, open: () => Promise<void>, jpeg: Buffer) {
-  const chooser = page.waitForEvent('filechooser');
   await open();
+  const chooser = page.waitForEvent('filechooser');
+  await photoSource(page, 'Ambil Foto');
   await (await chooser).setFiles({ name: 'camera.jpg', mimeType: 'image/jpeg', buffer: jpeg });
 }
 
@@ -188,8 +190,9 @@ test('PSI lv.2 takes, keeps, replaces and removes a defect photo (AC-10.1 … AC
 
 test('a cancelled camera changes nothing', async ({ page }) => {
   await homeWithDefect(page, 'DEWI CONTOH');
-  const chooser = page.waitForEvent('filechooser');
   await required(page).click();
+  const chooser = page.waitForEvent('filechooser');
+  await photoSource(page, 'Ambil Foto');
   await (await chooser).setFiles([]);
   await expect(required(page)).toBeVisible();
   await expect(page.getByText('Foto tersimpan')).toHaveCount(0);
