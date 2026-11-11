@@ -289,7 +289,7 @@ Observed on 29 Oct 2026: drive C: (PostgreSQL 18 data) and drive D: (`D:\Project
 | A7 | **Tablet app is one-way.** Phases 6–8 move IndexedDB to version 3 and add the events `SET_QTY_INSPECTION`, `SET_REWORK_APPROVED` and `SET_NO_DEFECT` (ADR-021, ADR-022, ADR-023) | An older tablet build can't read the new tables or replay the new events; the tablet app is never downgraded, also not during an incident |
 | A8 | Sessions left open on a tablet across the update | A PSI lv.1 session started on the old build replays its old `NO_DEFECT` taps as ignored (ADR-019 decision 9), so its pairs without defect are lost; avoided by G0 step 3 (every open session submitted before the window) |
 | A9 | Gallery photos have no date or EXIF check (ADR-023 decision 9) | A PSI could attach an old or unrelated photo; the reviewer sees every photo in `/admin/` |
-| A10 | Physical-device evidence: the Redmi Pad 2 camera and gallery check (T4.2, T8.5, risk R8) has **no recorded evidence** in this repository yet (11 Nov 2026) | Until G0 step 2 records it, a device-specific photo problem can appear first in production |
+| A10 | Physical-device evidence: the camera and gallery check (T4.2, T8.5, risk R8) is recorded only on a substitute device, a Samsung SM-T225 with Android 12 (11 Nov 2026, `phase5-integration-review.md`); nothing on a Redmi Pad 2 yet | Until G0 step 2 records it, a device-specific photo problem can appear first in production |
 
 The OWNER accepted A1–A6 with F1 on 29 Oct 2026. **A7–A10 were added on 11 Nov 2026 for the Phases 6–8 scope and are
 not accepted yet** (8.4).
