@@ -210,6 +210,7 @@ the successful API/Web/deployment reruns; initial failures remain disclosed.
 | Ambil Foto, Pilih dari Galeri | **PASS — reported, Samsung SM-T225 only** |
 | Not reported | Tester name or role, the server the app used, the unreadable-image toast ("Foto tidak bisa dibaca. Pilih foto JPG atau PNG."), GANTI FOTO through each path, SUBMIT PO with those photos |
 | Target device (T4.2, T8.5, C8, risk R8, `phase5-release-preparation.md` G0 step 2) | **NOT VERIFIED** — needs the same check on a Redmi Pad 2 with its Android and Chrome versions |
+| OWNER decision (11 Nov 2026, communicated by the repository owner in the session) | The Samsung SM-T225 result is **accepted for PR #29** (T8.5). This does not verify the Redmi Pad 2: the Redmi check stays required before go-live (G0 step 2, T4.2, C8) |
 
 ## The 40 previously skipped tests
 
