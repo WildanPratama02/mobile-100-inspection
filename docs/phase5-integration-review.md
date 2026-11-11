@@ -1,6 +1,7 @@
 # Phase 5 integration review — remediation
 
-**Verdict: HOLD until the fast-track go-live steps G1–G9 pass** (`phase5-release-preparation.md` §8).
+**Verdict: HOLD until the fast-track go-live steps G0–G10 pass** (`phase5-release-preparation.md` §8.2; since
+11 Nov 2026 the release covers Phases 5–8 and migrations 0006–0007, and no G step has been executed).
 On 29 Oct 2026 the owner chose the fast track (F1: no NAS or share, so the recovery architecture and tooling are
 skipped for release 1, risks A1–A6 accepted) and authorized opening the implementation PR. Merge and deployment
 follow §8; nothing here is deployed yet.
