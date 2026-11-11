@@ -3,8 +3,8 @@
 **Status: HOLD until the fast-track go-live steps G0–G10 (section 8.2) pass.** The OWNER chose the fast track on
 29 Oct 2026 (F1) and authorized opening the implementation PR; merging and deploying follow section 8. A step or
 gate is PASS only when its verification has been executed and its evidence recorded in
-`phase5-integration-review.md`. Since 11 Nov 2026 the go-live release covers Phases 5–8 and migrations 0006–0007
-(section 8); none of its steps has been executed.
+`phase5-integration-review.md`. Since 11 Nov 2026 the go-live release is `2026.11.11-5a374ec` on a server whose `current` is `79a0dd3`
+(sections 1.1 and 8); G1 and G2 are done, no other step has been executed.
 Prepared 29 Oct 2026 on branch `t5-qty-inspection`. Companion documents:
 [`phase5-recovery-runbook.md`](phase5-recovery-runbook.md) (procedures) and
 [`phase5-integration-review.md`](phase5-integration-review.md) (evidence).
@@ -24,7 +24,7 @@ Decisions marked **OWNER** need the product owner's written approval before rele
 
 ## 1. PostgreSQL production compatibility
 
-### 1.1 Facts (observed read-only on 28–29 Oct 2026; nothing on the installed server was changed)
+### 1.1 Facts (observed read-only on 28–29 Oct 2026, updated 11 Nov 2026; nothing on the installed server was changed)
 
 | Item | Observed |
 |---|---|
@@ -32,6 +32,13 @@ Decisions marked **OWNER** need the product owner's written approval before rele
 | Installed server | Service `postgresql-x64-18`, Running, Automatic, account `NT AUTHORITY\NetworkService`, `C:\Program Files\PostgreSQL\18\data`, port 5432, **PostgreSQL 18.1** |
 | M100 installation | `D:\Project\M100`, `install.json`: `PostgresService = postgresql-x64-18`, `PostgresBin = C:\Program Files\PostgreSQL\18\bin`, `BackupDir = D:\m100_backup`; release `2026.10.26-ce37679` (before Phase 5, migrations up to 0005); `m100-api` and `m100-caddy` **Stopped** |
 | Existing backups | `D:\m100_backup\daily` and `photos` exist; made with `PG_BIN` from `install.json`, i.e. PostgreSQL 18 `pg_dump` |
+| **Update 11 Nov 2026** (read-only, non-elevated session on the server; the database was not queried) | — |
+| Release folders in `D:\Project\M100\releases` (last migration file in each) | `2026.10.26-ce37679` (0005), `2026.10.29-3e57b57-dirty` (0006), `2026.10.29-71b9ff0` (0006), `2026.11.02-9d7bceb` (0007), `2026.11.10-79a0dd3` (0007); `current` → **`2026.11.10-79a0dd3`**. The `ce37679` line above describes 29 Oct and is superseded |
+| `install.json` | `PostgresService = postgresql-x64-18`, `PostgresBin = C:\Program Files\PostgreSQL\18\bin`, `BackupDir = D:\m100_backup` (unchanged) |
+| Windows services | `postgresql-x64-18` Running, Automatic; `m100-api` and `m100-caddy` **Stopped**, Automatic (`NT SERVICE\m100-api`, `NT SERVICE\m100-caddy`) |
+| What serves production | `m100.qdms.web.id` resolves to `192.168.43.175`, this server's Ethernet address. Port 443: `caddy` (pid 6816); `127.0.0.1:3000`: `node` (pid 15216). Both run in session 0, started 6 Nov 2026 14:06, their parent processes are gone, and they are **not** the M100 services; command line and path are not readable without elevation, so their release is unknown. `GET /v1/health` answered `200 {"status":"ok"}` with a valid certificate |
+| Scheduled task | No task named like `M100` is visible from the non-elevated session; `install.ps1` registers `M100 nightly` (SYSTEM) |
+| Database migration level | **Not read** (the agent does not query the production database, CLAUDE.md hard rule 1); the operator reads it in G0 step 5 |
 
 ### 1.2 Evidence from disposable clusters (job temp folder, localhost, never the installed service)
 
@@ -265,13 +272,23 @@ Recovery rehearsal with: pre-backup and post-backup ADR-008 and ADR-019 submissi
 present once, original UUIDs and hashes, no reused display number, every photo hash verified, no ADR-008
 recalculation, all actions in the audit log.
 
-## 8. Fast-track go-live (OWNER decision F1, 29 Oct 2026; scope updated 11 Nov 2026)
+## 8. Fast-track go-live (OWNER decision F1, 29 Oct 2026; corrected to the server state of 11 Nov 2026)
 
-**Release scope (updated 11 Nov 2026).** Production still runs release `2026.10.26-ce37679` with migrations up to
-0005 (section 1.1). The go-live release is therefore no longer Phase 5 alone: it is `main` after PR #29, which
-carries Phases 5–8 (ADR-019, ADR-021, ADR-022, ADR-023) and applies **migrations 0006 and 0007** in one upgrade.
-Nothing in this section has been executed on the production server; every G step below is **NOT EXECUTED**, and
-the C0–C12 statuses of section 4 are unchanged.
+**Server state (section 1.1, 11 Nov 2026).** `current` is `2026.11.10-79a0dd3` (Phases 5–7, migration files
+0001–0007), the M100 services are Stopped, and production is answered by a Caddy and a Node process started on
+6 Nov outside the services, running code of an unknown release. The database's migration level has not been read.
+
+**Release.** The go-live release is `2026.11.11-5a374ec` (`main` after PR #29 and #30): Phase 8 (tablet only,
+ADR-023) plus documentation and test-harness changes. Its migration files are **identical** (names and SHA-256)
+to those of `79a0dd3`, so the upgrade adds no migration of its own. Two cases, decided by G0 step 5:
+
+- **Case A — database at 0007** (expected if the 10 Nov upgrade finished): G6 applies no migration; the code
+  rollback to `79a0dd3` is allowed (8.3).
+- **Case B — database below 0007** (the 10 Nov upgrade did not finish): G6 applies the missing migrations (0006
+  and/or 0007), and the one-way constraints of 8.3 apply as for any migration boundary.
+
+G1 and G2 are done (recorded below). Every other G step is **NOT EXECUTED**, and the C0–C12 statuses of section 4
+are unchanged.
 
 ### 8.1 Risks the OWNER accepts by going live without sections 6 and 7
 
@@ -284,43 +301,51 @@ Observed on 29 Oct 2026: drive C: (PostgreSQL 18 data) and drive D: (`D:\Project
 | A2 | Nightly backup only (R1) | A software, operator or database error restored from the nightly backup loses up to about **24 hours** of server-accepted submissions; D2's zero-loss objective is not met |
 | A3 | No reconciliation or resend of "Terkirim" items (section 7 not built) | Submissions lost by A2 are recoverable only by hand, and only while the tablets still hold them (7 days) |
 | A4 | Display numbers can be reused after a restore from a dump (7.3 not built) | A number printed or exported before the incident can later name another submission |
-| A5 | Migrations 0006 and 0007 are one-way (sections 2 and 8.3) | After the upgrade there is no application-only rollback; problems are fixed forward, or recovered by the coordinated restore of 8.3 with OWNER approval of the loss |
+| A5 | Migrations 0006 and 0007 are one-way (sections 2 and 8.3). In case A they are already applied and this upgrade adds none; in case B G6 applies them | Once applied, no release below the database's level can run; problems are fixed forward, or recovered by the coordinated restore of 8.3 with OWNER approval of the loss |
 | A6 | Gates verified only on the developer machine (API, browser, T3.7 on PG18) or deferred (staging, second-machine restore, reboot) | Server-specific problems (ACLs, TLS, service order) can appear first in production |
-| A7 | **Tablet app is one-way.** Phases 6–8 move IndexedDB to version 3 and add the events `SET_QTY_INSPECTION`, `SET_REWORK_APPROVED` and `SET_NO_DEFECT` (ADR-021, ADR-022, ADR-023) | An older tablet build can't read the new tables or replay the new events; the tablet app is never downgraded, also not during an incident |
-| A8 | Sessions left open on a tablet across the update | A PSI lv.1 session started on the old build replays its old `NO_DEFECT` taps as ignored (ADR-019 decision 9), so its pairs without defect are lost; avoided by G0 step 3 (every open session submitted before the window) |
+| A7 | **Tablet app is one-way.** Phases 6–8 move IndexedDB to version 3 and add the events `SET_QTY_INSPECTION`, `SET_REWORK_APPROVED` and `SET_NO_DEFECT` (ADR-021, ADR-022, ADR-023). Rolling the tablet app back from `5a374ec` to `79a0dd3` keeps IndexedDB version 3, but `79a0dd3` does not know `SET_NO_DEFECT` | A build older than Phase 6 can't read the new tables. After a rollback to `79a0dd3`, an open session that used the NO DEFECT dialog shows other totals (ADR-023); sealed items are unaffected |
+| A8 | Sessions left open on a tablet across the update | A PSI lv.1 session started on a pre-Phase 5 build replays its old `NO_DEFECT` taps as ignored (ADR-019 decision 9), so its pairs without defect are lost; avoided by G0 step 3 (every open session submitted before the window) |
 | A9 | Gallery photos have no date or EXIF check (ADR-023 decision 9) | A PSI could attach an old or unrelated photo; the reviewer sees every photo in `/admin/` |
 | A10 | Physical-device evidence: the camera and gallery check (T4.2, T8.5, risk R8) is recorded only on a substitute device, a Samsung SM-T225 with Android 12 (11 Nov 2026, `phase5-integration-review.md`); nothing on a Redmi Pad 2 yet. The OWNER accepted the Samsung result for PR #29 only (11 Nov 2026); the Redmi check stays in G0 | Until G0 step 2 records it, a device-specific photo problem can appear first in production |
+| A11 | **Production served by unmanaged processes** (1.1, 11 Nov 2026): Caddy and Node started 6 Nov outside the M100 services, release unknown | No restart after a crash or reboot; tablets may have loaded an unknown tablet build; the two processes hold ports 443 and 3000, so `m100-caddy` and `m100-api` can't start until they are stopped (G6) |
 
-The OWNER accepted A1–A6 with F1 on 29 Oct 2026. **A7–A10 were added on 11 Nov 2026 for the Phases 6–8 scope and are
-not accepted yet** (8.4).
+The OWNER accepted A1–A6 with F1 on 29 Oct 2026. **A7–A11 were added on 11 Nov 2026 for the Phases 6–8 scope and the
+observed server state, and are not accepted yet** (8.4).
 
 **Mitigation after go-live (OWNER to schedule):** add a second internal disk and set `BACKUP_DIR` to it
 (`install.json` `BackupDir`), then copy the existing `D:\m100_backup` there; this removes A1 for new backups.
 Sections 6 and 7 remain available for a later release.
 
-### 8.2 Go-live runbook (Phases 5–8, migrations 0006–0007)
+### 8.2 Go-live runbook (release `2026.11.11-5a374ec`)
 
-G0–G2 happen in the repository and with the OWNER; G3–G9 run in an **elevated** Windows PowerShell 5.1 on the
-server at a shift change, with the `deploy\windows` scripts of the **new** release zip (an older `upgrade.ps1`
-lacks the migration-history guard). Record each result (date, operator, command output or file, PASS/FAIL) in
+G0 is with the OWNER and the operator; G3–G9 run in an **elevated** Windows PowerShell 5.1 on the server at a shift
+change, with the `deploy\windows` scripts of the **new** release (an older `upgrade.ps1` lacks the
+migration-history guard). Record each result (date, operator, command output or file, PASS/FAIL) in
 `phase5-integration-review.md`. A step is PASS only with recorded evidence. Stop at the first step that is not
 true and follow section 8.3; Caddy (ingestion) stays stopped until G7 passes.
 
+```powershell
+$zip = 'D:\Project\mobile-100-inspection v0.1\.claude\worktrees\release-5a374ec\release\m100-2026.11.11-5a374ec.zip'
+$new = 'D:\m100_incoming\2026.11.11-5a374ec'   # any empty folder outside D:\Project\M100
+Expand-Archive $zip -DestinationPath $new
+Set-Location (Join-Path $new 'deploy\windows')
+```
+
 | # | Step | Command / action | Must be true before continuing | Status |
 |---|---|---|---|---|
-| G0 | Preconditions | 1. The OWNER decisions of 8.4 that block go-live are recorded as approved, or their risk is accepted in writing. 2. Redmi Pad 2 evidence for **Ambil Foto** (camera opens, photo stored) and **Pilih dari Galeri** (gallery or files open, photo stored, an unreadable image shows "Foto tidak bisa dibaca. Pilih foto JPG atau PNG.") is recorded with date, operator, Android and Chrome versions (T4.2, T8.5). 3. Every PSI has submitted every open session and every tablet's waiting counter is 0; nobody clears site data or reinstalls the app. 4. The window is announced. | All four recorded | NOT EXECUTED |
-| G1 | Merge | PR #29 reviewed, approved and merged into `main` | On the merged commit: `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm test` (with `TEST_ADMIN_DATABASE_URL`), `pnpm e2e` green, no retries | NOT EXECUTED |
-| G2 | New release zip | On the build machine, from a clean checkout of `main` **after** the PR #29 merge: `pnpm release` → `release\m100-<yyyy.MM.dd>-<sha>.zip`; record the zip name, the commit SHA and `Get-FileHash <zip> -Algorithm SHA256`; copy it to the server and compare the hash there. Never reuse a zip built before the merge | Name has no `-dirty`; `<sha>` is the merge commit (or later) on `main`; the zip contains `db\migrations\0006_manual_qty_inspection.sql` and `0007_rework_approved_photo_rule.sql`; hashes match | NOT EXECUTED |
+| G0 | Preconditions | 1. The OWNER decisions of 8.4 that block go-live are recorded as approved, or their risk is accepted in writing. 2. Redmi Pad 2 evidence for **Ambil Foto** (camera opens, photo stored) and **Pilih dari Galeri** (gallery or files open, photo stored, an unreadable image shows "Foto tidak bisa dibaca. Pilih foto JPG atau PNG.") is recorded with date, operator, Android and Chrome versions (T4.2, T8.5). 3. Every PSI has submitted every open session and every tablet's waiting counter is 0; nobody clears site data or reinstalls the app. 4. The window is announced. 5. **Current state, read-only:** `Get-NetTCPConnection -State Listen -LocalPort 443, 3000 \| Select LocalAddress, LocalPort, OwningProcess`; for each process `Get-CimInstance Win32_Process -Filter "ProcessId=<pid>" \| Select ProcessId, CommandLine`; the database level with `MIGRATE_DATABASE_URL`: `SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1` | All five recorded; case A or B stated; the release behind the two listeners named | NOT EXECUTED |
+| G1 | Merge | PR #29 and the documentation follow-up PR #30 merged into `main` | On the merged code: `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm test` (with `TEST_ADMIN_DATABASE_URL`), `pnpm e2e` green, no retries | **DONE 11 Nov 2026**: #29 merged as `356a996` (tree of `8c1ff38`), #30 as `5a374ec` (docs only). Full verification green on `8c1ff38` and on `e980bb2` (same code; one e2e setup failure from the dev server, rerun green). No review approval recorded on GitHub for #29 |
+| G2 | New release zip | From a clean checkout of `main` after the merges: `pnpm release` | Name has no `-dirty`; `<sha>` is on `main`; the zip contains migrations 0001–0007 and `deploy\windows`; hash recorded and checked on the server | **DONE 11 Nov 2026**: `m100-2026.11.11-5a374ec.zip`, SHA-256 `2850AACB1B754335FCAEE11EECAD89FBA3B80B90F253F216A78CECACCF86A65F`, built on this server from a clean detached checkout of `5a374ec` (path in the block above); no `.env`, `secrets\` or key files inside; migration files identical to `79a0dd3`. Check the hash again before G6: `(Get-FileHash $zip -Algorithm SHA256).Hash` |
 | G3 | Versions (C0) | `& 'C:\Program Files\PostgreSQL\18\bin\postgres.exe' --version`; `& 'C:\Program Files\PostgreSQL\18\bin\pg_dump.exe' --version`; `(Get-Content D:\Project\M100\install.json -Raw \| ConvertFrom-Json).PostgresBin` | All 18.x; `PostgresBin` is the 18 `bin` folder | NOT EXECUTED |
-| G4 | Pre-checks and storage permissions (C1, C5) | `powershell -ExecutionPolicy Bypass -File precheck.ps1 -Root D:\Project\M100 -BackupDir D:\m100_backup`; then `icacls D:\Project\M100`; `icacls D:\Project\M100\secrets`; `icacls D:\Project\M100\.env`; `icacls D:\m100_backup`; and the photo folder of `PHOTO_DIR`; as a non-admin user `Get-Content D:\Project\M100\secrets\jwt.key` must fail | precheck: no FAIL, every MANUAL line confirmed in writing; ACLs as `install.ps1` sets them (secrets: Administrators F, SYSTEM F, `NT SERVICE\m100-api` RX); the API account can write `PHOTO_DIR`, the nightly task (SYSTEM) can write `D:\m100_backup`; the non-admin read is refused | NOT EXECUTED |
-| G5 | Backup **and restore rehearsal** (C6, same server) | After G0 step 3: `D:\Project\M100\current\deploy\windows\m100.ps1 backup --kind pre-upgrade`; then `restore.ps1 -From <that backup folder> -PgBin 'C:\Program Files\PostgreSQL\18\bin'` (scratch database `m100_restore_*`, dropped afterwards; **never** `-Full`); time it | Restore verifies the dump SHA-256, row counts and photo files; record the backup folder, its `manifest.json`, the photo mirror size and the restore duration (against the provisional 4 h RTO) | NOT EXECUTED |
-| G6 | Upgrade | Stop nothing by hand. From the new release's `deploy\windows`: `upgrade.ps1 -Release <zip>` (takes another pre-upgrade backup, applies **0006 and then 0007**, each in its own transaction, switches `current`). Never `-Rollback` after the migrations ran | Script ends without error. Then read-only: `SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 2` shows `0007_…` and `0006_…`. If it stops, keep services stopped and follow 8.3 | NOT EXECUTED |
+| G4 | Pre-checks and storage permissions (C1, C5) | From `$new\deploy\windows`: `.\precheck.ps1 -Root D:\Project\M100 -BackupDir D:\m100_backup`; then `icacls D:\Project\M100`; `icacls D:\Project\M100\secrets`; `icacls D:\Project\M100\.env`; `icacls D:\m100_backup`; and the photo folder of `PHOTO_DIR`; as a non-admin user `Get-Content D:\Project\M100\secrets\jwt.key` must fail | precheck: no FAIL (port 443 is reported in use while the unmanaged Caddy runs: record it, it is cleared in G6), every MANUAL line confirmed in writing; ACLs as `install.ps1` sets them (secrets: Administrators F, SYSTEM F, `NT SERVICE\m100-api` RX); the API account can write `PHOTO_DIR`, the nightly task (SYSTEM) can write `D:\m100_backup`; the non-admin read is refused | NOT EXECUTED |
+| G5 | Backup **and restore rehearsal** (C6, same server) | After G0 step 3: `D:\Project\M100\current\deploy\windows\m100.ps1 backup --kind pre-upgrade`; then `.\restore.ps1 -From <that backup folder> -PgBin 'C:\Program Files\PostgreSQL\18\bin'` (scratch database `m100_restore_*`, dropped afterwards; **never** `-Full`); time it | Restore verifies the dump SHA-256, row counts and photo files; record the backup folder, its `manifest.json`, the photo mirror size and the restore duration (against the provisional 4 h RTO) | NOT EXECUTED |
+| G6 | Stop the unmanaged processes, upgrade | Downtime starts. `Stop-Process -Id <the pids of G0 step 5>` (only after their command lines are recorded); confirm ports 443 and 3000 are free; then `.\upgrade.ps1 -Release $zip` (takes another pre-upgrade backup, applies only the migrations the database lacks — none in case A —, switches `current`, starts the services) | Script ends without error; `current` → `2026.11.11-5a374ec`; read-only `SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1` is `0007_rework_approved_photo_rule`. If it stops, keep services stopped and follow 8.3. Never restart the unmanaged 6 Nov processes as a fallback: their release is unknown | NOT EXECUTED |
 | G7 | Service readiness (C3) | `curl.exe -s https://m100.qdms.web.id/v1/health`; `curl.exe -s -H "X-Device-Key: <test tablet key>" https://m100.qdms.web.id/v1/system/status` | Health 200; `/system/status`: every readiness check OK, the migration check at **0007**, submit enabled. Liveness alone is not enough | NOT EXECUTED |
-| G8 | HTTPS and services (C2, C4 subset) | From a factory-Wi-Fi client: `curl.exe -sSI https://m100.qdms.web.id/v1/health` and open `https://m100.qdms.web.id/admin/`; `Get-Service m100-api, m100-caddy, postgresql-x64-18 \| Select Name, Status, StartType`; `Restart-Service m100-api`, then G7 again | Valid Let's Encrypt certificate, no browser warning, headers as `deploy/security-headers.json`; services Running and Automatic; G7 passes again after the restart | NOT EXECUTED |
+| G8 | HTTPS and services (C2, C4 subset) | From a factory-Wi-Fi client: `curl.exe -sSI https://m100.qdms.web.id/v1/health` and open `https://m100.qdms.web.id/admin/`; `Get-Service m100-api, m100-caddy, postgresql-x64-18 \| Select Name, Status, StartType`; `Get-NetTCPConnection -State Listen -LocalPort 443, 3000` now owned by the services' processes; `Restart-Service m100-api`, then G7 again | Valid Let's Encrypt certificate, no browser warning, headers as `deploy/security-headers.json`; services Running and Automatic and they own both ports; G7 passes again after the restart | NOT EXECUTED |
 | G9a | Tablet update and PSI lv.1 smoke (C8 subset) | On one real production tablet (existing key or setup link): open the app on Login or Home with no inspection, so the waiting version takes over (doc 03 §4.8); log in as the test PSI lv.1 of 8.4; test PO; INSPECTION → REWORK with one finding → END; QTY INSPECTION with the number pad; REWORK AND APPROVED 1; no NO DEFECT button and no photo control; SUBMIT PO → KIRIM | The Defect screen has no NO DEFECT; one submission in `/admin/` with "Qty Inspection diisi PSI" (`ADR-019`), correct totals, REWORK AND APPROVED 1, no photos, photo rule "—" | NOT EXECUTED |
 | G9b | PSI lv.2 smoke (C8 subset) | Same tablet, test PSI lv.2 of 8.4, test PO. Defect screen: NO DEFECT ×3 (row shows 3); tap the NO DEFECT row → S6a, set 120 → "No Defect diubah menjadi 120"; NO DEFECT once (121); UNDO → 120 ("No Defect dibatalkan"); UNDO → 3 ("Perubahan No Defect dibatalkan"); set 10. REWORK with two findings of two different defects → END; B-GRADE with one finding of a third defect → END (three distinct defects, so three photos are required). Home: QTY INSPECTION 12 and not tappable, Qty A-Grade 10, Qty Defect 3, Qty B-Grade 1, INSPECTION REWORK QTY 1; REWORK AND APPROVED 1. Photos: first defect with **Ambil Foto**, second with **Pilih dari Galeri**, third either way; GANTI FOTO once through the gallery. SUBMIT PO → KIRIM | One submission in `/admin/`: "Hitung per tap (NO DEFECT)" with NO DEFECT 10 (`ADR-008`), photo rule **ALL**, three photos that open, Qty Inspection 12, A-Grade 10, Defect 3, B-Grade 1, REWORK AND APPROVED 1 | NOT EXECUTED |
-| G9c | Offline and outbox recovery on the real tablet | Wi-Fi off on the tablet; a short PSI lv.2 session with one finding and its photo; SUBMIT PO → "Tersimpan. Menunggu koneksi.", waiting counter 1; close the app completely and reopen it offline: the item is still waiting, the session data intact; Wi-Fi on: the item is sent without any tap. Optional, only inside the window and before PSI start: the same with `m100-caddy` stopped instead of Wi-Fi off, then started | Exactly one new submission on the server for that tablet (no duplicate after reopening and resending); the waiting counter returns to 0; items left in an outbox by the old build (if any) are also stored, with `counting_rule` `ADR-008` | NOT EXECUTED |
-| G10 | Next morning (C7) | `Get-ScheduledTask -TaskName 'M100 nightly' \| Get-ScheduledTaskInfo`; newest folder in `D:\m100_backup\daily` and its `manifest.json`; `D:\Project\M100\logs\nightly-*.log` | LastTaskResult 0; a new dated folder whose manifest counts include the smoke submissions; no "nightly failed" in the log | NOT EXECUTED |
+| G9c | Offline and outbox recovery on the real tablet | Wi-Fi off on the tablet; a short PSI lv.2 session with one finding and its photo; SUBMIT PO → "Tersimpan. Menunggu koneksi.", waiting counter 1; close the app completely and reopen it offline: the item is still waiting, the session data intact; Wi-Fi on: the item is sent without any tap. Optional, only inside the window and before PSI start: the same with `m100-caddy` stopped instead of Wi-Fi off, then started | Exactly one new submission on the server for that tablet (no duplicate after reopening and resending); the waiting counter returns to 0; items left in an outbox by an older build (if any) are also stored, with the counting rule of their payload | NOT EXECUTED |
+| G10 | Nightly backup (C7) | In the window: `Get-ScheduledTask -TaskName 'M100 nightly' \| Get-ScheduledTaskInfo` (elevated; not visible from a non-elevated session on 11 Nov). If the task is missing, the nightly backup is not running: register it the way `install.ps1` does (SYSTEM, daily at `BackupTime`, runs `m100.ps1 nightly`) before go-live. Next morning: newest folder in `D:\m100_backup\daily` and its `manifest.json`; `D:\Project\M100\logs\nightly-*.log` | The task exists; next morning LastTaskResult 0, a new dated folder whose manifest counts include the smoke submissions, no "nightly failed" in the log | NOT EXECUTED |
 
 Smoke submissions are permanent: submissions are immutable and there is no void (BR-07). Record their display
 numbers in `phase5-integration-review.md` so reports can leave them out (8.4, item P5).
@@ -330,37 +355,41 @@ journey beyond G0 step 2 and G9 (C8), T3.7 on staging (C9), restore on a second 
 S3 and real master-data tests (C11). Also open: `install.ps1` still defaults to `postgresql-x64-16`; an upgrade
 reads `install.json` (`postgresql-x64-18`), but a reinstall on a new server must pass `-PostgresService` (ADR-020).
 
-### 8.3 Rollback compatibility and coordinated recovery (Phases 5–8)
+### 8.3 Rollback compatibility and coordinated recovery
 
-What runs together after G6 (facts from the code of `main` at PR #29):
+What runs together (code of `main` at `5a374ec`; release folders of 1.1):
 
 | Combination | Works? | Why |
 |---|---|---|
-| New API + database at 0007 | Yes | The only supported combination after G6 |
-| Release `ce37679` (old API) + database at 0006 or 0007 | **No** | Its INSERT omits `counting_rule`, which has no default after 0006 (SQLSTATE 23502); its readiness check expects 0005 |
-| Any API build whose last migration is not the database's last (for example a Phase 5 or 6 build, expecting 0006, on 0007) | **No** | The readiness migration check compares the applied migration with the release's last one (`readiness.service.ts`); Submit PO answers `503 SUBMIT_DISABLED` |
-| `upgrade.ps1 -Rollback`, or the automatic fallback, from the new release to `ce37679` | **Refused** by design | `Assert-CodeRollbackCompatible` (`deploy/windows/common.ps1`) requires identical migration histories |
-| New API + payloads sealed by the old tablet build (ADR-008 `counts.noDefect`, no `photoRule`) | Yes | Accepted and stored with `counting_rule` `ADR-008` and the Top 5 photo rule (doc 04 §4.1); covered by `e2e/legacy-outbox.spec.ts`. A sealed payload with more pairs than the partial quantity or Qty Order is refused (doc 04 A18, accepted risk) |
-| New tablet build + old API | **No** | The old API rejects `counts.qtyInspection`, `reworkApproved` and `photoRule` with `422`; the item turns Gagal and is never resent automatically (AC-11.4) |
-| New tablet build → older tablet build (downgrade) | **No** | IndexedDB version 3 and the new event types (A7) |
-| Old tablet build still running after G6 (not updated yet) | Accepted, but counted the old way | Its submissions arrive as `ADR-008` also for PSI lv.1; the waiting version takes over only on Login or on Home without an inspection (doc 03 §4.8), so G9a starts there |
+| `5a374ec` API + database at 0007 | Yes | The target after G6 |
+| `5a374ec` ↔ `79a0dd3` (and `9d7bceb`) | Yes, both directions | Identical migration files; `upgrade.ps1 -Rollback` (back to `79a0dd3`, the release current before G6) and the automatic fallback are allowed by `Assert-CodeRollbackCompatible` (`deploy/windows/common.ps1`); tablet caveat A7 |
+| `5a374ec` tablet build + `79a0dd3` API | Yes | Phase 8 changes no payload field: PSI lv.2 still sends `counts.noDefect`, `reworkApproved` and `photoRule` as in Phase 7 |
+| Releases below the database's level (`ce37679`: 0005; `71b9ff0`, `3e57b57-dirty`: 0006, once the database is at 0007) | **No** | `ce37679`'s INSERT omits `counting_rule` (no default after 0006, SQLSTATE 23502); every API's readiness check compares the applied migration with its own last one (`readiness.service.ts`), so Submit PO answers `503 SUBMIT_DISABLED` |
+| Code rollback to a release with other migration files | **Refused** by design | `Assert-CodeRollbackCompatible` requires identical migration histories |
+| New API + payloads sealed by a pre-Phase 5 tablet build (ADR-008 `counts.noDefect`, no `photoRule`) | Yes | Accepted and stored with `counting_rule` `ADR-008` and the Top 5 photo rule (doc 04 §4.1); covered by `e2e/legacy-outbox.spec.ts`. A sealed payload with more pairs than the partial quantity or Qty Order is refused (doc 04 A18, accepted risk) |
+| Phase 5+ tablet build + `ce37679` API | **No** | `ce37679` rejects `counts.qtyInspection`, `reworkApproved` and `photoRule` with `422`; the item turns Gagal and is never resent automatically (AC-11.4) |
+| A tablet still on an older build after G6 (the unmanaged server may have served any of them) | Accepted, counted by its payload | The waiting version takes over only on Login or on Home without an inspection (doc 03 §4.8), so G9a starts there; a pre-Phase 5 build's submissions arrive as `ADR-008` also for PSI lv.1 |
 
 Coordinated recovery constraints:
 
-1. **Forward fix is the default** (recovery runbook "Preferred response"): keep `m100-caddy` and `m100-api`
-   stopped, keep the evidence, ship a fixed release that keeps migrations 0001–0007 unchanged and accepts every
-   payload shape above. Never edit an applied migration and never recalculate stored rows.
-2. **Upgrade stopped between 0006 and 0007** (0006 committed, 0007 failed): the database is at 0006. No release
-   matches it: the new API waits for 0007 and the old one for 0005, and the code rollback is refused. Keep services
-   stopped, fix the cause and run the migrations of the new release again (`db:migrate` applies only 0007), then
-   G7. Restore is not needed for this case.
-3. **Database damaged after G6:** restore the most recent complete backup **with the new release** into a new
+1. **Case A, G6 or G7 fails:** let the automatic fallback finish, or run `.\upgrade.ps1 -Rollback` (back to
+   `79a0dd3`), then G7 on `79a0dd3`. No restore is needed: neither release changes the database. Before tablets
+   reload the older build, ask PSI to submit any session in which they used the NO DEFECT dialog (A7).
+2. **Forward fix** for everything else (recovery runbook "Preferred response"): keep `m100-caddy` and
+   `m100-api` stopped, keep the evidence, ship a fixed release that keeps migrations 0001–0007 unchanged and accepts
+   every payload shape above. Never edit an applied migration and never recalculate stored rows.
+3. **Case B, upgrade stopped between 0006 and 0007** (0006 committed, 0007 failed): the database is at 0006. No
+   release on the server matches it except `71b9ff0` and `3e57b57-dirty`, which are not candidates; the new API
+   waits for 0007. Keep services stopped, fix the cause and run the migrations of the new release again
+   (`db:migrate` applies only 0007), then G7. Restore is not needed for this case.
+4. **Database damaged after G6:** restore the most recent complete backup **with the new release** into a new
    database (runbook "Coordinated application/database restore"); keep the damaged database read-only.
-4. **Back to `ce37679`** only together with the G5/G6 pre-upgrade backup (database at 0005) and its photo
-   mirror, with every tablet that ran the new build kept off the network (A7; their new-format items would be
-   refused and turn Gagal). Every submission accepted after that backup is lost unless reconciled by hand (no
-   tool, section 2.3). Needs the OWNER's written approval of the loss.
-5. In every case ingestion (Caddy) opens only after G7 passes on the recovered installation.
+5. **Back to a release below the database's level** (for example `ce37679`) only together with a backup taken at
+   that level and its photo mirror, with every tablet that ran a newer build kept off the network (A7; their
+   new-format items would be refused and turn Gagal). Every submission accepted after that backup is lost unless
+   reconciled by hand (no tool, section 2.3). Needs the OWNER's written approval of the loss.
+6. Never restart the unmanaged 6 Nov processes (A11) as a recovery step. In every case ingestion (Caddy) opens only
+   after G7 passes on the recovered installation.
 
 ### 8.4 Product owner decisions
 
@@ -376,7 +405,7 @@ Coordinated recovery constraints:
 | E3 | Final RPO after a timed rehearsal | — |
 | E4 | p95 threshold for the T3.7 load test (C9) | C9 |
 | E5 | ADR-020 (PostgreSQL 18) coming into effect once its requirements pass | G3 |
-| A7–A10 | Acceptance of the risks added for Phases 6–8 (8.1) | G0 |
+| A7–A11 | Acceptance of the risks added for Phases 6–8 and the observed server state (8.1) | G0 |
 | P5 | How smoke-test submissions are identified and left out of reports (no void exists, BR-07) | G9 |
 | P6 | Which test PSI lv.1 and lv.2 accounts and which test PO G9 uses (adding them changes production master data) | G9 |
 
