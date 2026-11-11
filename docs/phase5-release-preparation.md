@@ -289,7 +289,7 @@ Observed on 29 Oct 2026: drive C: (PostgreSQL 18 data) and drive D: (`D:\Project
 | A7 | **Tablet app is one-way.** Phases 6–8 move IndexedDB to version 3 and add the events `SET_QTY_INSPECTION`, `SET_REWORK_APPROVED` and `SET_NO_DEFECT` (ADR-021, ADR-022, ADR-023) | An older tablet build can't read the new tables or replay the new events; the tablet app is never downgraded, also not during an incident |
 | A8 | Sessions left open on a tablet across the update | A PSI lv.1 session started on the old build replays its old `NO_DEFECT` taps as ignored (ADR-019 decision 9), so its pairs without defect are lost; avoided by G0 step 3 (every open session submitted before the window) |
 | A9 | Gallery photos have no date or EXIF check (ADR-023 decision 9) | A PSI could attach an old or unrelated photo; the reviewer sees every photo in `/admin/` |
-| A10 | Physical-device evidence: the Redmi Pad 2 camera and gallery check (T4.2, T8.5, risk R8) has **no recorded evidence** in this repository yet (11 Nov 2026) | Until G0 step 2 records it, a device-specific photo problem can appear first in production |
+| A10 | Physical-device evidence: the camera and gallery check (T4.2, T8.5, risk R8) is recorded only on a substitute device, a Samsung SM-T225 with Android 12 (11 Nov 2026, `phase5-integration-review.md`); nothing on a Redmi Pad 2 yet. The OWNER accepted the Samsung result for PR #29 only (11 Nov 2026); the Redmi check stays in G0 | Until G0 step 2 records it, a device-specific photo problem can appear first in production |
 
 The OWNER accepted A1–A6 with F1 on 29 Oct 2026. **A7–A10 were added on 11 Nov 2026 for the Phases 6–8 scope and are
 not accepted yet** (8.4).
@@ -379,6 +379,11 @@ Coordinated recovery constraints:
 | A7–A10 | Acceptance of the risks added for Phases 6–8 (8.1) | G0 |
 | P5 | How smoke-test submissions are identified and left out of reports (no void exists, BR-07) | G9 |
 | P6 | Which test PSI lv.1 and lv.2 accounts and which test PO G9 uses (adding them changes production master data) | G9 |
+
+**Approved:**
+
+- 11 Nov 2026: the Samsung SM-T225 photo-path result (`phase5-integration-review.md`) is accepted for PR #29
+  (T8.5). Not a go-live approval: G0 step 2 still needs the Redmi Pad 2 check.
 
 **Proposed recommendations (not approved; for the OWNER to accept, change or reject):**
 

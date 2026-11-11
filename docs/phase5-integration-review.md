@@ -200,6 +200,18 @@ the successful API/Web/deployment reruns; initial failures remain disclosed.
 | Full-duration T3.7 load/fault rehearsal | NOT VERIFIED | Separate default-excluded suite not run; ordinary E2E is not its substitute. |
 | Approved RTO/RPO and deployment-scale recovery timing | NOT VERIFIED | Targets unset; fixture restore timings cannot certify them. |
 
+## Phase 8 photo paths on a physical tablet (2026-11-11, branch `phase-8-no-defect-photo-source` at `8c1ff38`)
+
+| Item | Recorded |
+|---|---|
+| Report | The repository owner reported in the session on 11 Nov 2026 that both photo paths, **Ambil Foto** (camera) and **Pilih dari Galeri** (gallery or files), were tested and work, in the **installed app**, on **Android 12**, **Chrome 156** |
+| Device read on the developer machine (read-only `adb`, 11 Nov 2026) | The only connected device: Samsung **SM-T225** (Galaxy Tab A7 Lite), Android **12**, Chrome **156.0.8078.79**; two Chrome WebAPKs installed (28 Oct and 3 Nov 2026). No Redmi Pad 2 connected. Nothing on the tablet was changed |
+| Assessment | The reported versions match the Samsung SM-T225; the Redmi Pad 2 launched on Android 15 (HyperOS 2). Recorded as a **substitute-device** result |
+| Ambil Foto, Pilih dari Galeri | **PASS — reported, Samsung SM-T225 only** |
+| Not reported | Tester name or role, the server the app used, the unreadable-image toast ("Foto tidak bisa dibaca. Pilih foto JPG atau PNG."), GANTI FOTO through each path, SUBMIT PO with those photos |
+| Target device (T4.2, T8.5, C8, risk R8, `phase5-release-preparation.md` G0 step 2) | **NOT VERIFIED** — needs the same check on a Redmi Pad 2 with its Android and Chrome versions |
+| OWNER decision (11 Nov 2026, communicated by the repository owner in the session) | The Samsung SM-T225 result is **accepted for PR #29** (T8.5). This does not verify the Redmi Pad 2: the Redmi check stays required before go-live (G0 step 2, T4.2, C8) |
+
 ## The 40 previously skipped tests
 
 | Group | Current status | Release significance |

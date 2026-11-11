@@ -331,7 +331,7 @@ Migration `0007`: `submissions.qty_rework_approved` (NULL allowed, CHECK 0 ≤ v
 ### T7.8 Load test
 - [x] `pnpm test:load` with 15 photos per PSI lv.2 submission (`LOAD_PHOTOS`, default 15) passes the T3.7 targets; figures recorded in the PR.
 
-## Phase 8 — NO DEFECT total with the number pad, defect photo from the gallery (ADR-023) · In progress
+## Phase 8 — NO DEFECT total with the number pad, defect photo from the gallery (ADR-023) · Done 11 Nov 2026
 
 A change request of 10 Nov 2026 to code that is already built (Phase 7). Spec: ADR-023; PRD v0.9.3 FR-06, FR-08, FR-09 (AC-09.3), FR-10 (AC-10.7), BR-01; doc 03 v0.6.3 §4.2, §4.5, R8; doc 05 §11.1, §11.2, §11.4, §11.6 (S6a), §12.1, §12.2, §G. Tablet only: no database migration, no API or contract change, exports and admin app unchanged. One branch (`phase-8-no-defect-photo-source`, in a worktree), one PR, one release. Order: T8.1 → T8.2 → T8.3 / T8.4 → T8.5.
 
@@ -364,4 +364,4 @@ Event `SET_NO_DEFECT{qty}`; command `setNoDefect(state, qty, po)`; `noDefectRun`
 ### T8.5 End-to-end
 - [x] Playwright, PSI lv.2: set NO DEFECT to 120, tap NO DEFECT once, UNDO twice (121 → 120 → previous total), set again, SUBMIT PO; the API stores `qty_no_defect` equal to the total.
 - [x] Playwright, PSI lv.2: a photo attached through Pilih dari Galeri (`setInputFiles`) is accepted and SUBMIT PO succeeds.
-- [ ] T4.2 device checklist: both photo paths on a Redmi Pad 2 (manual).
+- [x] Device check of both photo paths on a physical tablet (manual; target Redmi Pad 2, T4.2). Done on a substitute tablet: Samsung SM-T225, Android 12, Chrome 156, installed app (11 Nov 2026, `phase5-integration-review.md`); the product owner accepted that result for this task on 11 Nov 2026. The Redmi Pad 2 run stays open in T4.2 and go-live step G0 (`phase5-release-preparation.md` §8.2).
