@@ -88,12 +88,17 @@ describe('PgAdminRepository (doc 02 §5.3)', () => {
     const database = new Database(db.pool('m100_app'));
     const second = (await repo.findByUsername('second'))!;
     let released = false;
+    // The second transaction starts only once the holder has the lock: a fixed sleep raced on a busy machine.
+    let locked!: () => void;
+    const holding = new Promise<void>((resolve) => (locked = resolve));
     const holder = database.transaction(async (tx) => {
       expect(await repo.lockActive(tx)).toEqual([second.id]);
+      locked();
       await new Promise((r) => setTimeout(r, 300));
       released = true;
     });
-    await new Promise((r) => setTimeout(r, 50));
+    // A failing holder ends the wait with its own error instead of a timeout.
+    await Promise.race([holding, holder]);
     await database.transaction(async (tx) => {
       await repo.lockActive(tx);
       expect(released).toBe(true);
