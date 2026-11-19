@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Button, Chip, Dialog, Notice, Pane, Top5Row } from '@m100/ui';
+import { API_BASE } from '../api/client';
 import * as api from '../api/endpoints';
 import type { AdminFinding, AdminSubmissionDetail, RevisionHistoryEntry } from '../api/types';
 import { BASE, navigate, routePath, useLocation } from '../app/router';
@@ -179,10 +180,10 @@ function Body({ s }: { s: AdminSubmissionDetail }) {
                 key={p.id}
                 type="button"
                 className="adm-thumb"
-                onClick={() => setPhoto({ url: p.url, label })}
+                onClick={() => setPhoto({ url: photoSrc(p), label })}
                 aria-label={`Foto ${label}, perbesar`}
               >
-                <img src={p.url} alt="" loading="lazy" />
+                <img src={photoSrc(p)} alt="" loading="lazy" />
                 <span>{p.defectId}</span>
               </button>
             );
@@ -263,4 +264,12 @@ function History({ entries, s }: { entries: RevisionHistoryEntry[]; s: AdminSubm
       })}
     </ol>
   );
+}
+
+/**
+ * Where a photo loads from: the URL the API gives (an original or a correction's photo, ADR-024); an API from
+ * before ADR-024 sends no `url`, and its photos are all originals.
+ */
+function photoSrc(p: { id: number; url?: string }): string {
+  return p.url ?? `${API_BASE}/photos/${p.id}`;
 }

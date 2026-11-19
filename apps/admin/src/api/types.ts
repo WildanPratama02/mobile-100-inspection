@@ -183,7 +183,8 @@ export interface AdminSubmissionDetail extends AdminSubmissionSummary {
     /** Where to load the photo (original or correction, ADR-024); `null` without a photo. */
     photoUrl: string | null;
   }[];
-  photos: { id: number; defectId: DefectId; url: string }[];
+  /** `url` is absent from an API before ADR-024. */
+  photos: { id: number; defectId: DefectId; url?: string }[];
   audit: { id: string; at: string; actor: string; action: string; details: unknown }[];
   /** The newest revision; a correction is made from it (`baseRevisionNo`, ADR-024). */
   latestRevisionNo: number;
