@@ -161,8 +161,6 @@ export interface SubmissionRevisionRepository {
   ): Promise<VersionPhoto | null>;
   /** A `submission_revision_photos` row (admin photo endpoint). */
   revisionPhoto(id: number, q?: Queryable): Promise<VersionPhoto | null>;
-  /** Those of `keys` that a `submission_revision_photos` row points to (the orphan sweep). */
-  photoKeysInUse(keys: readonly string[], q?: Queryable): Promise<Set<string>>;
 }
 
 interface HeaderRow {
@@ -486,15 +484,6 @@ export class PgSubmissionRevisionRepository implements SubmissionRevisionReposit
       [id],
     );
     return rows[0] ? toPhoto(rows[0]) : null;
-  }
-
-  async photoKeysInUse(keys: readonly string[], q: Queryable = this.db): Promise<Set<string>> {
-    if (keys.length === 0) return new Set();
-    const { rows } = await q.query<{ objectKey: string }>(
-      `SELECT DISTINCT object_key AS "objectKey" FROM submission_revision_photos WHERE object_key = ANY($1::text[])`,
-      [keys],
-    );
-    return new Set(rows.map((r) => r.objectKey));
   }
 
   /** Adds the findings and photos of each header's version. */

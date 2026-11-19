@@ -98,7 +98,10 @@ export interface SubmissionRepository {
    * Throws `SubmissionTotalsMismatch` (nothing written) when the re-check fails.
    */
   write(submission: NewSubmission): Promise<WriteResult>;
-  /** Those of `keys` that a `submission_photos` row points to (the orphan sweep, doc 02 §6.2). */
+  /**
+   * Those of `keys` that a `submission_photos` or a `submission_revision_photos` row points to (the orphan sweep,
+   * doc 02 §6.2; a correction's photos, ADR-023).
+   */
   photoKeysInUse(keys: readonly string[], q?: Queryable): Promise<Set<string>>;
 }
 
@@ -149,7 +152,9 @@ export class PgSubmissionRepository implements SubmissionRepository {
   async photoKeysInUse(keys: readonly string[], q: Queryable = this.db): Promise<Set<string>> {
     if (keys.length === 0) return new Set();
     const { rows } = await q.query<{ objectKey: string }>(
-      'SELECT object_key AS "objectKey" FROM submission_photos WHERE object_key = ANY($1::text[])',
+      `SELECT object_key AS "objectKey" FROM submission_photos WHERE object_key = ANY($1::text[])
+       UNION
+       SELECT object_key FROM submission_revision_photos WHERE object_key = ANY($1::text[])`,
       [keys],
     );
     return new Set(rows.map((r) => r.objectKey));

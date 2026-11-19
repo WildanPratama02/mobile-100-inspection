@@ -197,17 +197,14 @@ describe('PgSubmissionRevisionRepository (ADR-023, doc 02 §4.4)', () => {
     expect(await repo.correctionPhoto(subId, 1, 'D002', 'ROIS FATHUR ROHIM')).toBeNull();
   });
 
-  it('reads a revision photo by id and reports the revision keys in use', async () => {
+  it('reads a revision photo by id; the sweep counts its key as in use', async () => {
     const photo = (await repo.findVersion(subId))!.photos[0]!;
     expect(await repo.revisionPhoto(photo.id)).toEqual(photo);
     expect(await repo.revisionPhoto(999_999)).toBeNull();
     const key = `submissions/2026/10/${subId}/r1/D001.jpg`;
-    expect(await repo.photoKeysInUse([key, 'submissions/x.jpg'])).toEqual(new Set([key]));
-    // The original's key is the submission repository's, not this one's.
     const original = `submissions/2026/10/${subId}/D001.jpg`;
-    expect(await repo.photoKeysInUse([original])).toEqual(new Set());
-    expect(await new PgSubmissionRepository(app).photoKeysInUse([original])).toEqual(
-      new Set([original]),
-    );
+    expect(
+      await new PgSubmissionRepository(app).photoKeysInUse([key, original, 'submissions/x.jpg']),
+    ).toEqual(new Set([key, original]));
   });
 });
