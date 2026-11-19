@@ -1349,7 +1349,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/AdminSubmissionSummary'
         - type: object
-          required: [receivedAt, appVersion, article, model, destination, orderQty, podd, crd, partial, counts, photoRule, findings, top5, photos, audit, revisionNo, latestRevisionNo, correctedAt, correctedBy, correctionReason]
+          required: [receivedAt, appVersion, article, model, destination, orderQty, podd, crd, partial, counts, photoRule, findings, top5, photos, audit]
           properties:
             latestRevisionNo: { type: integer, minimum: 0, description: 'Newest revision; equals revisionNo unless an earlier version was asked for. The correction form sends it as baseRevisionNo.' }
             correctedAt: { type: [string, 'null'], format: date-time }
@@ -1417,7 +1417,7 @@ components:
                   photoUrl: { type: [string, 'null'], description: '/v1/admin/photos/{id} at revision 0, /v1/admin/revision-photos/{id} for a revision; null without a photo.' }
             photos:
               type: array
-              items: { type: object, required: [id, defectId, url], properties: { id: { type: integer }, defectId: { $ref: '#/components/schemas/DefectId' }, url: { type: string, description: 'Where to load it (see top5.photoUrl).' } } }
+              items: { type: object, required: [id, defectId], properties: { id: { type: integer }, defectId: { $ref: '#/components/schemas/DefectId' }, url: { type: string, description: 'Where to load it (see top5.photoUrl).' } } }
             audit:
               type: array
               description: Audit-log rows about this submission (entity `submissions`), such as `submission.revise` (ADR-023).
@@ -1518,7 +1518,18 @@ components:
         findings:
           type: array
           maxItems: 2000
-          items: { $ref: '#/components/schemas/Finding' }
+          description: The complete new list. firstRecordedAt is set by the API (kept from the finding it replaces, else the correction time, doc 02 section 4.4) and may be omitted.
+          items:
+            type: object
+            required: [inspectionType, areaId, subAreaId, familyId, defectId, qty]
+            properties:
+              inspectionType: { $ref: '#/components/schemas/InspectionType' }
+              areaId: { $ref: '#/components/schemas/AreaId' }
+              subAreaId: { type: string }
+              familyId: { type: string }
+              defectId: { $ref: '#/components/schemas/DefectId' }
+              qty: { type: integer, minimum: 1 }
+              firstRecordedAt: { type: string, format: date-time, description: 'Ignored.' }
         photos:
           type: array
           maxItems: 98

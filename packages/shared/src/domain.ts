@@ -229,3 +229,66 @@ export interface SubmissionRequest {
   findings: Finding[];
   photos: SubmissionPhoto[];
 }
+
+/**
+ * Counts of one version of a submission (doc 02 §4.1, §4.4): exactly one of `qtyInspection` (`ADR-019`) and
+ * `noDefect` (`ADR-008`). `reworkApproved` is `null` for an original sealed before ADR-022.
+ */
+export type VersionCounts = InspectionCounts & { reworkApproved: number | null } & (
+    { qtyInspection: number; noDefect?: never } | { noDefect: number; qtyInspection?: never }
+  );
+
+/**
+ * One complete version of a submission (ADR-023): the original (revision 0) or an admin correction. Fields that
+ * no version can change (id, display number, level, counting and photo rule) are not part of it.
+ */
+export interface SubmissionVersion {
+  /** ISO 8601 in WIB (`+07:00`). */
+  sealedAt: string;
+  username: string;
+  factory: string;
+  cell: string;
+  po: string;
+  article: string;
+  model: string;
+  destination: string;
+  orderQty: number;
+  podd: string | null;
+  crd: string | null;
+  partial: PoPartial | null;
+  counts: VersionCounts;
+  findings: Finding[];
+  /** One per photographed defect, with the SHA-256 of its JPEG. */
+  photos: { defectId: DefectId; sha256: string }[];
+}
+
+/** What a correction cannot change: the original's level and, with it, its counting and photo rule. */
+export interface RevisionOriginal {
+  level: PsiLevel;
+  countingRule: CountingRule;
+  /** `null` for PSI lv.1 and for PSI lv.2 rows sealed before ADR-022 (read as Top 5). */
+  photoRule: PhotoRule | null;
+}
+
+/** A finding of a correction. `firstRecordedAt` is set by the API (doc 02 §4.4), so the form need not send it. */
+export type RevisionFinding = Omit<Finding, 'firstRecordedAt'> & { firstRecordedAt?: string };
+
+/** A photo of a correction: keep the base version's photo of the defect, or bring a new JPEG part. */
+export type RevisionPhoto =
+  { defectId: DefectId; keep: true } | { defectId: DefectId; part: string; sha256: string };
+
+/** The `revision` part of `POST /admin/submissions/{id}/revisions` (doc 04 §8.1, `RevisionRequest`). */
+export interface RevisionRequest {
+  revisionId: string;
+  baseRevisionNo: number;
+  reason: string;
+  sealedAt: string;
+  username: string;
+  factory: string;
+  cell: string;
+  po: string;
+  partial: PoPartial | null;
+  counts: InspectionCounts & { reworkApproved: number; qtyInspection?: number; noDefect?: number };
+  findings: RevisionFinding[];
+  photos: RevisionPhoto[];
+}

@@ -346,10 +346,10 @@ Bring every spec in line with ADR-023 before code; no code in this task.
 - [x] `CLAUDE.md` hard rules 2 and 6 and the `.claude/rules/api-postgres.md` immutability rule follow ADR-023.
 
 ### T8.2 Shared rules (`packages/shared`)
-`checkRevision(input, original, master)`: the submission checks of doc 04 §4.2 rules 3–8 for the original's `countingMode` and photo rule, plus reason (10–500), level unchanged, `NO_CHANGE`; `computeTotals` reused; `revisionChanges(before, after)` builds the `changes` object.
-- [ ] Unit tests: a correction of the ADR-019 example (doc 02 §9) to Qty Inspection 25 gives A-Grade 14; Qty Inspection below Qty Defect, above the partial or Qty Order → the same errors as a submission; PSI lv.2 noDefect above the maximum refused; reworkApproved above rework refused; a level change refused; an identical correction is `NO_CHANGE`.
-- [ ] Photo rule: `ALL` with a new defect and no photo → `PHOTO_MISSING`; `TOP5` needs only the Top 5; PSI lv.1 with a photo → `PHOTO_NOT_ALLOWED`.
-- [ ] `revisionChanges` lists changed header fields, counts, findings added / removed / changed and photos replaced, and nothing for equal versions.
+The database-free checks of doc 04 §4.2 (counts, duplicate findings, partial, photo coverage, clock) move from `apps/api/src/submissions/submission-checks.ts` to `packages/shared/src/rules.ts`, unchanged, so the API, the correction and the admin form use one copy. `revision.ts`: `checkRevision(request, original, base, context)`: those checks for the original's counting rule and photo rule, plus reason (10–500), level unchanged, the counts field of the rule, `reworkApproved` required, `keep` only for a base photo, `NO_CHANGE`; `revisionVersion` builds the new version (PO snapshot, `firstRecordedAt`, kept photos); `versionTotals` reuses `computeTotals`; `revisionChanges(before, after)` builds the `changes` object.
+- [x] Unit tests: a correction of the ADR-019 example (doc 02 §9) to Qty Inspection 25 gives A-Grade 14; Qty Inspection below Qty Defect, above the partial or Qty Order → the same errors as a submission; PSI lv.2 noDefect above the maximum refused; reworkApproved above rework refused; a level change refused; an identical correction is `NO_CHANGE`.
+- [x] Photo rule: `ALL` with a new defect and no photo → `PHOTO_MISSING`; `TOP5` needs only the Top 5; PSI lv.1 with a photo → `PHOTO_NOT_ALLOWED`.
+- [x] `revisionChanges` lists changed header fields, counts, findings added / removed / changed and photos replaced, and nothing for equal versions.
 
 ### T8.3 Database and API
 Migration `0008`: `submission_revisions`, `submission_revision_findings`, `submission_revision_photos`, their immutability triggers and the rule constraint trigger, grants (`m100_app` SELECT + INSERT), `v_effective_submissions`, the four reporting views rebuilt on the effective version with the new `v_submissions` columns. `SubmissionRevisionRepository`; `POST/GET /admin/submissions/{id}/revisions`, `GET /admin/submissions/{id}?revision=`, `GET /admin/revision-photos/{id}`; list, detail and CSV on the effective version; `GET /submissions/corrections`, `GET /submissions/{id}/corrections/{n}/photos/{defectId}`; `sweep-photos` also keeps revision photo keys.
@@ -361,6 +361,7 @@ Migration `0008`: `submission_revisions`, `submission_revision_findings`, `submi
 - [ ] A tablet resend of the original after a correction → `200` with the original's result.
 - [ ] Tablet endpoints: the author's token gets the newest correction; another PSI's token, an uncorrected or unknown UUID → absent; more than 50 ids → `422`; a photo of an older revision or another PSI → `404`; an admin cookie on them → `401`, a tablet token on the admin endpoints → `401`.
 - [ ] CSV carries `revision_no`, `corrected_at`, `corrected_by`, `correction_reason`.
+- [ ] `04-openapi.yaml`: `AdminSubmissionDetail` lists `revisionNo`, `latestRevisionNo`, `correctedAt`, `correctedBy`, `correctionReason` and `photos[].url` as required again (left optional in T8.1/T8.2 so the contract tests stay green until the API returns them).
 
 ### T8.4 Admin app
 - [ ] A1: "Rev {n}" chip; filters on the effective version.

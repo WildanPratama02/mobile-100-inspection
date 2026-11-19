@@ -8,3 +8,5 @@ export * from './format';
 export * from './masterData';
 export * from './photos';
 export * from './submission';
+export * from './rules';
+export * from './revision';
