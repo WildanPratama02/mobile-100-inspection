@@ -6,6 +6,8 @@ let db: TestDatabase;
 let oldId: string;
 let original: Record<string, unknown>;
 const migrations = listMigrations();
+// Later migrations (0008, ADR-023) are not this test's subject.
+const upTo0007 = migrations.filter((m) => m.version < '0008');
 
 beforeAll(async () => {
   db = await createTestDatabase();
@@ -43,7 +45,9 @@ it('applies 0007 once, leaves existing rows untouched with both columns NULL, an
   // migrate owns its transactions, so run it directly under the owner's role.
   await db.client.query('SET ROLE m100_migrate');
   try {
-    expect((await migrate(db.client)).applied).toEqual(['0007_rework_approved_photo_rule']);
+    expect((await migrate(db.client, upTo0007)).applied).toEqual([
+      '0007_rework_approved_photo_rule',
+    ]);
     const row = (
       await db.client.query<Record<string, unknown>>('SELECT * FROM submissions WHERE id = $1', [
         oldId,
@@ -51,7 +55,7 @@ it('applies 0007 once, leaves existing rows untouched with both columns NULL, an
     ).rows[0];
     // No backfill (ADR-022 decision 4, amended): the old PSI lv.2 row keeps NULL, read as the Top 5 rule.
     expect(row).toEqual({ ...original, qty_rework_approved: null, photo_rule: null });
-    expect((await migrate(db.client)).applied).toEqual([]);
+    expect((await migrate(db.client, upTo0007)).applied).toEqual([]);
   } finally {
     await db.client.query('RESET ROLE');
   }

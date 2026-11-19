@@ -52,6 +52,13 @@ const ALL_TABLES = [
   'audit_log',
   'settings',
   'schema_migrations',
+  // ADR-023: the revisions and the internal effective-version views are the API's only.
+  'submission_revisions',
+  'submission_revision_findings',
+  'submission_revision_photos',
+  'v_effective_submissions',
+  'v_effective_findings',
+  'v_effective_photos',
 ];
 
 describe('m100_report reads the views and nothing else (doc 02 §8, doc 03 §6)', () => {
@@ -67,11 +74,13 @@ describe('m100_report reads the views and nothing else (doc 02 §8, doc 03 §6)'
   });
 
   it('cannot write through a view or create anything', async () => {
-    expect(
+    // Since 0008 (ADR-023) v_submissions joins the revisions, so it is no longer auto-updatable: the write is refused
+    // as "view not updatable" (55000) before the privilege check; before, by the privilege (42501).
+    expect([INSUFFICIENT_PRIVILEGE, '55000']).toContain(
       await sqlState(
         db.as('m100_report', (c) => c.query(`DELETE FROM v_submissions WHERE id = $1`, [stored])),
       ),
-    ).toBe(INSUFFICIENT_PRIVILEGE);
+    );
     expect(await sqlState(db.as('m100_report', (c) => c.query('CREATE TABLE mine (id int)')))).toBe(
       INSUFFICIENT_PRIVILEGE,
     );
