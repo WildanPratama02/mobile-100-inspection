@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| Version | 2.3 — 30 Oct 2026 (ADR-022): `counts.reworkApproved`, `photoRule`, per-defect photos, 100 MB body limit, admin detail and CSV fields. v2.2 — 29 Oct 2026: PSI lv.2 sends `counts.noDefect` again (tapped counts, ADR-021); tapped counts above the partial quantity / `ORDER QTY` are refused (§4.1, §4.2 rule 3, A18). 2.1 — 27 Oct 2026: `counts.qtyInspection` entered by the PSI, `noDefect` only for sessions sealed before the update (ADR-019, §4.1, §4.2, A17). v2.0 — 20 Oct 2026, rewritten for ADR-018 (PostgreSQL and object storage). v1.x (Google Sheets) is superseded |
-| Date | 30 Oct 2026 |
+| Version | 2.4 — 19 Nov 2026 (ADR-023): admin corrections as revisions (§8, §8.1), the tablet reads corrections of its own submissions (§3, §3.4), `REVISION_CONFLICT`, A20. 2.3 — 30 Oct 2026 (ADR-022): `counts.reworkApproved`, `photoRule`, per-defect photos, 100 MB body limit, admin detail and CSV fields. v2.2 — 29 Oct 2026: PSI lv.2 sends `counts.noDefect` again (tapped counts, ADR-021); tapped counts above the partial quantity / `ORDER QTY` are refused (§4.1, §4.2 rule 3, A18). 2.1 — 27 Oct 2026: `counts.qtyInspection` entered by the PSI, `noDefect` only for sessions sealed before the update (ADR-019, §4.1, §4.2, A17). v2.0 — 20 Oct 2026, rewritten for ADR-018 (PostgreSQL and object storage). v1.x (Google Sheets) is superseded |
+| Date | 19 Nov 2026 |
 | Machine-readable spec | [`04-openapi.yaml`](04-openapi.yaml) (OpenAPI 3.1) |
-| Related | [01 PRD](01-prd.md) FR-01, FR-03, FR-11, FR-13, FR-14, FR-16; [02 Data Design](02-data-design.md); [07 Decision Log](07-decision-log.md) ADR-006, 008, 013, 014, 018, 019, 021, 022 |
+| Related | [01 PRD](01-prd.md) FR-01, FR-03, FR-11, FR-13, FR-14, FR-16, FR-17; [02 Data Design](02-data-design.md); [07 Decision Log](07-decision-log.md) ADR-006, 008, 013, 014, 018, 019, 021, 022, 023 |
 
 This document explains the rules behind the OpenAPI file: who may call what, what the API checks, and how the tablet must react to each answer. Where the two disagree, `04-openapi.yaml` is corrected to match this text. Two audiences use the API: the **tablet app** (§2–§7) and the **admin web app** (§8).
 
@@ -44,6 +44,8 @@ This document explains the rules behind the OpenAPI file: who may call what, wha
 | `GET /pos?q=&limit=` | both | PO search, ≥ 3 characters, ≤ 20 results | FR-03 |
 | `GET /pos/{po}` | both | One PO | FR-03 |
 | `POST /submissions` | both | Submit a sealed session with its photos | FR-11 |
+| `GET /submissions/corrections?ids=` | both | Newest admin correction of the token's own submissions (§3.4) | FR-17 |
+| `GET /submissions/{id}/corrections/{revisionNo}/photos/{defectId}` | both | One photo of that correction (§3.4) | FR-17 |
 
 The tablet endpoints change no master data. Administration is a separate set under `/admin` (§8).
 
@@ -66,6 +68,12 @@ Case-insensitive substring match on `po`, `article` and `model` using the trigra
 **Order (§10 A8).** PSI usually type the last 3 or 4 digits of a PO, so the results are ordered: (1) `po` ends with `q`, (2) `po` contains `q` elsewhere, (3) only `article` or `model` contains `q`; within each group the newest PODD first (no PODD last), then `po`.
 
 `GET /pos/{po}` takes the exact PO number (URL-encoded; leading zeros and prefixes kept) and answers `404 PO_NOT_FOUND` for an unknown or deactivated PO. A database error on either endpoint answers `503 DB_UNAVAILABLE` (doc 03 §5.7).
+
+### 3.4 Corrections of the PSI's own submissions (ADR-023)
+
+`GET /submissions/corrections?ids=<uuid>,<uuid>,…` takes up to 50 submission UUIDs (the tablet's sent outbox items of one author) and answers `200 { items: [...] }` with one entry per UUID that has at least one revision **and** whose original `username` is the token's `sub`. Every other UUID (unknown, not corrected, another PSI's) is simply absent, so the answer never tells whether another PSI's submission exists. More than 50 ids or a malformed id is `422 VALIDATION_FAILED`. Each entry: `submissionUuid`, `revisionNo`, `correctedAt`, `reason`, `submission` (the effective version: `displayNo`, `sealedAt`, `inspectionDate`, `user` {`username`, `level`}, `factory`, `cell`, `po`, `article`, `model`, `destination`, `orderQty`, `partial`, `countingRule`, `photoRule`, `counts`, `findings` with `familyId`, `defectName` and `severity`, `totals`) and `photos` [{`defectId`, `sha256`, `sizeBytes`}].
+
+`GET /submissions/{id}/corrections/{revisionNo}/photos/{defectId}` streams that photo (`image/jpeg`, `Cache-Control: private, no-store`) under the same ownership rule; anything else, including a revision that is no longer the newest, is `404 NOT_FOUND`. The tablet fetches only photos whose `sha256` it does not hold yet. Both endpoints count towards the device's rate limit (§7) and change nothing.
 
 ## 4. Submitting a session
 
@@ -195,8 +203,9 @@ The request timeout on the tablet is 60 seconds (weak Wi-Fi, up to 98 photos). T
 | `DB_UNAVAILABLE` | 503 | yes | — (shown as Menunggu koneksi) |
 | `PHOTO_STORE_UNAVAILABLE` | 503 | yes | — (shown as Menunggu koneksi) |
 | `INTERNAL` | 500 | yes | Terjadi kesalahan server. Data tetap tersimpan di tablet. |
+| `NOT_FOUND` | 404 | no | — (a correction photo that is not the tablet's or no longer current; the tablet asks for the corrections again) |
 
-Admin-only codes (§8): `ADMIN_AUTH_REQUIRED` 401, `ADMIN_LOGIN_FAILED` 401, `ADMIN_LOCKED` 423, `NOT_FOUND` 404, `CONFLICT` 409 (duplicate natural key), `IMPORT_INVALID` 422 (with a row-level `errors` list).
+Admin-only codes (§8): `ADMIN_AUTH_REQUIRED` 401, `ADMIN_LOGIN_FAILED` 401, `ADMIN_LOCKED` 423, `NOT_FOUND` 404, `CONFLICT` 409 (duplicate natural key, or a revision id repeated with other bytes), `REVISION_CONFLICT` 409 (another admin saved a correction of this submission first: "Submission ini baru saja dikoreksi admin lain. Muat ulang lalu ulangi koreksi."), `IMPORT_INVALID` 422 (with a row-level `errors` list).
 
 ## 7. Limits
 
@@ -209,10 +218,12 @@ Admin-only codes (§8): `ADMIN_AUTH_REQUIRED` 401, `ADMIN_LOGIN_FAILED` 401, `AD
 | Rate per device | 60 requests / minute |
 | Admin login | 5 failures → 10 min lock |
 | `GET /pos` results | 20 |
+| `GET /submissions/corrections` ids | 50 |
+| Correction request (admin) | as a submission: 100 MB, 98 photos + 1 JSON part, photo ≤ 1 MB; reason 10–500 characters |
 
 ## 8. Admin API
 
-Used only by the admin web app (doc 05 §20), in a desktop browser. Cookie auth as in §2; JSON in and out except the imports (multipart) and the CSV export. Every change writes an `audit_log` row (doc 02 §5.3) with the old and new values of the changed fields, and every master-data change (POs included) bumps `master_version` in the same transaction; a change that changes nothing writes nothing. A duplicate natural key is `409 CONFLICT`. Rows are deactivated, never deleted.
+Used only by the admin web app (doc 05 §20), in a desktop browser. Cookie auth as in §2; JSON in and out except the imports and the correction (multipart) and the CSV export. Every change writes an `audit_log` row (doc 02 §5.3) with the old and new values of the changed fields, and every master-data change (POs included) bumps `master_version` in the same transaction; a change that changes nothing writes nothing. A duplicate natural key is `409 CONFLICT`. Rows are deactivated, never deleted.
 
 | Method and path | Purpose |
 |---|---|
@@ -224,17 +235,43 @@ Used only by the admin web app (doc 05 §20), in a desktop browser. Cookie auth 
 | `GET /admin/defects`, `GET /admin/area-map`, `PATCH /admin/defects/{id}`, `PATCH /admin/area-map/{id}` | View (`/admin/area-map` returns areas, sub-areas, families and map rows); toggle `active` |
 | `POST /admin/area-map/import?dryRun=` | Upload the mapping workbook; same validation as doc 02 §5.1, against the stored defects (§10 A10) |
 | `GET /admin/submissions?from=&to=&factory=&cell=&username=&po=&page=` | Paged list, 50 per page, newest sealed first (§10 A12) |
-| `GET /admin/submissions/{id}` | Detail with findings, Top 5, photo ids and audit trail (§10 A13) |
-| `GET /admin/photos/{id}` | Streams the JPEG after checking the admin session (§10 A13) |
+| `GET /admin/submissions/{id}?revision=` | Detail of the effective version with findings, Top 5, photos, revision fields and audit trail (§10 A13, A20); `revision=<n>` shows an earlier version (0 = the original) |
+| `GET /admin/submissions/{id}/revisions` | History: revision 0 (the PSI's submission) and every correction with time, admin, reason and `changes` (§8.1) |
+| `POST /admin/submissions/{id}/revisions` | Correct the submission: adds a revision (§8.1, ADR-023) |
+| `GET /admin/photos/{id}` | Streams the JPEG of a `submission_photos` row after checking the admin session (§10 A13) |
+| `GET /admin/revision-photos/{id}` | Same for a `submission_revision_photos` row (§8.1) |
 | `GET /admin/submissions/export.csv?…` | The list's filters, one row per submission, with the Top 5 as columns (§10 A14) |
 | `GET/POST/PATCH /admin/admins` | List, add, deactivate, reactivate, reset a password (§10 A15) |
 | `GET /admin/audit-log?from=&to=&actor=&page=` | Read-only, 50 per page, newest first (§10 A16) |
 
-No admin endpoint changes a submission (AC-14.4): there is no route for it, and the database refuses an UPDATE or DELETE anyway (doc 02 §4.1). Reading a submission, a photo or the export writes no `audit_log` row; the log records changes.
+No admin endpoint deletes, voids or updates a submission (AC-14.4): a correction only adds a revision (§8.1), and the database refuses an UPDATE or DELETE anyway (doc 02 §4.1, §4.4). Reading a submission, a photo or the export writes no `audit_log` row; the log records changes.
+
+### 8.1 Correcting a submission (ADR-023)
+
+`POST /admin/submissions/{id}/revisions`, `multipart/form-data` like `POST /submissions`: one JSON part `revision` and one part `photo_<DEFECT_ID>` per new photo. It needs `X-Requested-With: m100-admin`. The JSON part:
+
+| Field | Rule |
+|---|---|
+| `revisionId` | UUID v4 created by the admin app when the form opens; a retry sends the same id and bytes |
+| `baseRevisionNo` | The `revisionNo` of the version the form was opened from (0 for the original) |
+| `reason` | 10–500 characters after trimming |
+| `sealedAt` | Inspection time, ISO 8601 with `+07:00`; not more than 5 minutes in the future |
+| `username`, `factory`, `cell` | A `psi_users` row with the original's level, and a cell of that factory; active or not |
+| `po` | An existing PO, active or not. When it differs from the effective version, article, model, destination, Qty Order, PODD and CRD are taken from the PO master; otherwise they are kept |
+| `partial` | null, or `{ number 1–99, qty 1 … Qty Order }` |
+| `counts` | As §4.1 for the original's `counting_rule`: `rework`, `bGrade`, `reworkApproved` (required) and `qtyInspection` (`ADR-019`) or `noDefect` (`ADR-008`); the other one is `422` |
+| `findings` | The complete list of the new version (as §4.1); rule 4 of §4.2 accepts an inactive map row |
+| `photos` | One entry per defect that keeps or gets a photo: `{ defectId, keep: true }` keeps the effective version's photo of that defect; `{ defectId, part, sha256 }` brings a new one. Coverage follows the original's `photo_rule` (§4.2 rule 7); PSI lv.1: none |
+
+The API applies §4.2 rules 3–9 with these differences: rule 1 accepts inactive master rows and does not compare with a token; the level cannot change (`errors[].path` `username`, code `LEVEL_CHANGE`). A correction identical to the effective version is `422` with code `NO_CHANGE`. The write follows doc 02 §6.5. Answers: `201` with the new detail (`AdminSubmissionDetail`); `200` for a repeat of the same `revisionId` and bytes; `409 REVISION_CONFLICT` when `baseRevisionNo` is not the current one; `409 CONFLICT` for the same `revisionId` with other bytes; `413`, `422`, `503` as for a submission. The audit row (`submission.revise`) carries `revisionNo`, `reason` and `changes`.
+
+The detail (`GET /admin/submissions/{id}`) carries `revisionNo` (0 = no correction), `correctedAt`, `correctedBy`, `correctionReason` (null at 0), and each photo and Top 5 place carries `photoUrl` (`/v1/admin/photos/{id}` for the original, `/v1/admin/revision-photos/{id}` for a revision). The list and the CSV show the effective version; the CSV adds `revision_no`, `corrected_at`, `corrected_by`, `correction_reason`, and the list item `revisionNo`. Filters apply to the effective version.
+
+A tablet resend of the original (§4.3) still compares with the original's `payload_sha256` and answers `200` with the original's stored result.
 
 ## 9. Not in this API
 
-- Exports of the PSI's own session (FR-12) are made on the tablet.
+- Exports of the PSI's own session (FR-12) are made on the tablet, also from a correction it has received (§3.4, AC-12.5).
 - Device-key provisioning is in the admin API above and in [03 TDD](03-tdd.md) §7.5.
 - Reporting tools read the database views (doc 02 §8), not this API.
 
@@ -258,6 +295,7 @@ No admin endpoint changes a submission (AC-14.4): there is no route for it, and 
 | A14 | (23 Oct 2026, product owner, T3b.3) The CSV export: UTF-8 with a BOM, `,` between fields, CRLF, RFC 4180 quoting, one header row; the columns of `v_submissions` (`display_no` as `M100-000123`, `sealed_at` in WIB) and `top<n>_defect_id`, `top<n>_defect_name`, `top<n>_qty` for n = 1…5. Raw numbers: no thousands separator, a dot for decimals, `rft` and `defect_rate` as the stored fractions (`0.60000`). Text typed by people that starts with `=`, `+`, `-`, `@`, a tab or CR gets a leading `'` (CSV injection). ADR-022 adds `qty_rework_approved` (empty for legacy NULL) and `photo_rule` (ALL / TOP5, empty for PSI lv.1 and existing PSI lv.2 rows with NULL); `qty_rework` remains INSPECTION REWORK QTY. The column list is in `04-openapi.yaml`. |
 | A15 | (23 Oct 2026, product owner, T3b.3) `PATCH /admin/admins/{id}` takes either `{ password }` (a reset, which also clears a lock) or `{ active }`, one change per request. A deactivated admin may be reactivated, audited like any change. Deactivating yourself or the last active admin is `422` with `errors[].code` `SELF` / `LAST_ACTIVE_ADMIN`; a taken username is `409 CONFLICT`; a password under 10 characters `422` (`PASSWORD_TOO_SHORT`). The list never carries a password hash. |
 | A16 | (23 Oct 2026, product owner, T3b.3) `GET /admin/audit-log`: `from` / `to` inclusive WIB days of `at`, `actor` exact (`admin:<name>`, `script:<name>`, `system`), newest first, 50 per page, `{ total, page, pageSize, items }`. The admin app renders the summary from `details`. |
+| A20 | (19 Nov 2026, product owner, ADR-023) Admins correct a submission with `POST /admin/submissions/{id}/revisions` (§8.1): a complete new version with a reason, never an UPDATE; the level, counting rule and photo rule stay the original's; a changed PO takes its snapshot from the PO master. Every read (list, detail, CSV, views) shows the effective version; `revision=<n>` and `/revisions` show the history. The tablet reads the newest correction of its own submissions and its photos (§3.4). New endpoints and fields only, so it stays in `/v1`. |
 | A19 | (30 Oct 2026, ADR-022) New sessions at both levels send `counts.reworkApproved` (empty input → 0); only PSI lv.2 payloads carry `photoRule: 'ALL'`, and PSI lv.1 payloads carry none; the API independently checks BR-11 and every defect photo. Older sealed payloads omit the fields: store approval NULL and use Top 5 for PSI lv.2. Body limit is 100 MB; per-photo limit stays 1 MB. Admin detail adds `counts.reworkApproved` and `photoRule`; CSV adds `qty_rework_approved` and `photo_rule`. Older NULL approval and dependent report figures display "—", with only the photos stored; counts are never recalculated. |
 | A18 | (29 Oct 2026, product owner, ADR-021) PSI lv.2 sends tapped counts (`noDefect`) again; the API calculates them with ADR-008 as before and now also refuses pairs above the partial quantity or `ORDER QTY` (§4.2 rule 3). No new field, so it stays in `/v1`. A payload sealed before ADR-019 with more pairs than that maximum is refused too (accepted risk, ADR-021). |
 | A17 | (27 Oct 2026, product owner, ADR-019; revised 28 Oct 2026) `counts.qtyInspection` replaces `counts.noDefect`: the PSI enters Qty Inspection, the API derives Qty A-Grade as `qtyInspection − Qty Defect` (Qty Defect = sum of the findings' `qty`) and checks BR-10 itself (§4.2 rule 3). `rework` and `bGrade` stay in `counts` for the finding-type check and the admin detail; they are in no formula. A payload with `noDefect` (sealed before the update) is still accepted under ADR-008 and stored with `counting_rule = 'ADR-008'`; this stays in `/v1` because no client needs to change for it. The admin detail's `counts` and the summary carry `countingRule`; `counts.noDefect` is `null` for ADR-019 rows and `counts.qtyInspection` is the stored `qty_inspection`. |

@@ -330,3 +330,49 @@ Migration `0007`: `submissions.qty_rework_approved` (NULL allowed, CHECK 0 ≤ v
 
 ### T7.8 Load test
 - [x] `pnpm test:load` with 15 photos per PSI lv.2 submission (`LOAD_PHOTOS`, default 15) passes the T3.7 targets; figures recorded in the PR.
+
+## Phase 8 — Admin corrections of submissions (ADR-023) · Planned 19 Nov 2026
+
+A change request of 19 Nov 2026 (ADR-023, PRD FR-17). Spec: ADR-023; the PRD, doc 02, doc 03, doc 04 and doc 05 sections are written in T8.1 before any code. One branch (`phase-8-corrections`), one PR, one release; one database migration (`0008`). Order: T8.1 → T8.2 → T8.3 → T8.4 / T8.5 → T8.6.
+
+### T8.1 Docs (ADR-023)
+Bring every spec in line with ADR-023 before code; no code in this task.
+- [x] ADR-023 written and accepted; ADR-018 decision 6 amended.
+- [x] PRD v0.10: FR-17 with AC-17.1–17.7, AC-12.5, BR-07, AC-14.4, scope, glossary (Revision, Effective version).
+- [x] Doc 02 v2.4: §4.4 revision tables, §6.5 correction write, §7 revision photo keys and tablet read-back, §8 views on the effective version, Q4, Q8, Q9.
+- [x] Doc 04 v2.4 + `04-openapi.yaml` 2.4.0: §3.4 tablet correction reads, §8.1 correction endpoint, `REVISION_CONFLICT`, A20.
+- [x] Doc 03 v0.7: §4.2 Dexie version 4, §4.10 exports from a correction, §4.11 correction check, §5.4.1 correction procedure.
+- [x] Doc 05 v0.6: A1 "Rev" chip, A1b KOREKSI and Riwayat, A1c correction form, S9 "Dikoreksi admin", §8.5 export mark, copy, U18, U23.
+- [x] `CLAUDE.md` hard rules 2 and 6 and the `.claude/rules/api-postgres.md` immutability rule follow ADR-023.
+
+### T8.2 Shared rules (`packages/shared`)
+`checkRevision(input, original, master)`: the submission checks of doc 04 §4.2 rules 3–8 for the original's `countingMode` and photo rule, plus reason (10–500), level unchanged, `NO_CHANGE`; `computeTotals` reused; `revisionChanges(before, after)` builds the `changes` object.
+- [ ] Unit tests: a correction of the ADR-019 example (doc 02 §9) to Qty Inspection 25 gives A-Grade 14; Qty Inspection below Qty Defect, above the partial or Qty Order → the same errors as a submission; PSI lv.2 noDefect above the maximum refused; reworkApproved above rework refused; a level change refused; an identical correction is `NO_CHANGE`.
+- [ ] Photo rule: `ALL` with a new defect and no photo → `PHOTO_MISSING`; `TOP5` needs only the Top 5; PSI lv.1 with a photo → `PHOTO_NOT_ALLOWED`.
+- [ ] `revisionChanges` lists changed header fields, counts, findings added / removed / changed and photos replaced, and nothing for equal versions.
+
+### T8.3 Database and API
+Migration `0008`: `submission_revisions`, `submission_revision_findings`, `submission_revision_photos`, their immutability triggers and the rule constraint trigger, grants (`m100_app` SELECT + INSERT), `v_effective_submissions`, the four reporting views rebuilt on the effective version with the new `v_submissions` columns. `SubmissionRevisionRepository`; `POST/GET /admin/submissions/{id}/revisions`, `GET /admin/submissions/{id}?revision=`, `GET /admin/revision-photos/{id}`; list, detail and CSV on the effective version; `GET /submissions/corrections`, `GET /submissions/{id}/corrections/{n}/photos/{defectId}`; `sweep-photos` also keeps revision photo keys.
+- [ ] `pnpm db:migrate` applies `0008` once; a second run applies nothing; UPDATE, DELETE and TRUNCATE of every revision table fail, and the original tables' triggers are unchanged.
+- [ ] A correction is written with its findings, photos and one `audit_log` row (`submission.revise`); the original rows are byte-for-byte unchanged; `v_submissions` and `v_top5` show the new figures with `revision_no` 1; `revision=0` returns the original.
+- [ ] Refused with `422` and nothing written: reason under 10 characters, level change, BR-10 / BR-11 break, duplicate finding, missing photo under `ALL`, no change. `baseRevisionNo` stale → `409 REVISION_CONFLICT`; two admins at once → one `201`, one `409`; same `revisionId` and bytes → `200`, other bytes → `409 CONFLICT`.
+- [ ] A changed PO takes article, model, destination, Qty Order, PODD and CRD from `pos`; an unchanged PO keeps the previous snapshot after the PO master is edited.
+- [ ] A kept photo points to the earlier object; a new one is stored under `r<n>/`; `sweep-photos --dry-run` lists neither.
+- [ ] A tablet resend of the original after a correction → `200` with the original's result.
+- [ ] Tablet endpoints: the author's token gets the newest correction; another PSI's token, an uncorrected or unknown UUID → absent; more than 50 ids → `422`; a photo of an older revision or another PSI → `404`; an admin cookie on them → `401`, a tablet token on the admin endpoints → `401`.
+- [ ] CSV carries `revision_no`, `corrected_at`, `corrected_by`, `correction_reason`.
+
+### T8.4 Admin app
+- [ ] A1: "Rev {n}" chip; filters on the effective version.
+- [ ] A1b: KOREKSI, the correction notice, Riwayat with each change, earlier versions read-only.
+- [ ] A1c: the form of doc 05 §20.3a for PSI lv.1 and PSI lv.2 (counts, findings, photos, live totals), the reason dialog, `409 REVISION_CONFLICT` and `422` handling, unsaved-changes warning.
+- [ ] Playwright: correct a PSI lv.1 submission (Qty Inspection and a finding) and a PSI lv.2 submission (replace a photo, add a defect with its photo); check the list chip, detail, history and CSV; a stale form gets the conflict notice.
+
+### T8.5 Tablet app (web)
+Dexie version 4 (`corrections`, `correctionPhotos`); the correction check in the outbox loop (doc 03 §4.11); the S9 mark; exports from the correction (doc 03 §4.10).
+- [ ] Vitest: a received correction is stored in one transaction with its photos; a failed photo download stores nothing; a newer revision replaces the older; the outbox item's `payloadJson` and photos are unchanged; rows go with the outbox item after 7 days.
+- [ ] Vitest on the report model: the export of a corrected item uses the correction's figures, photos and inspection date and carries the revision mark.
+- [ ] Playwright against the real API: a PSI submits, an admin corrects through the API, the tablet shows "Dikoreksi admin" with the reason in Pengaturan and EXPORT PDF / EXCEL carry the corrected numbers; Home and the open session are unchanged.
+
+### T8.6 Load and regression
+- [ ] `pnpm test`, `pnpm e2e`, `pnpm typecheck`, `pnpm lint` green; `pnpm test:load` (quick settings) passes with the correction check of 50 tablets running.

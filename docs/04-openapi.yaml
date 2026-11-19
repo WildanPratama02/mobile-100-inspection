@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: PSI Inspection Report API
-  version: 2.3.0
+  version: 2.4.0
   summary: Backend for the PSI Inspection Report PWA (PT Parkland World Indonesia, QIP Digital Team).
   description: |
     Contract between the tablet PWA and the NestJS API. Behaviour, rules and examples are in
@@ -217,6 +217,50 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '413': { $ref: '#/components/responses/TooLarge' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /submissions/corrections:
+    get:
+      tags: [submissions]
+      operationId: getOwnCorrections
+      summary: Newest admin correction of the token's own submissions (doc 04 section 3.4, ADR-023).
+      description: |
+        Up to 50 submission UUIDs. Only UUIDs that have a revision and whose original username is the token's
+        `sub` are answered; every other UUID is absent from `items`. Changes nothing.
+      parameters:
+        - in: query
+          name: ids
+          required: true
+          description: Comma-separated submission UUIDs, at most 50.
+          schema: { type: string }
+      responses:
+        '200':
+          description: The corrected ones among the given submissions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/Correction' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /submissions/{id}/corrections/{revisionNo}/photos/{defectId}:
+    get:
+      tags: [submissions]
+      operationId: getOwnCorrectionPhoto
+      summary: One photo of the newest correction of the token's own submission (doc 04 section 3.4).
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+        - { in: path, name: revisionNo, required: true, schema: { type: integer, minimum: 1 } }
+        - { in: path, name: defectId, required: true, schema: { $ref: '#/components/schemas/DefectId' } }
+      responses:
+        '200': { description: 'The JPEG, unchanged; `Cache-Control: private, no-store`.', content: { image/jpeg: { schema: { type: string, format: binary } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/Unavailable' }
 
@@ -525,7 +569,7 @@ paths:
       description: |
         Every filter is optional and they all apply together. `from` and `to` are inclusive WIB dates on the
         inspection date; `factory`, `cell` and `username` match exactly; `po` matches any part of the PO number,
-        ignoring case. An empty value means no filter. There is no route that changes a submission (AC-14.4).
+        ignoring case. An empty value means no filter. Rows and filters use the effective version (ADR-023); a correction adds a revision and never changes a row (AC-14.4).
       security: [{ adminCookie: [] }]
       parameters:
         - $ref: '#/components/parameters/SubmissionFrom'
@@ -562,7 +606,7 @@ paths:
         id, inspection_date, sealed_at (ISO 8601 in WIB), username, level, factory, cell, po, article, model,
         destination, order_qty, podd, crd, partial_no, partial_qty, partial_text, qty_rework, qty_rework_approved,
         qty_bgrade_inspections, qty_no_defect, qty_inspection, qty_a_grade, qty_b_grade, qty_defect, rft,
-        defect_rate, photo_count, counting_rule, photo_rule, then top1_defect_id, top1_defect_name, top1_qty … top5_qty (empty
+        defect_rate, photo_count, counting_rule, photo_rule, revision_no, corrected_at, corrected_by, correction_reason (the effective version, ADR-023; the last three empty for revision 0), then top1_defect_id, top1_defect_name, top1_qty … top5_qty (empty
         when the submission has fewer defects; qty_no_defect is empty when counting_rule is ADR-019).
         qty_rework_approved is empty for legacy NULL; photo_rule is ALL / TOP5 for new PSI lv.2 rows, empty for PSI lv.1 and existing PSI lv.2 NULL rows (legacy Top 5 rule). Numbers are raw: no thousands separator and a dot for decimals;
         rft and defect_rate are the stored fractions with 5 decimals (`0.60000` = 60,0%). Text typed by people that
@@ -587,13 +631,82 @@ paths:
     get:
       tags: [admin]
       operationId: adminGetSubmission
-      summary: One submission with its findings, Top 5, photo ids and audit trail. Read-only (AC-14.4).
+      summary: One submission (the effective version, or `revision`) with its findings, Top 5, photos and audit trail (doc 04 section 8.1).
       security: [{ adminCookie: [] }]
-      parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+        - { in: query, name: revision, required: false, description: 'A version to show instead of the effective one; 0 = the original.', schema: { type: integer, minimum: 0 } }
       responses:
         '200': { description: Submission with findings and photo ids., content: { application/json: { schema: { $ref: '#/components/schemas/AdminSubmissionDetail' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /admin/submissions/{id}/revisions:
+    get:
+      tags: [admin]
+      operationId: adminListRevisions
+      summary: Revision history of a submission, oldest first; revision 0 is the PSI's submission (doc 04 section 8.1).
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200':
+          description: The history.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/RevisionHistoryEntry' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+    post:
+      tags: [admin]
+      operationId: adminCreateRevision
+      summary: Correct a submission by adding a revision (ADR-023, doc 04 section 8.1). Idempotent by `revisionId`.
+      description: |
+        `multipart/form-data` with one JSON part `revision` and one part `photo_<DEFECT_ID>` per new photo.
+        Needs `X-Requested-With: m100-admin`. Validated like a submission for the original's counting and photo rule.
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [revision]
+              properties:
+                revision: { $ref: '#/components/schemas/RevisionRequest' }
+              additionalProperties:
+                type: string
+                contentMediaType: image/jpeg
+                description: Photo parts named `photo_<DEFECT_ID>`.
+            encoding:
+              revision:
+                contentType: application/json
+      responses:
+        '201': { description: Revision written; the new effective detail., content: { application/json: { schema: { $ref: '#/components/schemas/AdminSubmissionDetail' } } } }
+        '200': { description: This revisionId was already written with the same bytes., content: { application/json: { schema: { $ref: '#/components/schemas/AdminSubmissionDetail' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /admin/revision-photos/{id}:
+    get:
+      tags: [admin]
+      operationId: adminGetRevisionPhoto
+      summary: Streams the JPEG of a submission_revision_photos row to a signed-in admin. `Cache-Control` is `private, no-store`.
+      security: [{ adminCookie: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: integer } }]
+      responses:
+        '200': { description: The JPEG., content: { image/jpeg: { schema: { type: string, format: binary } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/Unavailable' }
   /admin/photos/{id}:
     get:
@@ -1231,12 +1344,17 @@ components:
         defectRate: { type: number, description: 'Fraction; can exceed 1.' }
         photoCount: { type: integer }
         countingRule: { type: string, enum: ['ADR-008', 'ADR-019'], description: 'ADR-019 = Qty Inspection entered by the PSI (doc 02 section 4.1).' }
+        revisionNo: { type: integer, minimum: 0, description: 'Revision shown; 0 = the submission sent by the PSI (ADR-023).' }
     AdminSubmissionDetail:
       allOf:
         - $ref: '#/components/schemas/AdminSubmissionSummary'
         - type: object
-          required: [receivedAt, appVersion, article, model, destination, orderQty, podd, crd, partial, counts, photoRule, findings, top5, photos, audit]
+          required: [receivedAt, appVersion, article, model, destination, orderQty, podd, crd, partial, counts, photoRule, findings, top5, photos, audit, revisionNo, latestRevisionNo, correctedAt, correctedBy, correctionReason]
           properties:
+            latestRevisionNo: { type: integer, minimum: 0, description: 'Newest revision; equals revisionNo unless an earlier version was asked for. The correction form sends it as baseRevisionNo.' }
+            correctedAt: { type: [string, 'null'], format: date-time }
+            correctedBy: { type: [string, 'null'], description: 'Admin username of the revision shown; null at 0.' }
+            correctionReason: { type: [string, 'null'] }
             receivedAt: { type: string, format: date-time }
             appVersion: { type: [string, 'null'] }
             article: { type: string }
@@ -1296,16 +1414,136 @@ components:
                   classification: { $ref: '#/components/schemas/Classification' }
                   qty: { type: integer }
                   photoId: { type: [integer, 'null'], description: 'For GET /admin/photos/{id}; null without a photo (PSI lv.1).' }
+                  photoUrl: { type: [string, 'null'], description: '/v1/admin/photos/{id} at revision 0, /v1/admin/revision-photos/{id} for a revision; null without a photo.' }
             photos:
               type: array
-              items: { type: object, required: [id, defectId], properties: { id: { type: integer }, defectId: { $ref: '#/components/schemas/DefectId' } } }
+              items: { type: object, required: [id, defectId, url], properties: { id: { type: integer }, defectId: { $ref: '#/components/schemas/DefectId' }, url: { type: string, description: 'Where to load it (see top5.photoUrl).' } } }
             audit:
               type: array
-              description: Audit-log rows about this submission (entity `submissions`); none are written in release 1.
+              description: Audit-log rows about this submission (entity `submissions`), such as `submission.revise` (ADR-023).
               items:
                 type: object
                 required: [id, at, actor, action, details]
                 properties: { id: { type: string }, at: { type: string, format: date-time }, actor: { type: string }, action: { type: string }, details: {} }
+    Correction:
+      type: object
+      description: Newest correction of one of the tablet's own submissions (doc 04 section 3.4).
+      required: [submissionUuid, revisionNo, correctedAt, reason, submission, photos]
+      properties:
+        submissionUuid: { type: string, format: uuid }
+        revisionNo: { type: integer, minimum: 1 }
+        correctedAt: { type: string, format: date-time }
+        reason: { type: string }
+        submission:
+          type: object
+          required: [displayNo, sealedAt, inspectionDate, user, factory, cell, po, article, model, destination, orderQty, partial, countingRule, photoRule, counts, findings, totals]
+          properties:
+            displayNo: { type: string }
+            sealedAt: { type: string, format: date-time }
+            inspectionDate: { type: string, format: date }
+            user: { $ref: '#/components/schemas/User' }
+            factory: { type: string }
+            cell: { type: string }
+            po: { type: string }
+            article: { type: string }
+            model: { type: string }
+            destination: { type: string }
+            orderQty: { type: integer }
+            partial:
+              oneOf:
+                - { type: 'null' }
+                - { type: object, required: [number, qty], properties: { number: { type: integer }, qty: { type: integer } } }
+            countingRule: { type: string, enum: ['ADR-008', 'ADR-019'] }
+            photoRule: { type: [string, 'null'], enum: ['ALL', 'TOP5', null] }
+            counts:
+              type: object
+              required: [rework, bGrade, reworkApproved]
+              properties:
+                rework: { type: integer }
+                bGrade: { type: integer }
+                reworkApproved: { type: integer }
+                qtyInspection: { type: integer, description: 'ADR-019 rows.' }
+                noDefect: { type: integer, description: 'ADR-008 rows.' }
+            findings:
+              type: array
+              items:
+                allOf:
+                  - $ref: '#/components/schemas/Finding'
+                  - type: object
+                    required: [defectName, severity]
+                    properties:
+                      defectName: { type: string }
+                      severity: { $ref: '#/components/schemas/Classification' }
+            totals: { $ref: '#/components/schemas/SubmissionResult/properties/totals' }
+        photos:
+          type: array
+          items:
+            type: object
+            required: [defectId, sha256, sizeBytes]
+            properties:
+              defectId: { $ref: '#/components/schemas/DefectId' }
+              sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+              sizeBytes: { type: integer }
+    RevisionRequest:
+      type: object
+      description: A complete new version of a submission (doc 04 section 8.1, ADR-023).
+      required: [revisionId, baseRevisionNo, reason, sealedAt, username, factory, cell, po, partial, counts, findings, photos]
+      properties:
+        revisionId: { type: string, format: uuid }
+        baseRevisionNo: { type: integer, minimum: 0 }
+        reason: { type: string, minLength: 10, maxLength: 500 }
+        sealedAt: { type: string, format: date-time }
+        username: { type: string }
+        factory: { type: string }
+        cell: { type: string }
+        po: { type: string }
+        partial:
+          oneOf:
+            - { type: 'null' }
+            - { type: object, required: [number, qty], properties: { number: { type: integer, minimum: 1, maximum: 99 }, qty: { type: integer, minimum: 1 } } }
+        counts:
+          type: object
+          required: [rework, bGrade, reworkApproved]
+          oneOf:
+            - required: [qtyInspection]
+              not: { required: [noDefect] }
+            - required: [noDefect]
+              not: { required: [qtyInspection] }
+          properties:
+            rework: { type: integer, minimum: 0 }
+            bGrade: { type: integer, minimum: 0 }
+            reworkApproved: { type: integer, minimum: 0 }
+            qtyInspection: { type: integer, minimum: 1, description: 'Original counting_rule ADR-019 only.' }
+            noDefect: { type: integer, minimum: 0, description: 'Original counting_rule ADR-008 only.' }
+        findings:
+          type: array
+          maxItems: 2000
+          items: { $ref: '#/components/schemas/Finding' }
+        photos:
+          type: array
+          maxItems: 98
+          items:
+            oneOf:
+              - type: object
+                required: [defectId, keep]
+                properties:
+                  defectId: { $ref: '#/components/schemas/DefectId' }
+                  keep: { const: true }
+              - type: object
+                required: [defectId, part, sha256]
+                properties:
+                  defectId: { $ref: '#/components/schemas/DefectId' }
+                  part: { type: string, examples: ['photo_D035'] }
+                  sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+    RevisionHistoryEntry:
+      type: object
+      required: [revisionNo, at, by, reason, changes]
+      properties:
+        revisionNo: { type: integer, minimum: 0 }
+        at: { type: string, format: date-time, description: 'receivedAt for revision 0, else the correction time.' }
+        by: { type: string, description: 'The PSI username for revision 0, else the admin username.' }
+        reason: { type: [string, 'null'], description: 'null for revision 0.' }
+        changes: { description: 'Changed fields with old and new values, findings and photos changed; null for revision 0.' }
     AdminAccount:
       type: object
       required: [id, username, active, createdAt, lastLoginAt, lockedUntil]
