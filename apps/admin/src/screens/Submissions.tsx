@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Button, Pane } from '@m100/ui';
+import { Button, Chip, Pane } from '@m100/ui';
 import * as api from '../api/endpoints';
 import type { AdminSubmissionSummary, SubmissionFilter } from '../api/types';
 import { navigate, replaceQuery, routePath, useLocation } from '../app/router';
@@ -51,9 +51,12 @@ const COLUMNS: Column<AdminSubmissionSummary>[] = [
     header: 'No.',
     mono: true,
     cell: (s) => (
-      <Link className="adm-link" href={routePath({ name: 'submission', id: s.id })}>
-        {s.displayNo}
-      </Link>
+      <>
+        <Link className="adm-link" href={routePath({ name: 'submission', id: s.id })}>
+          {s.displayNo}
+        </Link>
+        {s.revisionNo > 0 ? <Chip tone="neutral"> Rev {s.revisionNo}</Chip> : null}
+      </>
     ),
   },
   { key: 'at', header: 'Waktu (WIB)', cell: (s) => moment(s.sealedAt) },

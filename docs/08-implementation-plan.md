@@ -364,10 +364,10 @@ Migration `0008`: `submission_revisions`, `submission_revision_findings`, `submi
 - [x] `04-openapi.yaml`: `AdminSubmissionDetail` lists `revisionNo`, `latestRevisionNo`, `correctedAt`, `correctedBy`, `correctionReason` and `photos[].url` as required again (left optional in T8.1/T8.2 so the contract tests stay green until the API returns them).
 
 ### T8.4 Admin app
-- [ ] A1: "Rev {n}" chip; filters on the effective version.
-- [ ] A1b: KOREKSI, the correction notice, Riwayat with each change, earlier versions read-only.
-- [ ] A1c: the form of doc 05 §20.3a for PSI lv.1 and PSI lv.2 (counts, findings, photos, live totals), the reason dialog, `409 REVISION_CONFLICT` and `422` handling, unsaved-changes warning.
-- [ ] Playwright: correct a PSI lv.1 submission (Qty Inspection and a finding) and a PSI lv.2 submission (replace a photo, add a defect with its photo); check the list chip, detail, history and CSV; a stale form gets the conflict notice.
+- [x] A1: "Rev {n}" chip; filters on the effective version.
+- [x] A1b: KOREKSI, the correction notice, Riwayat with each change, earlier versions read-only.
+- [x] A1c: the form of doc 05 §20.3a for PSI lv.1 and PSI lv.2 (counts, findings, photos, live totals), the reason dialog, `409 REVISION_CONFLICT` and `422` handling, unsaved-changes warning.
+- [x] Playwright: correct a PSI lv.1 submission (Qty Inspection and a finding) and a PSI lv.2 submission (replace a photo, add a defect with its photo); check the list chip, detail, history and CSV; a stale form gets the conflict notice.
 
 ### T8.5 Tablet app (web)
 Dexie version 4 (`corrections`, `correctionPhotos`); the correction check in the outbox loop (doc 03 §4.11); the S9 mark; exports from the correction (doc 03 §4.10).

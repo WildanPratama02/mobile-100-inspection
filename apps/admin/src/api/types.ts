@@ -8,6 +8,7 @@ import type {
   PhotoRule,
   Po,
   PsiLevel,
+  RevisionChanges,
 } from '@m100/shared';
 
 export type { Classification, DefectId, PhotoRule, PsiLevel };
@@ -129,6 +130,8 @@ export interface AdminSubmissionSummary {
   rft: number;
   defectRate: number;
   photoCount: number;
+  /** The revision shown (ADR-023): 0 for the PSI's submission. */
+  revisionNo: number;
 }
 
 export interface AdminFinding {
@@ -177,9 +180,26 @@ export interface AdminSubmissionDetail extends AdminSubmissionSummary {
     classification: Classification;
     qty: number;
     photoId: number | null;
+    /** Where to load the photo (original or correction, ADR-023); `null` without a photo. */
+    photoUrl: string | null;
   }[];
-  photos: { id: number; defectId: DefectId }[];
+  photos: { id: number; defectId: DefectId; url: string }[];
   audit: { id: string; at: string; actor: string; action: string; details: unknown }[];
+  /** The newest revision; a correction is made from it (`baseRevisionNo`, ADR-023). */
+  latestRevisionNo: number;
+  correctedAt: string | null;
+  correctedBy: string | null;
+  correctionReason: string | null;
+}
+
+/** One entry of `GET /admin/submissions/{id}/revisions` (doc 04 §8.1). */
+export interface RevisionHistoryEntry {
+  revisionNo: number;
+  at: string;
+  /** The PSI for revision 0, else the admin. */
+  by: string;
+  reason: string | null;
+  changes: RevisionChanges | null;
 }
 
 export interface AdminAccount {

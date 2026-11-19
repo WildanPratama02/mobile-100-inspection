@@ -9,6 +9,7 @@ export const BASE = '/admin/';
 export type Route =
   | { name: 'submissions' }
   | { name: 'submission'; id: string }
+  | { name: 'submission-correction'; id: string }
   | { name: 'psi-users' }
   | { name: 'factories' }
   | { name: 'pos' }
@@ -24,6 +25,8 @@ export function parseRoute(pathname: string): Route {
   if (pathname === BASE.slice(0, -1) || pathname === BASE) return { name: 'submissions' };
   if (!pathname.startsWith(BASE)) return { name: 'not-found' };
   const rest = pathname.slice(BASE.length).replace(/\/$/, '');
+  const correction = /^submissions\/([^/]+)\/koreksi$/.exec(rest);
+  if (correction) return { name: 'submission-correction', id: decodeURIComponent(correction[1]!) };
   const detail = /^submissions\/([^/]+)$/.exec(rest);
   if (detail) return { name: 'submission', id: decodeURIComponent(detail[1]!) };
   if (rest === 'submissions') return { name: 'submissions' };
@@ -39,6 +42,8 @@ export function routePath(route: Route): string {
       return BASE;
     case 'submission':
       return `${BASE}submissions/${encodeURIComponent(route.id)}`;
+    case 'submission-correction':
+      return `${BASE}submissions/${encodeURIComponent(route.id)}/koreksi`;
     default:
       return `${BASE}${route.name}`;
   }
