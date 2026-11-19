@@ -36,8 +36,8 @@ import { useToast } from '../app/toastContext';
 import { useOnline } from '../app/useOnline';
 import type { Auth, PhotoRow, PoRow } from '../db/schema';
 import { exportFile, type ExportFormat } from '../export/exportFile';
-import { sealedExport } from '../export/report';
-import { listOutboxPhotos } from '../db/repo';
+import { correctedExport, sealedExport } from '../export/report';
+import { listCorrectionPhotos, listOutboxPhotos } from '../db/repo';
 import { saveFile } from '../export/saveFile';
 import { useOutboxSender } from '../outbox/useOutboxSender';
 import { toJpeg } from '../photos/resize';
@@ -124,6 +124,7 @@ export function HomeScreen({ auth }: HomeScreenProps) {
   const clearSessionData = useAppStore((s) => s.clearSessionData);
   const waiting = useAppStore(waitingCount);
   const outbox = useAppStore((s) => s.outbox);
+  const corrections = useAppStore((s) => s.corrections);
   const db = useAppStoreApi().db;
   const sender = useOutboxSender();
   const toast = useToast();
@@ -177,7 +178,16 @@ export function HomeScreen({ auth }: HomeScreenProps) {
     exporting.current = true;
     try {
       const photoBlobs = await listOutboxPhotos(db, sealed.submissionUuid);
-      const report = sealedExport({ po, item: sealed, mapping, photoBlobs });
+      // A correction received from the admin replaces the sealed submission in the files (ADR-023, AC-12.5).
+      const correction = corrections[sealed.submissionUuid];
+      const report = correction
+        ? correctedExport({
+            correction,
+            mapping,
+            correctionPhotos: await listCorrectionPhotos(db, sealed.submissionUuid),
+            outboxPhotos: photoBlobs,
+          })
+        : sealedExport({ po, item: sealed, mapping, photoBlobs });
       const file = await exportFile(format, report);
       if ((await saveFile(file.name, file.blob)) === 'saved') toast(`File dibuat: ${file.name}`);
     } catch (error) {

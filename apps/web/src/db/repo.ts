@@ -6,6 +6,8 @@
 import { Dexie } from 'dexie';
 import type { DefectId, Po, PoPartial, SessionEventPayload } from '@m100/shared';
 import type {
+  CorrectionPhotoRow,
+  CorrectionRow,
   Auth,
   EventRow,
   M100Db,
@@ -436,15 +438,66 @@ export const SENT_KEPT_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Removes Terkirim items sent more than 7 days ago, with their photos. Gagal items are never removed (AC-11.4). */
 export function purgeSentOutbox(db: M100Db, now: string): Promise<string[]> {
-  return db.transaction('rw', db.outbox, db.outboxPhotos, async () => {
+  const tables = [db.outbox, db.outboxPhotos, db.corrections, db.correctionPhotos];
+  return db.transaction('rw', tables, async () => {
     const cutoff = Date.parse(now) - SENT_KEPT_MS;
     const old = (await db.outbox.where('state').equals('sent').toArray()).filter(
       (o) => o.sentAt !== null && Date.parse(o.sentAt) <= cutoff,
     );
     const ids = old.map((o) => o.submissionUuid);
     await db.outboxPhotos.where('submissionUuid').anyOf(ids).delete();
+    // A correction leaves the tablet with its item (ADR-023, doc 03 §4.11).
+    await db.correctionPhotos.where('submissionUuid').anyOf(ids).delete();
+    await db.corrections.bulkDelete(ids);
     await db.outbox.bulkDelete(ids);
     return ids;
+  });
+}
+
+// ---- Admin corrections (ADR-023, doc 03 §4.11) ----
+
+/** The corrections of a PSI's own submissions. */
+export function listCorrections(db: M100Db, username: string): Promise<CorrectionRow[]> {
+  return db.corrections.where('authorUsername').equals(username).toArray();
+}
+
+export function getCorrection(
+  db: M100Db,
+  submissionUuid: string,
+): Promise<CorrectionRow | undefined> {
+  return db.corrections.get(submissionUuid);
+}
+
+export function listCorrectionPhotos(
+  db: M100Db,
+  submissionUuid: string,
+): Promise<CorrectionPhotoRow[]> {
+  return db.correctionPhotos.where('submissionUuid').equals(submissionUuid).toArray();
+}
+
+/**
+ * Stores a correction with the photos the tablet did not hold yet, in one transaction, replacing an older one of
+ * the same submission. Photos no longer named by the correction go. Nothing of the outbox item changes.
+ */
+export function saveCorrection(
+  db: M100Db,
+  row: CorrectionRow,
+  photos: readonly CorrectionPhotoRow[],
+): Promise<void> {
+  return db.transaction('rw', db.corrections, db.correctionPhotos, async () => {
+    const stored = await db.corrections.get(row.submissionUuid);
+    if (stored && stored.revisionNo > row.revisionNo) return;
+    const kept = new Map(row.photos.map((p) => [p.defectId, p.sha256]));
+    const old = await db.correctionPhotos
+      .where('submissionUuid')
+      .equals(row.submissionUuid)
+      .toArray();
+    const stale = old
+      .filter((p) => kept.get(p.defectId) !== p.sha256)
+      .map((p) => [p.submissionUuid, p.defectId] as [string, DefectId]);
+    await db.correctionPhotos.bulkDelete(stale);
+    await db.correctionPhotos.bulkPut([...photos]);
+    await db.corrections.put(row);
   });
 }
 

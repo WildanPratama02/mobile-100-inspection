@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Version | 0.9.2 — 10 Nov 2026: Home button ADD DEFECT renamed INSPECTION; UNDO repeats through the latest NO DEFECT taps (FR-08); NO DEFECT row in the history (FR-09). 0.9.1 — 10 Nov 2026: exports from the sealed submission, enabled after SUBMIT PO (FR-12, AC-12.1–12.4); HAPUS DATA DEFECT (AC-04.3). 0.9 — 30 Oct 2026 (ADR-022): ALL DEFECT and photos per defect, INSPECTION REWORK QTY, REWORK AND APPROVED (FR-16, BR-11), END INSPECTION requires a finding, template exports. v0.8 — 29 Oct 2026 (ADR-021): PSI lv.2 counts Qty Inspection with NO DEFECT and END INSPECTION again (A-Grade = NO DEFECT, upper limit); PSI lv.1 keeps FR-15; tablet data per factory and cell (AC-02.4); exports without Foto column and defect list (FR-12). v0.7 — Qty Inspection entered by the PSI, NO DEFECT removed, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026; FR-15, BR-01, BR-02, BR-10). v0.6: backend moved to PostgreSQL + photo store; admin screens added (ADR-018) |
+| Version | 0.10 — 19 Nov 2026 (ADR-023): admins correct a submitted PO as a new revision with a reason (FR-17, BR-07, AC-14.4); the PSI sees the correction on the tablet and exports use it (AC-12.5). 0.9.2 — 10 Nov 2026: Home button ADD DEFECT renamed INSPECTION; UNDO repeats through the latest NO DEFECT taps (FR-08); NO DEFECT row in the history (FR-09). 0.9.1 — 10 Nov 2026: exports from the sealed submission, enabled after SUBMIT PO (FR-12, AC-12.1–12.4); HAPUS DATA DEFECT (AC-04.3). 0.9 — 30 Oct 2026 (ADR-022): ALL DEFECT and photos per defect, INSPECTION REWORK QTY, REWORK AND APPROVED (FR-16, BR-11), END INSPECTION requires a finding, template exports. v0.8 — 29 Oct 2026 (ADR-021): PSI lv.2 counts Qty Inspection with NO DEFECT and END INSPECTION again (A-Grade = NO DEFECT, upper limit); PSI lv.1 keeps FR-15; tablet data per factory and cell (AC-02.4); exports without Foto column and defect list (FR-12). v0.7 — Qty Inspection entered by the PSI, NO DEFECT removed, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026; FR-15, BR-01, BR-02, BR-10). v0.6: backend moved to PostgreSQL + photo store; admin screens added (ADR-018) |
 | Date | 30 Oct 2026 |
 | Owner | QIP Digital Team, PT Parkland World Indonesia |
 | Related | [00 Document Map](00-document-map.md), [07 Decision Log](07-decision-log.md), clickable prototype "Mobile 100% Inspection" v3 |
@@ -54,11 +54,11 @@ The PSI app has no admin features; admins use a separate web app (FR-14, ADR-018
 - Export the current session to PDF and Excel.
 - SUBMIT PO: store the session in the database (`submissions`, `submission_findings`, `submission_photos`).
 - Working without Wi-Fi: inspection continues offline, and Submit PO waits in the tablet's outbox until the connection returns.
-- **Admin web app** (FR-14): master data (with one-time import from CSV/XLSX), a DataTable of submitted inspections, admins, audit log.
+- **Admin web app** (FR-14): master data (with one-time import from CSV/XLSX), a DataTable of submitted inspections, corrections of submitted inspections (FR-17, ADR-023), admins, audit log.
 
 ### Not in release 1
 
-- Editing, deleting or voiding submitted results (submissions are immutable; a mistake is fixed by the database owner outside the app).
+- Deleting or voiding submitted results, and changing them in place. A mistake is corrected by an admin as a new revision (FR-17, ADR-023); the original stays.
 - Registering tablets in the admin app (done with the server commands `device:add`, `device:revoke`, `device:list`).
 - Dashboards and charts (reports come from the views and CSV export; a dashboard may come later, OQ-13).
 - Any connection to the old Google Sheet or AppSheet.
@@ -283,7 +283,8 @@ EXPORT PDF and EXPORT EXCEL create, on the tablet, the file of the selected PO's
 - AC-12.1 Both formats follow the layouts and report figures below; every defect appears, not only the Top 5. Excel uses one sheet, values only and no formulas, with thin borders on the table cells and a light-gray fill on the part headings and the table header, as in the template.
 - AC-12.2 PDF includes the photos stored with the submission, one per finding defect. The PSI lv.2 photo check (BR-04) runs at SUBMIT PO, so a sealed submission always has its required photos; PSI lv.1 takes no photos.
 - AC-12.3 File names follow `PSI_<PO>_<yyyyMMdd>.pdf` / `.xlsx`, using the submission's inspection date: the WIB date of its `sealedAt`, the value stored as `inspection_date`. This date supplies Excel Part I Date, PDF DATE INSPECTION and the file name, never the export time.
-- AC-12.4 Export works offline and reads the outbox only: it changes neither the sealed submission nor the open session.
+- AC-12.4 Export works offline and reads the tablet's own data only (the outbox and its stored corrections): it changes neither the sealed submission nor the open session.
+- AC-12.5 (ADR-023) When an admin has corrected the submission and the tablet has received the correction (FR-17, AC-17.6), both files use the corrected version, its photos included, and name the revision ("Dikoreksi admin", revision number and time). Without a received correction they use the sealed submission.
 
 **Excel layout** (one sheet, values only; `write-excel-file`). Title "PSI Inspection Report". Follow `reference/excel-format/excel-template.xlsx` and the user-confirmed layout of 30 Oct 2026:
 
@@ -332,14 +333,30 @@ A separate web app at `/admin/` for the administrators, on a laptop or tablet br
 2. **PSI users, factories, cells**: list, add, edit, deactivate (never delete). A name may exist at both levels.
 3. **POs**: search; **import** a CSV/XLSX with a dry run (counts of new / changed / invalid rows, errors by row) before applying; the import adds and updates by PO number and never deletes.
 4. **Defects and area map**: view; import the mapping workbook with the same dry run.
-5. **Submissions (DataTable)**: read-only list filtered by date, factory, cell, user, PO; open one with its findings and photos; export the filtered list to CSV.
+5. **Submissions (DataTable)**: list filtered by date, factory, cell, user, PO; open one with its findings and photos; export the filtered list to CSV; correct one (FR-17).
 6. **Admins**: add, reset password, deactivate.
 7. **Audit log**: who changed what and when, for every admin action and every server command.
 
 - AC-14.1 Every change to master data raises the master version, so tablets receive it within 30 minutes (AC-13.2) while open.
 - AC-14.2 A deactivated user, cell or PO no longer appears on tablets but stays on past submissions (they hold a snapshot).
 - AC-14.3 An import with any invalid row applies nothing; the report lists every invalid row.
-- AC-14.4 The Submissions list has no edit, delete or void action; it only filters, opens, shows photos and exports.
+- AC-14.4 The Submissions list has no delete or void action. A submission is changed only by a correction (FR-17), which adds a revision and keeps the original (amended 19 Nov 2026, ADR-023).
+
+### FR-17 Correcting a submission (M) — added 19 Nov 2026, ADR-023
+
+An administrator corrects a submitted PO in the admin app (doc 05 §20.3, A1c). The correction is stored as a new **revision**; the original and every earlier revision stay unchanged and readable.
+
+1. Any active admin opens a submission and chooses KOREKSI. The form shows the effective version (the newest revision, or the original).
+2. Every part can be corrected: PSI name (same level), factory and cell, PO (article, model, destination, Qty Order, PODD and CRD then come from the PO master), PO PARTIAL, inspection date and time, the counts (INSPECTION REWORK QTY, B-GRADE pairs, REWORK AND APPROVED, and QTY INSPECTION for PSI lv.1 or NO DEFECT for PSI lv.2), the findings and the photos. The PSI level, and with it the counting rule and the photo rule, cannot be corrected.
+3. Saving asks for a reason (10–500 characters) in a confirmation dialog.
+
+- AC-17.1 A correction that breaks BR-01, BR-04 (with the photo rule of the original), BR-10, BR-11 or a finding rule is refused, names every problem and stores nothing. The API computes the totals itself; the database checks them again.
+- AC-17.2 Without a reason of 10–500 characters nothing is stored.
+- AC-17.3 The original rows never change (BR-07); revisions are numbered 1, 2, …; the detail shows the history (number, time, admin, reason, changed fields) and can show each earlier version.
+- AC-17.4 The admin list, detail, CSV and the reporting views show the effective version; `display_no` stays the same; a corrected submission is marked with its revision number.
+- AC-17.5 Each correction writes one audit-log row with the admin, the reason and the old and new values. When another admin saved a revision in the meantime, the save is refused and the form asks to reload.
+- AC-17.6 While a sent submission is still on the tablet (7 days after sending), the tablet receives its newest correction within 30 minutes while the app is open and online; Pengaturan → Pengiriman shows "Dikoreksi admin" with the time and the reason, and the exports follow AC-12.5. Home and the open session never change because of a correction.
+- AC-17.7 A resend of the original by the tablet is still answered as already written; a correction never makes a tablet item Gagal.
 
 ## 7. Business rules
 
@@ -351,7 +368,7 @@ A separate web app at `/admin/` for the administrators, on a laptop or tablet br
 | BR-04 | For PSI lv.2, every defect with a finding must have one photo before SUBMIT PO or either export. PSI lv.1 takes no photos. Only new PSI lv.2 payloads carry `photoRule: 'ALL'`; PSI lv.1 payloads carry none; older sealed payloads without it retain the Top 5 rule (ADR-022, doc 04). |
 | BR-05 | Only one inspection can be active per PO at a time. REWORK and B-GRADE are disabled while one is active. |
 | BR-06 | A sealed session is written at most once. Its UUID identifies it across retries. |
-| BR-07 | Submissions are immutable. Nobody edits, deletes or voids one through the app; the database rejects every UPDATE and DELETE. |
+| BR-07 | Submissions are immutable. Nobody changes, deletes or voids a stored submission or revision; the database rejects every UPDATE and DELETE. An admin corrects a submission only by adding a revision (FR-17, ADR-023); reports use the newest revision, and the original stays readable. |
 | BR-08 | A level of the drill-down with exactly one option (sub-area or family) is selected automatically and skipped by BACK. |
 | BR-09 | Sessions and the PO list belong to one user on one tablet, in one factory and cell (AC-02.3, AC-02.4). |
 | BR-10 | PSI lv.2 (ADR-021): at least 1 pair counted and at most the partial quantity, otherwise Qty Order; the taps that add a pair stop there (FR-06), and the API checks the maximum on its own. PSI lv.1 — valid Qty Inspection (ADR-019): a whole number, at least 1, at least the session's Qty Defect, and at most the PO's partial quantity when PO PARTIAL is set, otherwise its Qty Order. When Qty Defect is above that maximum, no value is valid. A session is submitted only with a valid Qty Inspection; the API checks the same rules on its own (doc 04 §4.2). |
@@ -378,7 +395,7 @@ Master data (`psi_users`, `factories`, `cells`, `pos`, `defects`, `areas`, `sub_
 | NFR-03 | **Speed.** Recording a tap never waits on the network; feedback within 100 ms. App start from cache within 3 s on the target tablet. |
 | NFR-04 | **Offline.** After the first online launch, login, inspection, defect input, photos, results and export all work without a connection. Submit PO waits in the outbox. |
 | NFR-05 | **Durability.** Every change to a session is saved on the tablet before the screen confirms it. Closing, reloading or a browser crash loses nothing that was confirmed. |
-| NFR-06 | **Integrity.** A submission is stored in one database transaction (complete or absent) and every step is safe to repeat, so a retry never duplicates it (BR-06). Submitted data is immutable (BR-07). |
+| NFR-06 | **Integrity.** A submission is stored in one database transaction (complete or absent) and every step is safe to repeat, so a retry never duplicates it (BR-06). Submitted data is immutable (BR-07); a correction adds a revision in one transaction (FR-17). |
 | NFR-07 | **Capacity.** One database transaction per submission, answered synchronously (doc 02 §6). The system handles 30 tablets (design target 50) submitting within the same 5 minutes without losing a submission. |
 | NFR-08 | **Security.** Tablets call the API over HTTPS with a device key and a token issued by the API. Name-only PSI login is a known, accepted risk (ADR-006). Admins sign in with a password (argon2id), a lockout and an audit log. Database and photo store are reachable only from the server itself. |
 | NFR-09 | **Language and format.** Indonesian UI with the fixed English shop-floor labels listed in doc 00; WIB time; Indonesian number format on screen (2.400; 18,8%). Dates and numbers are stored as typed values, not text. |
@@ -435,6 +452,8 @@ Master data (`psi_users`, `factories`, `cells`, `pos`, `defects`, `areas`, `sub_
 | PSI Inspection Report | User-visible product name (ADR-022); repository and technical names remain M100 |
 | INSPECTION REWORK QTY | REWORK inspections started (`counts.rework`); read-only; UNDO of the start subtracts one |
 | REWORK AND APPROVED | REWORK pairs repaired, re-inspected and passed; input limited by BR-11 |
+| Revision | An admin's correction of a submission (FR-17, ADR-023): a complete new version with a reason; the original is revision 0 and never changes |
+| Effective version | The newest revision of a submission, or the original when it has none; what reports, the admin app and the tablet show |
 | Offered Lot Qty | Partial quantity when set, otherwise Qty Order |
 | Balance Qty | Offered Lot Qty − QTY INSPECTION |
 | Balance Rework | INSPECTION REWORK QTY − REWORK AND APPROVED |

@@ -69,6 +69,38 @@ export async function apiFetch(
   throw problemOf(response.status, parsed, retryAfterOf(response.headers.get('Retry-After')));
 }
 
+/**
+ * A binary answer (a correction photo, doc 04 §3.4): the body as a `Blob`. Errors as `apiFetch`: a problem+json
+ * answer is an `ApiError`, no answer an `OfflineError`.
+ */
+export async function apiFetchBlob(
+  request: Pick<ApiRequest, 'path' | 'deviceKey' | 'token' | 'timeoutMs'>,
+  fetchImpl: Fetch = (input, init) => fetch(input, init),
+): Promise<Blob> {
+  const headers = new Headers({ Accept: 'image/jpeg, application/problem+json' });
+  if (request.deviceKey) headers.set('X-Device-Key', request.deviceKey);
+  if (request.token) headers.set('Authorization', `Bearer ${request.token}`);
+  let response: Response;
+  try {
+    response = await fetchImpl(`${API_BASE}${request.path}`, {
+      method: 'GET',
+      headers,
+      cache: 'no-store',
+      signal: AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS),
+    });
+    if (response.ok) return await response.blob();
+    const text = await response.text();
+    throw problemOf(
+      response.status,
+      parseJson(text),
+      retryAfterOf(response.headers.get('Retry-After')),
+    );
+  } catch (error) {
+    if (error instanceof ApiError || error instanceof OfflineError) throw error;
+    throw new OfflineError(error);
+  }
+}
+
 /** `Retry-After` in seconds: a number of seconds or an HTTP date (RFC 9110 §10.2.3); `null` when absent or unreadable. */
 export function retryAfterOf(value: string | null, now: number = Date.now()): number | null {
   if (value === null || value.trim() === '') return null;

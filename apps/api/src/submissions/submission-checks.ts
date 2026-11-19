@@ -1,13 +1,18 @@
 /**
  * The checks of doc 04 §4.2 that need no database: counts against findings, duplicate findings, the partial
- * quantity, the photo rule and the tablet clock. Each returns every failure it finds; nothing here throws.
+ * quantity, the photo rule and the tablet clock. Each returns every failure it finds; nothing here throws. The
+ * rules themselves live in `@m100/shared` (`rules.ts`), so an admin correction is checked the same way (ADR-023);
+ * the photo entries and bytes are checked here.
  */
 import {
-  allDefects,
+  checkClock as sharedCheckClock,
+  checkCounts as sharedCheckCounts,
+  checkDuplicateFindings as sharedCheckDuplicateFindings,
+  checkPartial as sharedCheckPartial,
   type Classification,
   type DefectId,
-  missingPhotos,
   type PhotoRule,
+  photoCoverage,
   type SubmissionRequest,
   takesPhotos,
 } from '@m100/shared';
@@ -15,7 +20,7 @@ import type { Failure } from '../errors/validation';
 import { sha256Hex } from './multipart';
 
 /** How far `sealedAt` may be ahead of the server clock (doc 04 §4.2 rule 8, R7). */
-export const CLOCK_TOLERANCE_MS = 5 * 60 * 1000;
+export { CLOCK_TOLERANCE_MS } from '@m100/shared';
 
 const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
 
@@ -46,101 +51,19 @@ export function checkSubmission(
   ];
 }
 
-/**
- * Rules 3 and 4: at least one inspection, and every finding belongs to an inspection type that was started. The
- * request carries no totals. ADR-019 quantities are checked against findings and the PO's own limits; tapped
- * counts (ADR-021) against the PO's maximum.
- */
-export function checkCounts(
-  { counts, findings, partial }: SubmissionRequest,
-  orderQty: number | null = null,
-): Failure[] {
-  const failures: Failure[] = [];
-  if (counts.noDefect === undefined) {
-    const qtyDefect = findings.reduce((sum, f) => sum + f.qty, 0);
-    const maximum = partial?.qty ?? orderQty;
-    const impossible = maximum !== null && qtyDefect > maximum;
-    if (counts.qtyInspection < qtyDefect || impossible) {
-      failures.push({
-        path: 'counts.qtyInspection',
-        code: 'INVALID',
-        message: `Qty Inspection minimal ${qtyDefect}: jumlah defect yang tercatat.`,
-      });
-    }
-    if (maximum !== null && (counts.qtyInspection > maximum || impossible)) {
-      failures.push({
-        path: 'counts.qtyInspection',
-        code: 'INVALID',
-        message: `Qty Inspection maksimal ${maximum} pasang.`,
-      });
-    }
-  } else {
-    // Tapped counts (PSI lv.2, ADR-021): at least one pair, at most the partial quantity or Qty Order.
-    const pairs = counts.rework + counts.bGrade + counts.noDefect;
-    const maximum = partial?.qty ?? orderQty;
-    if (pairs < 1) {
-      failures.push({
-        path: 'counts',
-        code: 'INVALID',
-        message: 'Qty Inspection 0: belum ada inspeksi.',
-      });
-    } else if (maximum !== null && pairs > maximum) {
-      failures.push({
-        path: 'counts',
-        code: 'INVALID',
-        message: `Qty Inspection maksimal ${maximum} pasang.`,
-      });
-    }
-  }
-  // BR-11 (ADR-022): Rework and Approved, when sent, is at most INSPECTION REWORK QTY; ≥ 0 is in the schema.
-  if (counts.reworkApproved !== undefined && counts.reworkApproved > counts.rework) {
-    failures.push({
-      path: 'counts.reworkApproved',
-      code: 'INVALID',
-      message: `REWORK AND APPROVED maksimal ${counts.rework} pasang (INSPECTION REWORK QTY).`,
-    });
-  }
-  findings.forEach((f, i) => {
-    const started = f.inspectionType === 'REWORK' ? counts.rework : counts.bGrade;
-    if (started < 1) {
-      failures.push({
-        path: `findings[${i}].inspectionType`,
-        code: 'INVALID',
-        message: `Temuan ${f.inspectionType} tanpa inspeksi ${f.inspectionType}.`,
-      });
-    }
-  });
-  return failures;
+/** Rules 3 and 4 (shared with corrections, ADR-023). */
+export function checkCounts(request: SubmissionRequest, orderQty: number | null = null): Failure[] {
+  return sharedCheckCounts(request, orderQty);
 }
 
-/** Rule 5: one finding per inspection type + area + sub-area + defect. */
-export function checkDuplicateFindings({ findings }: SubmissionRequest): Failure[] {
-  const seen = new Set<string>();
-  const failures: Failure[] = [];
-  findings.forEach((f, i) => {
-    const key = [f.inspectionType, f.areaId, f.subAreaId, f.defectId].join('|');
-    if (seen.has(key)) {
-      failures.push({
-        path: `findings[${i}]`,
-        code: 'DUPLICATE',
-        message: 'Temuan ini dikirim dua kali.',
-      });
-    }
-    seen.add(key);
-  });
-  return failures;
+/** Rule 5. */
+export function checkDuplicateFindings(request: SubmissionRequest): Failure[] {
+  return sharedCheckDuplicateFindings(request);
 }
 
-/** Rule 6: the partial quantity is at most the PO's ORDER QTY (number 1–99 and qty ≥ 1 are in the schema). */
-export function checkPartial({ partial }: SubmissionRequest, orderQty: number | null): Failure[] {
-  if (!partial || orderQty === null || partial.qty <= orderQty) return [];
-  return [
-    {
-      path: 'partial.qty',
-      code: 'INVALID',
-      message: `Qty partial lebih dari ORDER QTY (${orderQty}).`,
-    },
-  ];
+/** Rule 6. */
+export function checkPartial(request: SubmissionRequest, orderQty: number | null): Failure[] {
+  return sharedCheckPartial(request, orderQty);
 }
 
 /**
@@ -226,27 +149,15 @@ export function checkPhotos(
     }
   }
 
-  const known = request.findings.filter((f) => defects.has(f.defectId));
-  const ranked = allDefects(known, { defect: (id) => defects.get(id) });
-  for (const row of missingPhotos(ranked, photographed, storedPhotoRule(request) ?? 'TOP5')) {
-    failures.push({
-      path: 'photos',
-      code: 'PHOTO_MISSING',
-      message: `Foto wajib untuk ${row.defectId}.`,
-      label: `${row.defectId} ${defects.get(row.defectId)?.name ?? ''}`.trim(),
-    });
-  }
+  failures.push(
+    ...photoCoverage(request.findings, photographed, storedPhotoRule(request) ?? 'TOP5', {
+      defect: (id) => defects.get(id),
+    }),
+  );
   return failures;
 }
 
 /** Rule 8: `sealedAt` is not more than 5 minutes ahead of the server clock. */
 export function checkClock({ sealedAt }: SubmissionRequest, now: Date): Failure[] {
-  if (Date.parse(sealedAt) <= now.getTime() + CLOCK_TOLERANCE_MS) return [];
-  return [
-    {
-      path: 'sealedAt',
-      code: 'INVALID',
-      message: 'Jam tablet lebih dari 5 menit di depan server.',
-    },
-  ];
+  return sharedCheckClock(sealedAt, now);
 }

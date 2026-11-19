@@ -65,6 +65,33 @@ async function renderMenu(...items: OutboxRow[]) {
 }
 
 describe('Pengiriman in the gear menu (AC-11.3, doc 05 §14)', () => {
+  it('marks a sent item an admin corrected, with the time and the reason (ADR-023)', async () => {
+    await repo.saveCorrection(
+      db,
+      {
+        submissionUuid: 'u1',
+        authorUsername: AUTH.username,
+        revisionNo: 1,
+        correctedAt: '2026-11-19T02:05:00.000Z',
+        reason: 'NO DEFECT terhitung satu kali terlalu banyak',
+        submission: {} as never,
+        photos: [],
+        checkedAt: '2026-11-19T03:00:00.000Z',
+      },
+      [],
+    );
+    const outbox = await renderMenu(
+      item('u1', '2026-10-16T01:05:00.000Z', { state: 'sent' }),
+      item('u2', '2026-10-16T03:00:00.000Z', { state: 'sent' }),
+    );
+    const [plain, corrected] = outbox.getAllByRole('listitem');
+    expect(corrected).toHaveTextContent('Dikoreksi admin');
+    expect(corrected).toHaveTextContent(
+      /Dikoreksi admin 19 Nov 09[.:]05 · NO DEFECT terhitung satu kali terlalu banyak/,
+    );
+    expect(plain).not.toHaveTextContent('Dikoreksi');
+  });
+
   it('says so when there is nothing', async () => {
     const outbox = await renderMenu();
     expect(outbox.getByText('Tidak ada pengiriman.')).toBeInTheDocument();

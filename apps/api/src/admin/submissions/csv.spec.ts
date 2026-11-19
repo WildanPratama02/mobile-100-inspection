@@ -43,6 +43,10 @@ const ROW: SubmissionRow = {
   countingRule: 'ADR-008',
   qtyReworkApproved: 4,
   photoRule: 'ALL',
+  revisionNo: 0,
+  correctedAt: null,
+  correctedBy: null,
+  correctionReason: null,
 };
 
 describe('CSV fields (RFC 4180)', () => {
@@ -62,7 +66,16 @@ describe('CSV fields (RFC 4180)', () => {
     const header = csvHeader();
     expect(header.startsWith(CSV_BOM)).toBe(true);
     expect(header).toBe(`${CSV_BOM}${EXPORT_COLUMNS.join(',')}\r\n`);
-    expect(EXPORT_COLUMNS.slice(-3)).toEqual(['top5_defect_id', 'top5_defect_name', 'top5_qty']);
+    // The Top 5, then the revision columns of ADR-023 at the end.
+    expect(EXPORT_COLUMNS.slice(-7)).toEqual([
+      'top5_defect_id',
+      'top5_defect_name',
+      'top5_qty',
+      'revision_no',
+      'corrected_at',
+      'corrected_by',
+      'correction_reason',
+    ]);
   });
 });
 

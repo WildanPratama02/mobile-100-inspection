@@ -13,6 +13,8 @@ import {
   type DefectId,
   type Finding,
   formatDisplayNo,
+  inspectionDate,
+  partialText,
   type InspectionType,
   type PhotoRule,
   type PsiLevel,
@@ -35,6 +37,12 @@ import {
   type SubmissionFindingRow,
   type SubmissionRow,
 } from '../../repositories/submission-admin.repository';
+import {
+  SUBMISSION_REVISION_REPOSITORY,
+  type SubmissionRevisionRepository,
+  type VersionPhoto,
+  type VersionRecord,
+} from '../../repositories/submission-revision.repository';
 import { AdminDb } from '../admin-db';
 import {
   isoDate,
@@ -64,6 +72,15 @@ const filterFields = {
 };
 const filterSchema = z.object(filterFields).refine(rangeInOrder, RANGE_ERROR);
 const listSchema = z.object({ ...filterFields, page: pageQuery }).refine(rangeInOrder, RANGE_ERROR);
+/** `?revision=<n>` of the detail (ADR-023, doc 04 §8.1). */
+const detailSchema = z.object({
+  revision: optionalQuery(
+    z
+      .string()
+      .regex(/^(0|[1-9][0-9]{0,8})$/, 'revision harus bilangan bulat 0 atau lebih.')
+      .transform(Number),
+  ),
+});
 
 export interface AdminSubmissionSummary {
   countingRule: CountingRule;
@@ -84,6 +101,8 @@ export interface AdminSubmissionSummary {
   rft: number;
   defectRate: number;
   photoCount: number;
+  /** The revision shown (ADR-023); 0 for the PSI's submission. */
+  revisionNo: number;
 }
 
 export interface AdminSubmissionPage {
@@ -116,6 +135,8 @@ export interface AdminTop5Place {
   qty: number;
   /** The photo of this defect, `null` when it has none (PSI lv.1). */
   photoId: number | null;
+  /** Where to load it: `/v1/admin/photos/{id}` or, for a correction, `/v1/admin/revision-photos/{id}`. */
+  photoUrl: string | null;
 }
 
 export interface AdminSubmissionDetail extends AdminSubmissionSummary {
@@ -140,8 +161,13 @@ export interface AdminSubmissionDetail extends AdminSubmissionSummary {
   photoRule: PhotoRule | null;
   findings: AdminFinding[];
   top5: AdminTop5Place[];
-  photos: { id: number; defectId: string }[];
+  photos: { id: number; defectId: string; url: string }[];
   audit: { id: string; at: string; actor: string; action: string; details: unknown }[];
+  /** The newest revision; the correction form sends it as `baseRevisionNo` (ADR-023). */
+  latestRevisionNo: number;
+  correctedAt: string | null;
+  correctedBy: string | null;
+  correctionReason: string | null;
 }
 
 interface CsvBatch {
@@ -165,6 +191,8 @@ export class SubmissionsAdminService {
     @Inject(PHOTO_STORE) private readonly photos: PhotoStore,
     @Inject(ReadinessService) private readonly readiness: ReadinessService,
     @Inject(AdminDb) private readonly db: AdminDb,
+    @Inject(SUBMISSION_REVISION_REPOSITORY)
+    private readonly revisions: SubmissionRevisionRepository,
   ) {}
 
   async list(query: unknown): Promise<AdminSubmissionPage> {
@@ -181,95 +209,55 @@ export class SubmissionsAdminService {
     return { total, page, pageSize: SUBMISSIONS_PAGE_SIZE, items: rows.map(summaryOf) };
   }
 
-  async detail(id: string): Promise<AdminSubmissionDetail> {
+  /**
+   * One submission: its effective version (ADR-023), or version `revision` (0 = the PSI's submission) when the
+   * query names one; `404` for an unknown submission or revision.
+   */
+  async detail(id: string, query: unknown = {}): Promise<AdminSubmissionDetail> {
     if (!isUuid(id)) throw new ApiProblem('NOT_FOUND', { detail: NOT_FOUND_DETAIL });
+    const { revision } = parse(detailSchema, query);
     const found = await this.db.run(async () => {
-      const row = await this.repo.findById(id);
-      if (!row) return null;
-      const [findings, photos, audit] = await Promise.all([
-        this.repo.findings([id]),
-        this.repo.photos([id]),
-        this.auditLog.search({ entity: 'submissions', entityId: id }, { offset: 0, limit: 100 }),
-      ]);
-      return { row, findings, photos, audit: audit.items };
+      const record = await this.revisions.findVersion(id, revision);
+      if (!record) return null;
+      const audit = await this.auditLog.search(
+        { entity: 'submissions', entityId: id },
+        { offset: 0, limit: 100 },
+      );
+      return { record, audit: audit.items };
     });
     if (!found) throw new ApiProblem('NOT_FOUND', { detail: NOT_FOUND_DETAIL });
-    const { row, findings, photos, audit } = found;
-    const photoOf = new Map(photos.map((p) => [p.defectId, p.id]));
-    return {
-      ...summaryOf(row),
-      receivedAt: toWibIso(row.receivedAt),
-      appVersion: row.appVersion,
-      article: row.article,
-      model: row.model,
-      destination: row.destination,
-      orderQty: row.orderQty,
-      podd: row.podd,
-      crd: row.crd,
-      partial:
-        row.partialNo !== null && row.partialQty !== null
-          ? { number: row.partialNo, qty: row.partialQty }
-          : null,
-      counts: {
-        rework: row.qtyRework,
-        bGrade: row.qtyBGradeInspections,
-        noDefect: row.qtyNoDefect,
-        qtyInspection: row.qtyInspection,
-        reworkApproved: row.qtyReworkApproved,
-      },
-      photoRule: row.photoRule,
-      findings: findings.map((f) => ({
-        inspectionType: f.inspectionType,
-        areaId: f.areaId,
-        areaName: f.areaName,
-        subAreaId: f.subAreaId,
-        subAreaName: f.subAreaName,
-        familyId: f.familyId,
-        familyName: f.familyName,
-        defectId: f.defectId,
-        defectName: f.defectName,
-        classification: f.severity,
-        qty: f.qty,
-        firstRecordedAt: toWibIso(f.firstRecordedAt),
-      })),
-      top5: top5Of(findings).map((place, i) => ({
-        rank: i + 1,
-        defectId: place.defectId,
-        defectName: place.defectName,
-        classification: place.classification,
-        qty: place.qty,
-        photoId: photoOf.get(place.defectId) ?? null,
-      })),
-      photos: photos.map((p) => ({ id: p.id, defectId: p.defectId })),
-      audit: audit.map((a) => ({
-        id: a.id,
-        at: toWibIso(a.at),
-        actor: a.actor,
-        action: a.action,
-        details: a.details,
-      })),
-    };
+    return detailOf(found.record, found.audit);
   }
 
   /**
-   * The JPEG of photo `id`, exactly as stored. A missing object (a row must never point to one, doc 02 §6.1) is
-   * logged and answered `404`; a store error flips the `PHOTO_STORE` check and answers `503`.
+   * The JPEG of photo `id` of the original (`submission_photos`), exactly as stored. A missing object (a row must
+   * never point to one, doc 02 §6.1) is logged and answered `404`; a store error flips the `PHOTO_STORE` check and
+   * answers `503`.
    */
   async photo(id: string): Promise<Readable> {
-    const n = /^[1-9][0-9]{0,15}$/.test(id) ? Number(id) : NaN;
-    if (!Number.isSafeInteger(n)) {
-      throw new ApiProblem('NOT_FOUND', { detail: PHOTO_NOT_FOUND_DETAIL });
-    }
+    const n = photoIdOf(id);
     const row = await this.db.run(() => this.repo.photo(n));
     if (!row) throw new ApiProblem('NOT_FOUND', { detail: PHOTO_NOT_FOUND_DETAIL });
+    return this.stream(row.id, row.objectKey);
+  }
+
+  /** The JPEG of a correction's photo (`submission_revision_photos`, ADR-023), like `photo`. */
+  async revisionPhoto(id: string): Promise<Readable> {
+    const n = photoIdOf(id);
+    const row = await this.db.run(() => this.revisions.revisionPhoto(n));
+    if (!row) throw new ApiProblem('NOT_FOUND', { detail: PHOTO_NOT_FOUND_DETAIL });
+    return this.stream(row.id, row.objectKey);
+  }
+
+  private async stream(id: number, objectKey: string): Promise<Readable> {
     try {
-      const stream = await this.photos.get(row.objectKey);
+      const stream = await this.photos.get(objectKey);
       // A read that fails at once (a disk error) must still become a problem answer, not a broken body.
       await once(stream, 'readable');
       return stream;
     } catch (error) {
       if (error instanceof PhotoNotFound) {
-        this.logger.error(`Photo ${row.id} has a row but no object (${row.objectKey})`);
+        this.logger.error(`Photo ${id} has a row but no object (${objectKey})`);
         throw new ApiProblem('NOT_FOUND', { detail: PHOTO_NOT_FOUND_DETAIL });
       }
       this.readiness.reportFailure('PHOTO_STORE', error);
@@ -336,6 +324,7 @@ function summaryOf(row: SubmissionRow): AdminSubmissionSummary {
     rft: Number(row.rft),
     defectRate: Number(row.defectRate),
     photoCount: row.photoCount,
+    revisionNo: row.revisionNo,
   };
 }
 
@@ -364,6 +353,110 @@ function top5Of(
       classification: d.classification,
       qty: d.qty,
     }));
+}
+
+/** Where the admin app loads a photo of a version (ADR-023). */
+export function photoUrl(photo: Pick<VersionPhoto, 'source' | 'id'>): string {
+  return photo.source === 'revision'
+    ? `/v1/admin/revision-photos/${photo.id}`
+    : `/v1/admin/photos/${photo.id}`;
+}
+
+/** The detail of one version (doc 04 §10 A13, §8.1). */
+function detailOf(
+  record: VersionRecord,
+  audit: readonly { id: string; at: Date; actor: string; action: string; details: unknown }[],
+): AdminSubmissionDetail {
+  const { version: v, totals } = record;
+  const photoOf = new Map(record.photos.map((p) => [p.defectId, p]));
+  const findings = v.findings;
+  const byDefect = new Map(findings.map((f) => [f.defectId, f]));
+  const ranked = rankDefects(findings, (id: DefectId) => byDefect.get(id)!.severity).slice(0, 5);
+  return {
+    countingRule: record.countingRule,
+    id: record.submissionId,
+    displayNo: formatDisplayNo(record.displayNo),
+    sealedAt: v.sealedAt,
+    inspectionDate: inspectionDate(v.sealedAt),
+    username: v.username,
+    level: record.level,
+    factory: v.factory,
+    cell: v.cell,
+    po: v.po,
+    partialText: v.partial ? partialText(v.partial, v.orderQty) : null,
+    qtyInspection: totals.qtyInspection,
+    qtyDefect: totals.qtyDefect,
+    qtyAGrade: totals.qtyAGrade,
+    qtyBGrade: totals.qtyBGrade,
+    rft: totals.rft,
+    defectRate: totals.defectRate,
+    photoCount: record.photos.length,
+    revisionNo: record.revisionNo,
+    receivedAt: toWibIso(record.receivedAt),
+    appVersion: record.appVersion,
+    article: v.article,
+    model: v.model,
+    destination: v.destination,
+    orderQty: v.orderQty,
+    podd: v.podd,
+    crd: v.crd,
+    partial: v.partial,
+    counts: {
+      rework: v.counts.rework,
+      bGrade: v.counts.bGrade,
+      noDefect: v.counts.noDefect ?? null,
+      qtyInspection: totals.qtyInspection,
+      reworkApproved: v.counts.reworkApproved,
+    },
+    photoRule: record.photoRule,
+    findings: findings.map((f) => ({
+      inspectionType: f.inspectionType,
+      areaId: f.areaId,
+      areaName: f.areaName,
+      subAreaId: f.subAreaId,
+      subAreaName: f.subAreaName,
+      familyId: f.familyId,
+      familyName: f.familyName,
+      defectId: f.defectId,
+      defectName: f.defectName,
+      classification: f.severity,
+      qty: f.qty,
+      firstRecordedAt: f.firstRecordedAt,
+    })),
+    top5: ranked.map((place, i) => {
+      const photo = photoOf.get(place.defectId);
+      return {
+        rank: i + 1,
+        defectId: place.defectId,
+        defectName: byDefect.get(place.defectId)!.defectName,
+        classification: place.classification,
+        qty: place.qty,
+        photoId: photo?.id ?? null,
+        photoUrl: photo ? photoUrl(photo) : null,
+      };
+    }),
+    photos: record.photos.map((p) => ({ id: p.id, defectId: p.defectId, url: photoUrl(p) })),
+    audit: audit.map((a) => ({
+      id: a.id,
+      at: toWibIso(a.at),
+      actor: a.actor,
+      action: a.action,
+      details: a.details,
+    })),
+    latestRevisionNo: record.latestRevisionNo,
+    correctedAt: record.correctedAt ? toWibIso(record.correctedAt) : null,
+    correctedBy: record.correctedBy,
+    correctionReason: record.correctionReason,
+  };
+}
+
+/** A photo id from the path; anything else is `404`. */
+function photoIdOf(id: string): number {
+  const n = /^[1-9][0-9]{0,15}$/.test(id) ? Number(id) : NaN;
+  if (!Number.isSafeInteger(n)) {
+    throw new ApiProblem('NOT_FOUND', { detail: PHOTO_NOT_FOUND_DETAIL });
+  }
+  return n;
 }
 
 /** `m100-submissions-2026-10-01-2026-10-31.csv`; an open end is `all`. */

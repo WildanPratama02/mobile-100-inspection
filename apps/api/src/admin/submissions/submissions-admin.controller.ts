@@ -10,8 +10,8 @@ import {
 } from './submissions-admin.service';
 
 /**
- * The read-only submission endpoints of doc 04 §8: list, export, detail and photos. There is deliberately no
- * route that changes a submission (AC-14.4). All need the admin session (`AdminGuard`); a tablet token is refused.
+ * The read endpoints of the submissions in doc 04 §8: list, export, detail and photos. A correction adds a revision
+ * (`RevisionsAdminController`, ADR-023); no route changes or deletes a submission (AC-14.4). All need the admin session (`AdminGuard`); a tablet token is refused.
  */
 @Controller('admin')
 @Auth('admin')
@@ -40,8 +40,8 @@ export class SubmissionsAdminController {
   }
 
   @Get('submissions/:id')
-  detail(@Param('id') id: string): Promise<AdminSubmissionDetail> {
-    return this.submissions.detail(id);
+  detail(@Param('id') id: string, @Query() query: unknown): Promise<AdminSubmissionDetail> {
+    return this.submissions.detail(id, query);
   }
 
   @Get('photos/:id')
@@ -51,6 +51,17 @@ export class SubmissionsAdminController {
   async photo(@Param('id') id: string): Promise<StreamableFile> {
     return cutOnFailure(
       new StreamableFile(await this.submissions.photo(id), { type: 'image/jpeg' }),
+    );
+  }
+
+  /** A photo a correction added or replaced (ADR-023, doc 04 §8.1). */
+  @Get('revision-photos/:id')
+  @AdminPhotoRateLimit()
+  @Header('Cache-Control', 'private, no-store')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async revisionPhoto(@Param('id') id: string): Promise<StreamableFile> {
+    return cutOnFailure(
+      new StreamableFile(await this.submissions.revisionPhoto(id), { type: 'image/jpeg' }),
     );
   }
 }

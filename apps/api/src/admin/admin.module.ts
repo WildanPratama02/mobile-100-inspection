@@ -11,13 +11,16 @@ import { AdminGuard } from './admin.guard';
 import { MasterAdminController } from './master/master-admin.controller';
 import { MasterAdminService } from './master/master-admin.service';
 import { MasterImportsService } from './master/master-imports.service';
+import { RevisionsAdminController } from './submissions/revisions-admin.controller';
+import { RevisionsAdminService } from './submissions/revisions-admin.service';
 import { SubmissionsAdminController } from './submissions/submissions-admin.controller';
 import { SubmissionsAdminService } from './submissions/submissions-admin.service';
 
 /**
  * `AdminModule` of doc 03 §5.1: the admin API of doc 04 §8. T3b.1 brings the session (login, logout, `/me`, own
  * password) and `AdminGuard`, bound globally by `AppModule` after the tablet guards; T3b.2 the master data and its
- * imports; T3b.3 the read-only submissions (list, detail, photos, CSV export), the admin accounts and the audit log.
+ * imports; T3b.3 the read-only submissions (list, detail, photos, CSV export), the admin accounts and the audit log;
+ * T8.3 the corrections of a submission (ADR-023).
  */
 @Module({
   imports: [AuthModule, MasterDataModule],
@@ -25,6 +28,7 @@ import { SubmissionsAdminService } from './submissions/submissions-admin.service
     AdminAuthController,
     MasterAdminController,
     SubmissionsAdminController,
+    RevisionsAdminController,
     AccountsAdminController,
   ],
   providers: [
@@ -35,6 +39,7 @@ import { SubmissionsAdminService } from './submissions/submissions-admin.service
     MasterAdminService,
     MasterImportsService,
     SubmissionsAdminService,
+    RevisionsAdminService,
     AccountsAdminService,
   ],
   // `AdminTokens` also for `DeviceThrottlerGuard`, which picks the photo bucket by the session cookie.

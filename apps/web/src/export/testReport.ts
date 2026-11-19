@@ -143,6 +143,7 @@ export const REPORT: ExportReport = {
     { defectId: 'D071', name: SHARED_NAME, no: 6, blob: new Blob([JPEG]) },
   ],
   missingPhotos: [],
+  correction: null,
 };
 
 /** The same session for PSI lv.1: no photos. */

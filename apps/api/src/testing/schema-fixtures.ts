@@ -224,3 +224,112 @@ export async function insertPhoto(
     ],
   );
 }
+
+/** An admin row for revisions (ADR-023); returns its id. */
+export async function insertAdmin(db: ClientBase, username = 'qip.digital'): Promise<number> {
+  const { rows } = await db.query<{ id: number }>(
+    `INSERT INTO admins (username, password_hash, active) VALUES ($1, 'not-a-hash', true) RETURNING id`,
+    [username],
+  );
+  return rows[0]!.id;
+}
+
+/** The columns a revision copies from a submission row (doc 02 §4.4). */
+const REVISION_COPIED = [
+  'sealed_at',
+  'inspection_date',
+  'username',
+  'factory',
+  'cell',
+  'po',
+  'article',
+  'model',
+  'destination',
+  'order_qty',
+  'podd',
+  'crd',
+  'partial_no',
+  'partial_qty',
+  'qty_rework',
+  'qty_bgrade_inspections',
+  'qty_no_defect',
+  'qty_inspection',
+  'qty_a_grade',
+  'qty_b_grade',
+  'qty_defect',
+  'rft',
+  'defect_rate',
+  'photo_count',
+] as const;
+
+/**
+ * A revision row (ADR-023) for `submission`, a row of `submissionRow`, with `overrides`: by default a copy of its
+ * figures with Rework and Approved 0, numbered 1, by `adminId`.
+ */
+export function revisionRow(
+  submission: SubmissionRow,
+  adminId: number,
+  overrides: SubmissionRow = {},
+): SubmissionRow {
+  const copied = Object.fromEntries(REVISION_COPIED.map((c) => [c, submission[c] ?? null]));
+  return {
+    id: randomUUID(),
+    submission_id: submission.id,
+    revision_no: 1,
+    request_sha256: createHash('sha256').update(randomUUID()).digest(),
+    admin_id: adminId,
+    admin_username: 'qip.digital',
+    reason: 'Salah input oleh PSI, dikoreksi admin',
+    qty_rework_approved: 0,
+    changes: '{"fields":[]}',
+    ...copied,
+    ...overrides,
+  };
+}
+
+export async function insertRevision(db: ClientBase, row: SubmissionRow): Promise<string> {
+  const columns = Object.keys(row);
+  await db.query(
+    `INSERT INTO submission_revisions (${columns.join(', ')}) VALUES (${columns.map((_, i) => `$${i + 1}`).join(', ')})`,
+    Object.values(row),
+  );
+  return String(row.id);
+}
+
+export async function insertRevisionFinding(
+  db: ClientBase,
+  revisionId: string,
+  f: Finding,
+): Promise<void> {
+  const d = defectOf(f.defectId);
+  await db.query(
+    `INSERT INTO submission_revision_findings
+       (revision_id, inspection_type, area_id, sub_area_id, family_id, defect_id, defect_name, severity, qty, first_recorded_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [
+      revisionId,
+      f.inspectionType,
+      f.areaId,
+      f.subAreaId,
+      f.familyId,
+      f.defectId,
+      d.name,
+      d.severity,
+      f.qty,
+      f.firstRecordedAt,
+    ],
+  );
+}
+
+export async function insertRevisionPhoto(
+  db: ClientBase,
+  revisionId: string,
+  defectId: DefectId,
+  objectKey: string,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO submission_revision_photos (revision_id, defect_id, object_key, sha256, size_bytes)
+     VALUES ($1, $2, $3, $4, 150000)`,
+    [revisionId, defectId, objectKey, createHash('sha256').update(objectKey).digest()],
+  );
+}

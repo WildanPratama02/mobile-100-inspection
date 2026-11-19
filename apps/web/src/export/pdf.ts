@@ -8,7 +8,7 @@
 import { jsPDF } from 'jspdf';
 import { autoTable, type RowInput, type UserOptions } from 'jspdf-autotable';
 import { APP_NAME, formatCount, formatRate } from '@m100/shared';
-import { EXPORT_TITLE, NO_DEFECT_TEXT, type ExportReport } from './report';
+import { correctionMark, EXPORT_TITLE, NO_DEFECT_TEXT, type ExportReport } from './report';
 
 const PAGE_W = 210;
 const PAGE_H = 297;
@@ -72,6 +72,12 @@ export function toPdf(report: ExportReport, assets: PdfAssets): Blob {
     doc.setFontSize(14);
     doc.setTextColor(INK);
     doc.text(EXPORT_TITLE, MARGIN + logo.w + 4, 15.5);
+    if (report.correction) {
+      // ADR-023, AC-12.5: the file is made from an admin correction.
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(correctionMark(report.correction).pdf, MARGIN + logo.w + 4, 19.5);
+    }
     doc.setDrawColor(LINE);
     doc.line(MARGIN, HEADER_BOTTOM, PAGE_W - MARGIN, HEADER_BOTTOM);
   };

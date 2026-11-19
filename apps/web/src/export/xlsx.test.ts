@@ -92,6 +92,24 @@ describe('toXlsx (FR-12)', () => {
     expect(all).toContain(REPORT.psiName);
   });
 
+  it('adds a Correction row to Part I for a file made from an admin correction (ADR-023, AC-12.5)', async () => {
+    const xml = await parts({
+      ...REPORT,
+      correction: { revisionNo: 2, correctedAt: '2026-11-19T02:05:00.000Z' },
+    });
+    expect(block(xml, 'Part I: General Data', 'Part II: KPI Summary')).toEqual([
+      'Date',
+      'PSI Name',
+      'Correction',
+    ]);
+    expect(text(xml)).toMatch(/Revisi 2, 19 Nov 2026 09[.:]05/);
+    // Without one, Part I keeps its two rows.
+    expect(block(await parts(REPORT), 'Part I: General Data', 'Part II: KPI Summary')).toEqual([
+      'Date',
+      'PSI Name',
+    ]);
+  });
+
   it('has Part II in the docs order with every KPI value (ADR-022)', async () => {
     const xml = await parts(REPORT);
     expect(REPORT.kpi).toHaveLength(8);

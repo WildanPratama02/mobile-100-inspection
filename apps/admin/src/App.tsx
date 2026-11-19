@@ -12,6 +12,7 @@ import { FactoriesCells } from './screens/FactoriesCells';
 import { Login } from './screens/Login';
 import { Pos } from './screens/Pos';
 import { PsiUsers } from './screens/PsiUsers';
+import { SubmissionCorrection } from './screens/SubmissionCorrection';
 import { SubmissionDetail } from './screens/SubmissionDetail';
 import { Submissions } from './screens/Submissions';
 
@@ -21,6 +22,8 @@ function Screen({ route }: { route: Route }) {
       return <Submissions />;
     case 'submission':
       return <SubmissionDetail id={route.id} />;
+    case 'submission-correction':
+      return <SubmissionCorrection id={route.id} />;
     case 'psi-users':
       return <PsiUsers />;
     case 'factories':
@@ -66,7 +69,7 @@ function Gate() {
       return (
         <Shell username={state.me.username}>
           {/* A new key per page: each screen starts fresh. */}
-          <Screen key={route.name === 'submission' ? route.id : route.name} route={route} />
+          <Screen key={'id' in route ? `${route.name}:${route.id}` : route.name} route={route} />
         </Shell>
       );
   }

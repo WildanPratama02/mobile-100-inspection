@@ -17,6 +17,11 @@ import {
   insertSubmission,
   seedMasterData,
   submissionRow,
+  insertAdmin,
+  insertRevision,
+  insertRevisionPhoto,
+  revisionRow,
+  type SubmissionRow,
 } from '../testing/schema-fixtures';
 import { DiskPhotoStore } from './disk-photo-store';
 import type { PhotoStore } from './photo-store';
@@ -108,6 +113,29 @@ function describeSweep(name: string, make: () => Promise<PhotoStore>): void {
 
       // A second run finds nothing more to remove.
       expect((await sweepPhotos(deps(store), { now })).orphans).toEqual([]);
+    });
+
+    it('keeps the photos of a correction (ADR-023): a submission_revision_photos row counts as in use', async () => {
+      const store = await make();
+      const [original] = await submissionWithPhotos(['D001']);
+      const submissionId = original!.split('/')[3]!;
+      const revisionKey = `submissions/2026/10/${submissionId}/r1/D001.jpg`;
+      await db.as(
+        'm100_migrate',
+        async (c) => {
+          const sub = (
+            await c.query<SubmissionRow>('SELECT * FROM submissions WHERE id = $1', [submissionId])
+          ).rows[0]!;
+          const adminId = await insertAdmin(c, `sweep-${randomUUID().slice(0, 8)}`);
+          const revisionId = await insertRevision(c, revisionRow(sub, adminId));
+          await insertRevisionPhoto(c, revisionId, 'D001', revisionKey);
+        },
+        { commit: true },
+      );
+      const orphan = orphanKey('D002');
+      await put(store, [original!, revisionKey, orphan]);
+      const now = new Date(Date.now() + 2 * ORPHAN_AGE_MS);
+      expect((await sweepPhotos(deps(store), { now, dryRun: true })).orphans).toEqual([orphan]);
     });
 
     it('never removes an object outside submissions/ and _probe/', async () => {

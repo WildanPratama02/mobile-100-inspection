@@ -51,6 +51,7 @@ import * as repo from '../db/repo';
 import {
   createDb,
   type Auth,
+  type CorrectionRow,
   type M100Db,
   type OutboxRow,
   type PhotoRow,
@@ -100,6 +101,8 @@ export interface AppState {
   sessions: Readonly<Record<string, PoSession>>;
   /** The PSI's own sealed submissions, newest first (AC-11.3, doc 05 U14). */
   outbox: readonly OutboxRow[];
+  /** Admin corrections of the PSI's sent submissions, by submission UUID (ADR-023, doc 03 §4.11). */
+  corrections: Readonly<Record<string, CorrectionRow>>;
   view: View;
   /** This tablet's key from the setup link (doc 03 §4.9); `null` when the tablet is not set up. */
   deviceKey: string | null;
@@ -153,7 +156,7 @@ export interface AppState {
    * written then.
    */
   submitPo: (po: string, mapping: Pick<MappingIndex, 'defect'>) => Promise<OutboxRow>;
-  /** Reads the logged-in PSI's outbox again after the sender changed it (AC-11.3). */
+  /** Reads the logged-in PSI's outbox and corrections again after the sender or the correction check changed them. */
   reloadOutbox: () => Promise<void>;
   setView: (patch: Partial<View>) => Promise<void>;
 }
@@ -210,13 +213,14 @@ export const DEFAULT_VIEW: View = {
   defectPath: { areaId: null, subAreaId: null, familyId: null },
 };
 
-type UserData = Pick<AppState, 'auth' | 'pos' | 'sessions' | 'outbox' | 'view'>;
+type UserData = Pick<AppState, 'auth' | 'pos' | 'sessions' | 'outbox' | 'corrections' | 'view'>;
 
 const LOGGED_OUT: UserData = {
   auth: null,
   pos: [],
   sessions: {},
   outbox: [],
+  corrections: {},
   view: DEFAULT_VIEW,
 };
 
@@ -251,11 +255,12 @@ async function loadUserData(db: M100Db, auth: Auth | null): Promise<UserData> {
   if (!auth) return LOGGED_OUT;
   const { username } = auth;
   await repo.claimUnscoped(db, auth);
-  const [pos, open, outbox, view] = await Promise.all([
+  const [pos, open, outbox, view, corrections] = await Promise.all([
     repo.listPos(db, auth),
     repo.listOpenSessions(db, auth),
     repo.listOutbox(db, username),
     repo.getView(db, auth),
+    repo.listCorrections(db, username),
   ]);
   const sessions: Record<string, PoSession> = {};
   for (const session of open) {
@@ -273,7 +278,18 @@ async function loadUserData(db: M100Db, auth: Auth | null): Promise<UserData> {
   const restored = view ?? DEFAULT_VIEW;
   // A selection always names a listed PO (doc 05 §8.4).
   const selected = pos.some((p) => p.po === restored.selectedPo) ? restored.selectedPo : null;
-  return { auth, pos, sessions, outbox, view: { ...restored, selectedPo: selected } };
+  return {
+    auth,
+    pos,
+    sessions,
+    outbox,
+    corrections: byUuid(corrections),
+    view: { ...restored, selectedPo: selected },
+  };
+}
+
+function byUuid(rows: readonly CorrectionRow[]): Record<string, CorrectionRow> {
+  return Object.fromEntries(rows.map((r) => [r.submissionUuid, r]));
 }
 
 export function createAppStore(
@@ -611,9 +627,12 @@ export function createAppStore(
       reloadOutbox: async () => {
         const username = get().auth?.username;
         if (!username) return;
-        const outbox = await repo.listOutbox(db, username);
+        const [outbox, corrections] = await Promise.all([
+          repo.listOutbox(db, username),
+          repo.listCorrections(db, username),
+        ]);
         // A logout or another login came first; its list stands.
-        if (get().auth?.username === username) set({ outbox });
+        if (get().auth?.username === username) set({ outbox, corrections: byUuid(corrections) });
       },
 
       setView: (patch) =>

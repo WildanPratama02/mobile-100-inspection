@@ -8,7 +8,11 @@ import { useSession } from './session';
 
 /** The navigation of doc 05 §20.1, in its order. */
 const NAV: { route: Route; label: string; match: Route['name'][] }[] = [
-  { route: { name: 'submissions' }, label: 'Submission', match: ['submissions', 'submission'] },
+  {
+    route: { name: 'submissions' },
+    label: 'Submission',
+    match: ['submissions', 'submission', 'submission-correction'],
+  },
   { route: { name: 'psi-users' }, label: 'User PSI', match: ['psi-users'] },
   { route: { name: 'factories' }, label: 'Factory & cell', match: ['factories'] },
   { route: { name: 'pos' }, label: 'PO', match: ['pos'] },

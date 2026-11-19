@@ -56,6 +56,11 @@ export const EXPORT_COLUMNS: readonly string[] = [
   'counting_rule',
   'photo_rule',
   ...TOP5_COLUMNS,
+  // ADR-023, at the end so the earlier columns keep their places: the revision shown and who made it.
+  'revision_no',
+  'corrected_at',
+  'corrected_by',
+  'correction_reason',
 ];
 
 type Cell = string | number | null;
@@ -124,5 +129,9 @@ export function exportCells(row: SubmissionRow, top5: readonly Top5Cell[]): Cell
     row.countingRule,
     row.photoRule,
     ...places,
+    row.revisionNo,
+    row.correctedAt ? toWibIso(row.correctedAt) : null,
+    row.correctedBy === null ? null : safeText(row.correctedBy),
+    row.correctionReason === null ? null : safeText(row.correctionReason),
   ];
 }

@@ -11,6 +11,8 @@ export interface ConfirmDialogProps {
   confirmLabel: string;
   danger?: boolean;
   busy?: boolean;
+  /** The confirm button only, e.g. while a required field is empty; BATAL stays usable. */
+  confirmDisabled?: boolean;
   error?: ApiError | null;
   /** Shown instead of the API `detail` for some codes. */
   errorText?: (error: ApiError) => string | undefined;
@@ -24,6 +26,7 @@ export function ConfirmDialog({
   confirmLabel,
   danger,
   busy,
+  confirmDisabled,
   error,
   errorText,
   onConfirm,
@@ -42,7 +45,11 @@ export function ConfirmDialog({
             <Button onClick={cancel} disabled={busy} data-autofocus>
               BATAL
             </Button>
-            <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} disabled={busy}>
+            <Button
+              variant={danger ? 'danger' : 'primary'}
+              onClick={onConfirm}
+              disabled={busy || confirmDisabled}
+            >
               {busy ? 'Memproses…' : confirmLabel}
             </Button>
           </div>

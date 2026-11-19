@@ -2,11 +2,12 @@
  * S9 gear menu (doc 05 §14, FR-02): the account, the PSI's own submissions (AC-11.3, U14), when master data was
  * last updated (AC-13.4) and LOGOUT.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { formatDayTime, formatTime } from '@m100/shared';
 import { Logo } from '../app/Logo';
 import { Overlay } from '../app/Overlay';
-import type { Auth, OutboxRow } from '../db/schema';
+import type { Auth, CorrectionRow, OutboxRow } from '../db/schema';
+import { useCorrectionChecker } from '../outbox/useOutboxSender';
 import { unsubmittedCount, useAppStore } from '../state/store';
 import { Button, Chip, Dialog, OutboxItem } from '../ui';
 import './screens.css';
@@ -20,6 +21,11 @@ export function SettingsDialog({ auth, onClose }: SettingsDialogProps) {
   const logout = useAppStore((s) => s.logout);
   const pending = useAppStore(unsubmittedCount);
   const [confirming, setConfirming] = useState(false);
+  const checker = useCorrectionChecker();
+  // Opening Pengaturan looks for admin corrections when online (doc 05 §14, ADR-023).
+  useEffect(() => {
+    if (navigator.onLine) void checker?.check();
+  }, [checker]);
 
   if (confirming) {
     // Blocking: must be answered (AC-02.2). It replaces the menu; dialogs never stack.
@@ -72,6 +78,7 @@ export function SettingsDialog({ auth, onClose }: SettingsDialogProps) {
  */
 function Outbox() {
   const outbox = useAppStore((s) => s.outbox);
+  const corrections = useAppStore((s) => s.corrections);
   return (
     <section className="settings__outbox" aria-label="Pengiriman">
       <h4 className="settings__heading">Pengiriman</h4>
@@ -81,7 +88,7 @@ function Outbox() {
         <ul className="settings__list">
           {outbox.map((item) => (
             <li key={item.submissionUuid}>
-              <OutboxEntry item={item} />
+              <OutboxEntry item={item} correction={corrections[item.submissionUuid]} />
             </li>
           ))}
         </ul>
@@ -98,7 +105,7 @@ function reasonOf(item: OutboxRow): string | undefined {
   return parts.length > 0 ? parts.join(' · ') : undefined;
 }
 
-function OutboxEntry({ item }: { item: OutboxRow }) {
+function OutboxEntry({ item, correction }: { item: OutboxRow; correction?: CorrectionRow }) {
   return (
     <>
       <OutboxItem
@@ -114,6 +121,14 @@ function OutboxEntry({ item }: { item: OutboxRow }) {
       />
       {item.state === 'failed' ? (
         <small className="settings__hint">Hubungi admin dengan nomor PO ini.</small>
+      ) : null}
+      {item.state === 'sent' && correction ? (
+        <p className="settings__corrected">
+          <Chip tone="neutral">Dikoreksi admin</Chip>{' '}
+          <span>
+            Dikoreksi admin {formatDayTime(correction.correctedAt)} · {correction.reason}
+          </span>
+        </p>
       ) : null}
     </>
   );

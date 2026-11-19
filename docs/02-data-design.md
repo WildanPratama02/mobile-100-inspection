@@ -2,12 +2,12 @@
 
 | | |
 |---|---|
-| Version | 2.3 — 30 Oct 2026 (ADR-022): `qty_rework_approved`, `photo_rule`, migration 0007, photo per defect and report fields. v2.2 — 29 Oct 2026: PSI lv.2 rows are `counting_rule = 'ADR-008'` again (ADR-021, §4.1); no schema change. 2.1 — 27–28 Oct 2026: Qty Inspection entered by the PSI, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026): `counting_rule` column, `qty_no_defect` nullable, checks per rule (§4.1, §6.3, §9). v2.0 rewritten 20 Oct 2026 for ADR-018 (v1.0, the Google Sheets design, is superseded) |
-| Date | 30 Oct 2026 |
+| Version | 2.4 — 19 Nov 2026 (ADR-023): submission revisions (§4.4), the correction write (§6.5), revision photo keys and tablet read-back (§7), views on the effective version (§8), migration 0008. 2.3 — 30 Oct 2026 (ADR-022): `qty_rework_approved`, `photo_rule`, migration 0007, photo per defect and report fields. v2.2 — 29 Oct 2026: PSI lv.2 rows are `counting_rule = 'ADR-008'` again (ADR-021, §4.1); no schema change. 2.1 — 27–28 Oct 2026: Qty Inspection entered by the PSI, Qty A-Grade = Qty Inspection − Qty Defect (ADR-019 as revised 28 Oct 2026): `counting_rule` column, `qty_no_defect` nullable, checks per rule (§4.1, §6.3, §9). v2.0 rewritten 20 Oct 2026 for ADR-018 (v1.0, the Google Sheets design, is superseded) |
+| Date | 19 Nov 2026 |
 | Database | PostgreSQL 16, database `m100`, schema `public`, time zone `Asia/Jakarta` for sessions, all timestamps stored as `timestamptz` |
 | Photos | An object store behind the `PhotoStore` interface (S3 API; MinIO or another S3-compatible store, or a plain folder), bucket `m100-photos` |
 | Based on | A full read of the old spreadsheet on 16 Oct 2026 (its findings are kept in §2 where they still matter) and ADR-018 |
-| Related | ADR-003, 006, 008, 009, 013, 018, 019, 021, 022 in [07 Decision Log](07-decision-log.md); FR-01…FR-16 in [01 PRD](01-prd.md); [03 TDD](03-tdd.md) §5 |
+| Related | ADR-003, 006, 008, 009, 013, 018, 019, 021, 022, 023 in [07 Decision Log](07-decision-log.md); FR-01…FR-17 in [01 PRD](01-prd.md); [03 TDD](03-tdd.md) §5 |
 
 This document says what is stored, where, and how a submission is written. PSI Inspection Report no longer reads or writes the "100%INLINE IMPACTIVA" spreadsheet or any Google service (ADR-018). Historical AppSheet data stays in that spreadsheet and is not migrated.
 
@@ -153,7 +153,7 @@ One row of `submissions` is one Submit PO (ADR-003).
 
 **Partial text.** The sheet's `P1 1.200 OF 10.002` is a display value, computed when needed (admin app, exports) as `P<partial_no> <partial_qty> OF <order_qty>` with Indonesian number format. It is not stored. The Home info strip shows `P1 · 1.200 dari 10.002`.
 
-**Immutability.** A trigger rejects every `UPDATE` and `DELETE` on `submissions`, `submission_findings` and `submission_photos`; role `m100_app` also has no DELETE grant. There is no void in release 1.
+**Immutability.** A trigger rejects every `UPDATE` and `DELETE` on `submissions`, `submission_findings` and `submission_photos`; role `m100_app` also has no DELETE grant. There is no void. An admin correction adds a revision (§4.4, ADR-023) and leaves these rows exactly as written.
 
 Constraints (database level, so a bug in the API cannot store inconsistent numbers):
 - `CHECK (qty_rework_approved IS NULL OR (qty_rework_approved >= 0 AND qty_rework_approved <= qty_rework))`; NULL preserves unknown older values, never converted to 0;
@@ -196,6 +196,39 @@ Unique on (`submission_id`, `inspection_type`, `area_id`, `sub_area_id`, `defect
 | `size_bytes` | `integer` | ≤ 1 MB |
 
 Unique on (`submission_id`, `defect_id`): at most one photo per defect (AC-10.5). **Photo rule** (ADR-022, FR-10, BR-04): a PSI lv.2 submission with `photo_rule = 'ALL'` has exactly one photo for each distinct defect with a finding. With `'TOP5'` or legacy NULL on PSI lv.2, the older Top 5 rule applies (extra photos of defects previously in the Top 5 remain allowed). A PSI lv.1 submission has none and `photo_rule IS NULL`. The API checks the selected rule before writing; at most 98 distinct defects/photos.
+
+### 4.4 Revisions (ADR-023, migration 0008)
+
+A correction by an admin (PRD FR-17) is a **revision**: a complete new version of the correctable fields, findings and photos of one submission. The original (revision 0) stays in §4.1–§4.3. The **effective version** of a submission is its highest `revision_no`, or the original when it has none.
+
+`submission_revisions`, one row per correction:
+
+| Column | Type | Rule |
+|---|---|---|
+| `id` | `uuid` PK | Created by the admin app per save; idempotency key of the correction (doc 04 §8.1) |
+| `submission_id` | `uuid` FK `submissions`, not null | `ON DELETE RESTRICT` |
+| `revision_no` | `integer` not null | 1, 2, …; unique with `submission_id`; the previous highest + 1 (checked in the write, §6.5) |
+| `request_sha256` | `bytea` not null | SHA-256 of the JSON part as received; a repeat with the same `id` and another hash is `409` |
+| `created_at` | `timestamptz` not null default now() | |
+| `admin_id` | `integer` FK `admins`, not null | Who corrected |
+| `admin_username` | `text` not null | Snapshot |
+| `reason` | `text` not null | CHECK `char_length(btrim(reason)) BETWEEN 10 AND 500` |
+| `sealed_at`, `inspection_date` | as `submissions` | Corrected inspection time; `inspection_date` is its WIB date |
+| `username`, `factory`, `cell` | `text` not null | Snapshot; `username` of a `psi_users` row with the original's level |
+| `po`, `article`, `model`, `destination`, `order_qty`, `podd`, `crd` | as `submissions` | Copied from `pos` when `po` changed, else from the previous version (ADR-023 decision 6) |
+| `partial_no`, `partial_qty` | as `submissions` | Same CHECK |
+| `qty_rework`, `qty_bgrade_inspections`, `qty_rework_approved`, `qty_no_defect`, `qty_inspection`, `qty_a_grade`, `qty_b_grade`, `qty_defect`, `rft`, `defect_rate`, `photo_count` | as `submissions` | `qty_rework_approved` not null (a revision always states it, 0 when empty) |
+| `changes` | `jsonb` not null | The changed fields with old and new values, the findings added, removed or changed, the photos replaced or added; shown by the history and the audit log |
+
+Not in a revision, read from `submissions` for every version: `id`, `display_no`, `payload_sha256`, `received_at`, `app_version`, `device_id`, `level`, `counting_rule`, `photo_rule`. The CHECKs of §4.1 apply to a revision too. Those that depend on `counting_rule` need the parent row, which a CHECK cannot read, so a constraint trigger `submission_revisions_rule_check` enforces them.
+
+`submission_revision_findings`: the columns of `submission_findings` with `revision_id` (FK `submission_revisions`) instead of `submission_id`; unique on (`revision_id`, `inspection_type`, `area_id`, `sub_area_id`, `defect_id`). `first_recorded_at` is kept from the finding it replaces; a finding the admin adds gets the revision's `created_at`.
+
+`submission_revision_photos`: the columns of `submission_photos` with `revision_id` instead of `submission_id`; unique on (`revision_id`, `defect_id`). `object_key` is **not** unique, because a kept photo points to the object of an earlier version.
+
+**Immutability.** The three tables have the trigger of §4.1 (no UPDATE, DELETE or TRUNCATE); `m100_app` has SELECT and INSERT only.
+
+**Effective version.** The unique index on (`submission_id`, `revision_no`) also serves "newest revision of a submission". The internal view `v_effective_submissions` (§8) joins each submission with its newest revision.
 
 ## 5. Master data: import and administration
 
@@ -283,7 +316,7 @@ sequenceDiagram
 | Transaction begun, not committed | nothing (rolled back) | writes it |
 | Commit, before the answer | a complete submission | step 1 returns `200` with the stored result |
 
-Objects whose key has no `submission_photos` row and are older than 24 hours are removed by a weekly sweep (`scripts/sweep-photos`, `--dry-run` first). A submission is therefore always complete or absent; nothing needs repair.
+Objects whose key has no `submission_photos` or `submission_revision_photos` row and are older than 24 hours are removed by a weekly sweep (`scripts/sweep-photos`, `--dry-run` first). A submission is therefore always complete or absent; nothing needs repair. The same holds for a correction (§6.5).
 
 ### 6.3 Totals
 
@@ -295,12 +328,24 @@ The independent BR-11 CHECK verifies `qty_rework_approved` against `qty_rework` 
 
 `sealed_at` comes from the tablet and is rejected if more than 5 minutes in the future (R7). `received_at` is the server clock. `inspection_date` is the WIB date of `sealed_at`.
 
+### 6.5 Writing a correction (ADR-023)
+
+`POST /v1/admin/submissions/{id}/revisions` (doc 04 §8.1), in this order:
+
+1. **Look up the revision id.** If a row with this `id` exists: same `request_sha256` → `200` with the stored result; another hash → `409 CONFLICT`.
+2. **Validate** at `REPEATABLE READ` against the master tables and the effective version: `baseRevisionNo` equals the current highest `revision_no` (0 without revisions), else `409 REVISION_CONFLICT`; the reason; the PSI, cell and PO exist (active or not); the PSI's level equals the original's; the counts, findings and photos by doc 04 §4.2 rules 3–8 for the original's `counting_rule` and `photo_rule` (a finding's map row may be inactive). The totals are computed with the shared engine, as for a submission (§6.3).
+3. **Put new photos** under `submissions/<yyyy>/<MM>/<uuid>/r<n>/<defectId>.jpg` (§7). Safe to repeat.
+4. **One transaction:** take a transaction advisory lock on the submission (`pg_advisory_xact_lock`; not `FOR UPDATE`, which needs an UPDATE grant `m100_app` does not have), check `baseRevisionNo` again, `INSERT INTO submission_revisions … ON CONFLICT (id) DO NOTHING`, the findings and photo rows (a kept photo copies `object_key`, `sha256` and `size_bytes` of the earlier row), re-check `qty_defect` and `qty_b_grade` against the findings, and the `audit_log` row (`submission.revise`).
+5. **Answer** `201` with the new effective detail.
+
+A crash before the commit leaves at most photo objects without rows, which the sweep removes; a retry with the same revision id completes the correction.
+
 ## 7. Photo storage
 
 - **Interface.** `PhotoStore` (doc 03 §5.2): `put`, `get` (stream), `exists`, `delete`, `probe`, `list` (for the orphan sweep). Implementations: `S3PhotoStore` (any S3-compatible server, using `@aws-sdk/client-s3` with path-style addressing) and `DiskPhotoStore` (a folder, `PHOTO_DIR`).
-- **Bucket and key.** Bucket `m100-photos`, private, no public access. Key: `submissions/<yyyy>/<MM>/<submission uuid>/<defect id>.jpg`, for example `submissions/2026/10/0f6b6c1e-6a52-4c9f-9a3e-5d7a2b0c41f2/D035.jpg`. The year and month come from `inspection_date`.
+- **Bucket and key.** Bucket `m100-photos`, private, no public access. Key: `submissions/<yyyy>/<MM>/<submission uuid>/<defect id>.jpg`, for example `submissions/2026/10/0f6b6c1e-6a52-4c9f-9a3e-5d7a2b0c41f2/D035.jpg`. The year and month come from the original's `inspection_date`. A photo added or replaced by a correction (ADR-023): `submissions/<yyyy>/<MM>/<submission uuid>/r<revision no>/<defect id>.jpg`, with the year and month of the original's key, also when the correction changes the inspection date.
 - **Content.** JPEG, ≤ 960 px on the long edge; the tablet resizes to ≤ 500 KB (AC-10.1, ADR-022), the API accepts ≤ 1 MB per photo. The API checks the JPEG signature and SHA-256; it does not re-encode.
-- **Access.** Tablets never read photos back. Admins view a photo through `GET /v1/admin/photos/{id}`, which checks the admin session and streams the object; no pre-signed URLs and no public address are used.
+- **Access.** Admins view a photo through `GET /v1/admin/photos/{id}` (a `submission_photos` row) or `GET /v1/admin/revision-photos/{id}` (a `submission_revision_photos` row); both check the admin session and stream the object. A tablet reads only the photos of the effective version of its own corrected submissions (`GET /v1/submissions/{id}/corrections/{revisionNo}/photos/{defectId}`, doc 04 §3.4, ADR-023). No pre-signed URLs and no public address are used.
 - **Volume.** Up to 98 photos per PSI lv.2 submission (one per defect), plus one JSON part: 99 multipart parts, within the 100-part parser ceiling and 100 MB body limit (doc 04 §7). ADR-022 expects about 11 photos for a typical PO; capacity testing uses 15 photos per PSI lv.2 submission.
 - **Retention.** Kept indefinitely. Delete only through a reviewed script after a written decision.
 
@@ -308,15 +353,17 @@ The independent BR-11 CHECK verifies `qty_rework_approved` against `qty_rework` 
 
 Leader Quality no longer reads `DATA_INSPECTION` for this data (ADR-018). Three routes, none of which write:
 
-1. **Admin app:** filterable submission list, detail with photos, CSV export (columns of `v_submissions` plus Top 5).
+1. **Admin app:** filterable submission list, detail with photos and revision history, corrections (ADR-023), CSV export (columns of `v_submissions` plus Top 5).
 2. **Views** for reporting tools, readable by the database role `m100_report` (read-only, no access to base tables or to `devices`/`admins`):
 
 | View | One row per | Content |
 |---|---|---|
-| `v_submissions` | submission | `display_no`, `inspection_date`, `sealed_at` (WIB), `username`, `level`, `factory`, `cell`, PO fields, `partial_text`, all `qty_*` (including nullable `qty_rework_approved`), `rft`, `defect_rate`, `photo_count`, `counting_rule`, `photo_rule` |
-| `v_findings` | finding | submission keys plus area, sub-area, family, defect, severity, `inspection_type`, `qty` |
+| `v_submissions` | submission | The **effective version** (§4.4): `display_no`, `inspection_date`, `sealed_at` (WIB), `username`, `level`, `factory`, `cell`, PO fields, `partial_text`, all `qty_*` (including nullable `qty_rework_approved`), `rft`, `defect_rate`, `photo_count`, `counting_rule`, `photo_rule`, and since 0008 `revision_no` (0 = original), `corrected_at`, `corrected_by`, `correction_reason` (null for the original) |
+| `v_findings` | finding of the effective version | submission keys plus area, sub-area, family, defect, severity, `inspection_type`, `qty` |
 | `v_defect_totals` | submission + defect | total `qty` over areas and types, `rank_in_submission` by the Top 5 order (quantity, then severity, then first recorded), `has_photo` |
 | `v_top5` | submission + rank ≤ 5 | `v_defect_totals` filtered |
+
+Migration 0008 rebuilds the four views on `v_effective_submissions` (internal, not granted to `m100_report`), so every reporting tool sees corrected figures without a change; existing columns keep their names and meaning.
 
 3. A BI tool (Looker Studio, Metabase, Power BI) connected to the views with `m100_report`. The owner plans a central QIP dashboard that will read these views (PRD OQ-13).
 
@@ -357,8 +404,9 @@ Checks run at start, every 5 minutes, and every 30 seconds while any is failing,
 | Q1 | One `submissions` row plus findings and photos rows replaces the 276-column row; no slots, no LINK formulas. | The wide row existed to fit AppSheet; PostgreSQL needs none of it |
 | Q2 | The submission UUID is the primary key; `display_no` is the human number. | The tablet already creates a UUID and idempotency becomes a constraint |
 | Q3 | Snapshots of user, PO and defect text are copied into each submission and finding. | History must not change when master data is edited |
-| Q4 | Submissions are fully immutable: no edit, no delete, no void in release 1. A mistaken submission is handled outside the app by the database owner and noted in the runbook. | Keeps reports trustworthy; replaces "append only" (BR-07) |
+| Q4 | Submissions are fully immutable: no edit, no delete, no void in release 1. A mistaken submission is handled outside the app by the database owner and noted in the runbook. **Amended 19 Nov 2026 (ADR-023):** an admin corrects it by adding a revision (§4.4); stored rows still never change and nothing is deleted or voided. | Keeps reports trustworthy and traceable; replaces "append only" (BR-07) |
 | Q5 | Photos go to the store before the transaction; a weekly sweep removes orphans. | A row never points to a missing object, and no repair step is needed |
 | Q6 | Percentages are stored as fractions with 5 decimals. | Display rounding is a screen concern |
 | Q7 | Master data is imported once from CSV/XLSX exports, then edited in the admin app. | Answer of 20 Oct 2026; no Google access needed |
-| Q8 | Photos are read back only through the admin API. | No public or pre-signed URLs to protect |
+| Q8 | Photos are read back only through the admin API. **Amended 19 Nov 2026 (ADR-023):** a tablet also reads the photos of its own corrected submissions, with its device key and the author's token. | No public or pre-signed URLs to protect |
+| Q9 | (ADR-023) A correction is a complete copy, not a diff; the effective version is the newest revision. | Views and the tablet read one version without replaying changes; every earlier version stays readable |

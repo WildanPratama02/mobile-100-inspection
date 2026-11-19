@@ -8,9 +8,13 @@ import { ToastProvider } from './app/toast';
 import { useMasterDataRefresh } from './app/useMasterDataRefresh';
 import { useWakeLock } from './app/useWakeLock';
 import type { DataSources } from './data/sources';
+import { createCorrectionChecker } from './outbox/corrections';
 import { createOutboxSender } from './outbox/sender';
 import {
+  CorrectionCheckerContext,
   OutboxSenderContext,
+  useCorrectionChecker,
+  useCorrectionCheckLoop,
   useFailedOutboxToast,
   useOutboxSender,
   useOutboxSenderLoop,
@@ -50,13 +54,25 @@ export function App({ store, sources }: AppProps) {
       }),
     [appStore, dataSources],
   );
+  // Admin corrections of sent submissions (ADR-023, doc 03 §4.11).
+  const checker = useMemo(
+    () =>
+      createCorrectionChecker({
+        db: appStore.db,
+        deviceKey: () => appStore.getState().deviceKey,
+        onChange: () => void appStore.getState().reloadOutbox().catch(console.error),
+      }),
+    [appStore],
+  );
   return (
     <DataSourcesContext.Provider value={dataSources}>
       <AppStoreContext.Provider value={appStore}>
         <OutboxSenderContext.Provider value={sender}>
-          <ToastProvider>
-            <Screens />
-          </ToastProvider>
+          <CorrectionCheckerContext.Provider value={checker}>
+            <ToastProvider>
+              <Screens />
+            </ToastProvider>
+          </CorrectionCheckerContext.Provider>
         </OutboxSenderContext.Provider>
       </AppStoreContext.Provider>
     </DataSourcesContext.Provider>
@@ -90,7 +106,13 @@ function Screens() {
   // Cached copy at once, refreshed in the background (doc 05 §6 warm start).
   useMasterDataRefresh(!onSetup && status === 'ready' && deviceKey !== null);
   // Sealed submissions go while the app is open, logged in or not (doc 03 §4.6).
-  useOutboxSenderLoop(useOutboxSender(), !onSetup && status === 'ready' && deviceKey !== null);
+  const sender = useOutboxSender();
+  useOutboxSenderLoop(sender, !onSetup && status === 'ready' && deviceKey !== null);
+  useCorrectionCheckLoop(
+    useCorrectionChecker(),
+    sender,
+    !onSetup && status === 'ready' && deviceKey !== null,
+  );
   useFailedOutboxToast();
 
   useEffect(() => {

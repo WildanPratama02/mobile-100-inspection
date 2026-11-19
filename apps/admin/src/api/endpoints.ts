@@ -17,10 +17,11 @@ import type {
   AuditLogEntry,
   ImportReport,
   Page,
+  RevisionHistoryEntry,
   PsiLevel,
   SubmissionFilter,
 } from './types';
-import type { Po } from '@m100/shared';
+import type { Po, RevisionRequest } from '@m100/shared';
 
 // Session and own password.
 export const login = (username: string, password: string) =>
@@ -86,15 +87,36 @@ export function runImport(kind: ImportKind, file: File, dryRun: boolean): Promis
   });
 }
 
-// A1 Submissions (read-only, AC-14.4).
+// A1 Submissions; a correction adds a revision (ADR-023), nothing is deleted (AC-14.4).
 export const listSubmissions = (filter: SubmissionFilter, page: number) =>
   request<Page<AdminSubmissionSummary>>('/submissions', { query: { ...filter, page } });
-export const getSubmission = (id: string) =>
-  request<AdminSubmissionDetail>(`/submissions/${encodeURIComponent(id)}`);
+/** The effective version, or version `revision` (0 = the PSI's submission). */
+export const getSubmission = (id: string, revision?: number) =>
+  request<AdminSubmissionDetail>(`/submissions/${encodeURIComponent(id)}`, {
+    query: { revision },
+  });
+export const getRevisions = (id: string) =>
+  request<{ items: RevisionHistoryEntry[] }>(`/submissions/${encodeURIComponent(id)}/revisions`);
+/**
+ * `POST /admin/submissions/{id}/revisions` (doc 04 §8.1): the JSON part `revision` and one `photo_<DEFECT_ID>` part
+ * per new photo.
+ */
+export function createRevision(
+  id: string,
+  revision: RevisionRequest,
+  photos: ReadonlyMap<string, Blob>,
+): Promise<AdminSubmissionDetail> {
+  const form = new FormData();
+  form.append('revision', new Blob([JSON.stringify(revision)], { type: 'application/json' }));
+  for (const [defectId, blob] of photos) form.append(`photo_${defectId}`, blob, `${defectId}.jpg`);
+  return request<AdminSubmissionDetail>(`/submissions/${encodeURIComponent(id)}/revisions`, {
+    method: 'POST',
+    body: form,
+  });
+}
 /** A plain link: the browser downloads the file with the session cookie. */
 export const exportCsvUrl = (filter: SubmissionFilter) =>
   `${API_BASE}/submissions/export.csv${queryString({ ...filter })}`;
-export const photoUrl = (id: number) => `${API_BASE}/photos/${id}`;
 
 // A6 Admins.
 export const listAdmins = () => request<AdminAccount[]>('/admins');

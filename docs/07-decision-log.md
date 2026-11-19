@@ -25,6 +25,7 @@ Each entry records one decision: the situation, what was decided, and what it co
 | 019 | Qty Inspection is entered by the PSI; NO DEFECT removed; Qty Defect counts findings; Qty A-Grade = Qty Inspection − Qty Defect | Accepted (revised 28 Oct 2026) | 27–28 Oct 2026 |
 | 020 | PostgreSQL 18 as the production version baseline (amends ADR-018 decision 1) | Approved in principle; in effect after its verification requirements pass | 29 Oct 2026 |
 | 022 | PSI Inspection Report: all-defect list and photos (PSI lv.2), Inspection Rework QTY and Rework and Approved, exports in the template layout (amends 010, 021) | Accepted | 30 Oct 2026 |
+| 023 | Admins correct a submitted PO as a new revision; the original stays; the PSI sees the correction on the tablet (amends 018 decision 6, BR-07, AC-14.4) | Accepted | 19 Nov 2026 |
 
 ---
 
@@ -266,6 +267,7 @@ Defect Rate = Qty Defect ÷ Qty Inspection. Pass Rate (RFT) = Qty A-Grade ÷ Qty
 4. **Master data** (PSI users, factories and cells, POs, defects, area map) is **imported once** from the existing sheets (exported as CSV/XLSX), then maintained through a small **admin web app** (answer of 20 Oct 2026). There is now an admin role; PSI keep name-only login (ADR-006).
 5. The API answers a submission **synchronously** (`201` or `200`); the in-memory queue, `202` and `GET /submissions/{uuid}` disappear. Idempotency is the primary key (the tablet's UUID) plus a payload hash.
 6. Submissions are immutable once written. Nothing is edited, deleted or voided through the app (owner decision 20 Oct 2026: the admin app covers master data, a read-only DataTable of inspections, admins and the audit log; tablets are registered with server commands). Replaces BR-07's "append only to sheets".
+   **Amended 19 Nov 2026 (ADR-023):** admins correct a submission by adding a revision; the original rows stay unchanged and nothing is deleted or voided.
 7. Results are read from PostgreSQL: the admin app (list, detail, photos, CSV export) and read-only database views for reporting tools.
 
 **Consequences.**
@@ -424,3 +426,42 @@ Submissions sealed before this ADR show "–" for Rework and Approved and the fi
 - PSI lv.2 takes more photos per PO; submissions grow (about 11 photos for a typical PO). The T3.7 load test is rerun with 15 photos per PSI lv.2 submission.
 - AC-06.3 (an inspection may end with no defect) no longer holds for new sessions.
 - Work: doc 08 Phase 7 (T7.1–T7.8).
+
+## ADR-023 — Admin corrections of submissions
+
+**Status: Accepted** on 19 Nov 2026 (product owner, answers of 19 Nov 2026). Amends ADR-018 decision 6, PRD BR-07 and AC-14.4, doc 02 Q4 and doc 05 U18. Everything else in ADR-018, ADR-019, ADR-021 and ADR-022 stays.
+
+**Situation.** A PSI sometimes submits a PO with wrong data (a wrong PO number, a wrong QTY INSPECTION, a finding in the wrong area, a wrong photo). Submissions are immutable (BR-07), so today only the database owner can repair one, outside the app and without a record in the app. The product owner asked (19 Nov 2026) that administrators correct such a submission in the admin app, and answered:
+1. Correction only: no delete and no void.
+2. Every part of the submission can be corrected and replaced: header, counts, findings and photos.
+3. Every active admin may correct; there is no new role.
+4. A reason is required.
+5. There is no time limit.
+6. The PSI sees the correction on the tablet.
+7. The PSI level cannot be corrected.
+8. A changed PO number takes article, model, destination, Qty Order, PODD and CRD from the PO master.
+9. The tablet marks the corrected submission and makes its exports from the corrected data, photos included (option a).
+
+**Why not UPDATE or DELETE.** A deleted row would be written again by a tablet resend of the same UUID (`INSERT … ON CONFLICT (id) DO NOTHING` finds no conflict), and the tablet keeps sent items for 7 days. An edited row would no longer match its `payload_sha256`, and the data the PSI actually sent would be lost. Reports and exports given out earlier could then not be explained.
+
+**Decision.**
+1. **Revisions, append only.** A correction is a new **revision** of the submission: a complete copy of every correctable field, findings and photos, numbered 1, 2, … per submission, with the admin, the time and the reason. The original rows in `submissions`, `submission_findings` and `submission_photos` are never changed and keep their trigger and grants. The new tables `submission_revisions`, `submission_revision_findings` and `submission_revision_photos` get the same trigger: no UPDATE and no DELETE (doc 02 §4.4). Revision 0 is the original.
+2. **No delete, no void.** A submission stays in every report once written.
+3. **The effective version** of a submission is its newest revision, or the original when there is none. The admin list, detail and CSV, the reporting views (`v_submissions`, `v_findings`, `v_defect_totals`, `v_top5`) and the tablet show the effective version. `display_no`, `id`, `payload_sha256`, `received_at`, `device_id` and `app_version` never change.
+4. **What can be corrected:** PSI name (`username`, a `psi_users` row of the same level, active or not), factory and cell (an existing cell of that factory, active or not), PO (an existing `pos` row, active or not), PO PARTIAL (none, or number 1–99 and quantity 1 … Qty Order), the inspection time (`sealed_at`, and so `inspection_date`; not in the future), the counts (`rework`, `bGrade`, `reworkApproved`, and `qtyInspection` for `ADR-019` or `noDefect` for `ADR-008`), the findings (add, remove, change type, area, sub-area, defect or quantity) and the photos (keep, replace, add).
+5. **What cannot be corrected:** the PSI level, and with it the counting rule (`counting_rule`) and the photo rule (`photo_rule`) of the original. A submission entered at the wrong level is noted in the reason.
+6. **PO snapshot.** When the PO number changes, article, model, destination, Qty Order, PODD and CRD are copied from the current `pos` row. When it does not change, the snapshot of the previous version is kept, so a later edit of the PO master does not alter history.
+7. **Same rules as a submission.** The API checks a revision with the shared functions of `packages/shared` and the rules of doc 04 §4.2 for its counting rule: BR-01, BR-10 (including the PSI lv.2 maximum), BR-11, the finding rules and the photo rule of the original (`ALL`: one photo per defect with a finding; `TOP5` or NULL on PSI lv.2: the Top 5; PSI lv.1: none). The API computes every total itself; the database checks them again with the CHECKs of `submissions`. A correction that breaks a rule is refused with `422` and nothing is written.
+8. **Reason.** Required, 10 to 500 characters after trimming. It is shown to admins and to the PSI.
+9. **Concurrency and repeats.** The request names the revision it was made from (`baseRevisionNo`); if another admin saved a revision meanwhile, the answer is `409 REVISION_CONFLICT` and nothing is written. The admin app creates the revision's UUID; a repeat with the same UUID and bytes answers `200`, with other bytes `409`.
+10. **Photos.** A kept photo is a new revision photo row pointing to the same object. A new photo is stored under `submissions/<yyyy>/<MM>/<uuid>/r<n>/<defectId>.jpg`, with the year and month of the original's key, before the transaction (as doc 02 §6.1). The photos of earlier versions are kept, so every version can still be shown.
+11. **Audit.** Every revision writes one `audit_log` row (`admin:<username>`, action `submission.revise`, entity `submissions`, the submission UUID) with the revision number, the reason and the old and new values, in the same transaction.
+12. **Tablet resend.** A resend of the original UUID with the original bytes still answers `200` with the original's stored result; a correction never makes a tablet's item Gagal.
+13. **The PSI on the tablet.** The tablet asks the API for corrections of its own sent submissions while they are on the tablet (7 days after sending), with the author's token. A corrected item shows "Dikoreksi admin" with the time and the reason in Pengaturan → Pengiriman, and EXPORT PDF / EXPORT EXCEL of that PO use the effective version, its photos included, with the revision named in the file. Corrections made after the item has left the tablet are visible only in the admin app. Home and the open session are never changed by a correction.
+14. **Release 1 limits stay:** tablets still never change a sent submission; admins can still not create a submission from nothing.
+
+**Consequences.**
+- One migration (`0008`: three tables, triggers, grants, views that read the effective version); an API contract change (doc 04 v2.4: two admin endpoints, two tablet endpoints, one error code); the admin detail screen gets a correction form and a history; the tablet gets a `corrections` store, a check in the sender loop, a mark in Pengaturan and exports from the effective version.
+- Reports can change after the fact. Every change is recorded with a reason and the earlier versions stay readable, so a figure given out earlier can always be traced.
+- Doc 02 §7 "tablets never read photos back" no longer holds: a tablet reads the photos of its own corrected submissions.
+- Work: doc 08 Phase 8 (T8.1–T8.6).
