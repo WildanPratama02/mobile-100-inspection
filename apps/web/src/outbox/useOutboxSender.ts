@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef } from 'react';
 import { useToast } from '../app/toastContext';
 import type { OutboxState } from '../db/schema';
 import { useAppStore } from '../state/store';
+import type { CorrectionChecker } from './corrections';
 import type { OutboxSender } from './sender';
 
 /** How often the sender looks for items whose wait is over while the app is open (doc 03 §4.6). */
@@ -12,6 +13,39 @@ export const OutboxSenderContext = createContext<OutboxSender | null>(null);
 
 export function useOutboxSender(): OutboxSender | null {
   return useContext(OutboxSenderContext);
+}
+
+/** How often the correction check runs while the app is open (AC-17.6: within 30 minutes). */
+export const CORRECTION_CHECK_MS = 30 * 60 * 1000;
+
+/** The app's correction check (ADR-023); `null` in screen tests without one. */
+export const CorrectionCheckerContext = createContext<CorrectionChecker | null>(null);
+
+export function useCorrectionChecker(): CorrectionChecker | null {
+  return useContext(CorrectionCheckerContext);
+}
+
+/**
+ * Runs the correction check (doc 03 §4.11): after the sender's start, when the connection comes back (after that
+ * pass), and every 30 minutes. Pengaturan runs it too when it opens.
+ */
+export function useCorrectionCheckLoop(
+  checker: CorrectionChecker | null,
+  sender: OutboxSender | null,
+  enabled: boolean,
+): void {
+  useEffect(() => {
+    if (!checker || !enabled) return;
+    const check = () => void checker.check();
+    const afterSend = () => void (sender?.run() ?? Promise.resolve()).finally(check);
+    afterSend();
+    const timer = window.setInterval(check, CORRECTION_CHECK_MS);
+    window.addEventListener('online', afterSend);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('online', afterSend);
+    };
+  }, [checker, sender, enabled]);
 }
 
 /**

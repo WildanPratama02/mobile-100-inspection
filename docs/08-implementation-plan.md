@@ -371,9 +371,9 @@ Migration `0008`: `submission_revisions`, `submission_revision_findings`, `submi
 
 ### T8.5 Tablet app (web)
 Dexie version 4 (`corrections`, `correctionPhotos`); the correction check in the outbox loop (doc 03 §4.11); the S9 mark; exports from the correction (doc 03 §4.10).
-- [ ] Vitest: a received correction is stored in one transaction with its photos; a failed photo download stores nothing; a newer revision replaces the older; the outbox item's `payloadJson` and photos are unchanged; rows go with the outbox item after 7 days.
-- [ ] Vitest on the report model: the export of a corrected item uses the correction's figures, photos and inspection date and carries the revision mark.
-- [ ] Playwright against the real API: a PSI submits, an admin corrects through the API, the tablet shows "Dikoreksi admin" with the reason in Pengaturan and EXPORT PDF / EXCEL carry the corrected numbers; Home and the open session are unchanged.
+- [x] Vitest: a received correction is stored in one transaction with its photos; a failed photo download stores nothing; a newer revision replaces the older; the outbox item's `payloadJson` and photos are unchanged; rows go with the outbox item after 7 days.
+- [x] Vitest on the report model: the export of a corrected item uses the correction's figures, photos and inspection date and carries the revision mark.
+- [x] Playwright against the real API: a PSI submits, an admin corrects through the API, the tablet shows "Dikoreksi admin" with the reason in Pengaturan and EXPORT PDF / EXCEL carry the corrected numbers; Home and the open session are unchanged.
 
 ### T8.6 Load and regression
 - [ ] `pnpm test`, `pnpm e2e`, `pnpm typecheck`, `pnpm lint` green; `pnpm test:load` (quick settings) passes with the correction check of 50 tablets running.

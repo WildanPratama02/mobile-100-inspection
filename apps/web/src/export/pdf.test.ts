@@ -40,6 +40,15 @@ function imagesDrawn(pdf: string): number {
 }
 
 describe('toPdf (FR-12)', () => {
+  it('prints the correction under the title of a file made from an admin correction (ADR-023)', async () => {
+    const pdf = await pdfText({
+      ...REPORT,
+      correction: { revisionNo: 2, correctedAt: '2026-11-19T02:05:00.000Z' },
+    });
+    expect(drawn(pdf)).toMatch(/DIKOREKSI ADMIN · REVISI 2 · 19 Nov 2026 09[.:]05/);
+    expect(drawn(await pdfText(REPORT))).not.toContain('DIKOREKSI ADMIN');
+  });
+
   it('is a PDF with the title, PO info, inspection date and nine results (AC-12.1)', async () => {
     const pdf = await pdfText(REPORT);
     expect(pdf.startsWith('%PDF-')).toBe(true);

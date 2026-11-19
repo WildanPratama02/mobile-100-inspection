@@ -898,3 +898,12 @@
     font-size: 21px;
   }
 }
+
+/* S9: a sent submission an admin corrected (ADR-023, doc 05 §14). */
+.settings__corrected {
+  margin: 0;
+  padding: var(--space-1) 12px var(--space-2);
+  font-size: var(--fs-caption);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}

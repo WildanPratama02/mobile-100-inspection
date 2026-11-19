@@ -212,6 +212,9 @@ The tablet learns of admin corrections only for its own sent submissions still o
 - **How.** Per author, with that author's stored token (as the sender does), `GET /submissions/corrections?ids=` with up to 50 of that author's eligible items. For each answered item whose `revisionNo` is above the stored one, it fetches the photos whose SHA-256 is neither in `outboxPhotos` nor in `correctionPhotos` (`GET /submissions/{id}/corrections/{n}/photos/{defectId}`), checks each SHA-256, then writes the `corrections` row and its photos in one Dexie transaction, replacing the older correction. A failed or interrupted check writes nothing and is repeated next time. A `404` on a photo means a newer correction exists: the check starts over at the next trigger.
 - **What changes.** Only the stores `corrections` and `correctionPhotos`. The `outbox` item, its `payloadJson` and its photos stay byte for byte (a resend still matches `payload_sha256`); sessions, events, Home and the open session are never touched. The rows are removed with their outbox item, 7 days after `sentAt`.
 - **Shown.** Pengaturan → Pengiriman marks the item (doc 05 §14); the exports use the correction (§4.10).
+- **A changed PO** (decided 19 Nov 2026): the item stays under the PO the PSI submitted, where it is in the PO list and in Pengaturan; EXPORT PDF / EXCEL of that PO are made from the correction and so show the corrected PO, its article, model, destination and Qty Order.
+
+As built (T8.5): `src/outbox/corrections.ts` (`createCorrectionChecker`), run by `useCorrectionCheckLoop` after the sender's start and when the connection returns, every 30 minutes, and by Pengaturan when it opens online; Dexie version 4; `correctedExport` in `src/export/report.ts`; the store keeps `corrections` by submission UUID next to `outbox`.
 
 ## 5. The API
 

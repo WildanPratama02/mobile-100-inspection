@@ -103,6 +103,70 @@ export interface OutboxPhotoRow {
   takenAt: string;
 }
 
+/**
+ * The corrected submission as `GET /submissions/corrections` gives it (doc 04 §3.4, `Correction.submission`):
+ * the effective version the exports use (ADR-023).
+ */
+export interface CorrectedSubmission {
+  displayNo: string;
+  sealedAt: string;
+  inspectionDate: string;
+  user: { username: string; level: PsiLevel };
+  factory: string;
+  cell: string;
+  po: string;
+  article: string;
+  model: string;
+  destination: string;
+  orderQty: number;
+  partial: PoPartial | null;
+  countingRule: 'ADR-008' | 'ADR-019';
+  photoRule: 'ALL' | 'TOP5' | null;
+  counts: {
+    rework: number;
+    bGrade: number;
+    reworkApproved: number;
+    qtyInspection?: number;
+    noDefect?: number;
+  };
+  findings: Array<{
+    inspectionType: 'REWORK' | 'B-GRADE';
+    areaId: AreaId;
+    subAreaId: string;
+    familyId: string;
+    defectId: DefectId;
+    qty: number;
+    firstRecordedAt: string;
+    defectName: string;
+    severity: 'MINOR' | 'MAJOR' | 'CRITICAL';
+  }>;
+}
+
+/**
+ * The newest admin correction of one of the tablet's sent submissions (ADR-023, doc 03 §4.11), kept while the
+ * outbox item is (7 days after sending). The outbox item itself never changes.
+ */
+export interface CorrectionRow {
+  submissionUuid: string;
+  /** The PSI who sent it, as the outbox item says. */
+  authorUsername: string;
+  revisionNo: number;
+  correctedAt: string;
+  reason: string;
+  submission: CorrectedSubmission;
+  /** The photos of the correction by defect, with their SHA-256 (hex). */
+  photos: Array<{ defectId: DefectId; sha256: string }>;
+  checkedAt: string;
+}
+
+/** A photo of a correction that the outbox does not already hold with the same bytes. */
+export interface CorrectionPhotoRow {
+  submissionUuid: string;
+  defectId: DefectId;
+  blob: Blob;
+  sha256: string;
+}
+
 export type Screen = 'home' | 'defect';
 
 /** Where the Defect screen's drill-down is (doc 05 §11.5); `null` above that level. */
@@ -149,6 +213,8 @@ export class M100Db extends Dexie {
   outbox!: Table<OutboxRow, string>;
   outboxPhotos!: Table<OutboxPhotoRow, [string, DefectId]>;
   views!: Table<ViewRow, [string, string, string]>;
+  corrections!: Table<CorrectionRow, string>;
+  correctionPhotos!: Table<CorrectionPhotoRow, [string, DefectId]>;
 
   constructor(name: string) {
     super(name);
@@ -189,6 +255,11 @@ export class M100Db extends Dexie {
           });
       });
     this.version(3).stores({ pos: null, view: null });
+    // ADR-023: the admin corrections of sent submissions; no existing table changes.
+    this.version(4).stores({
+      corrections: 'submissionUuid, authorUsername',
+      correctionPhotos: '[submissionUuid+defectId], submissionUuid',
+    });
   }
 }
 

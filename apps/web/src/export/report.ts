@@ -8,6 +8,7 @@ import {
   emptySession,
   findings,
   formatDate,
+  formatDateTime,
   formatPartial,
   inspectionDate,
   missingPhotos,
@@ -22,7 +23,13 @@ import {
   type SubmissionRequest,
 } from '@m100/shared';
 import { areaLabels } from '../app/mapping';
-import type { OutboxPhotoRow, OutboxRow, PoRow } from '../db/schema';
+import type {
+  CorrectionPhotoRow,
+  CorrectionRow,
+  OutboxPhotoRow,
+  OutboxRow,
+  PoRow,
+} from '../db/schema';
 
 /** The header title of the PDF (ADR-010). */
 export const EXPORT_TITLE = APP_NAME.toUpperCase();
@@ -84,6 +91,23 @@ export interface ExportReport {
    * it passed BR-04 at SUBMIT PO; the field keeps the report shape.
    */
   missingPhotos: string[];
+  /**
+   * The admin correction the file was made from (ADR-023, AC-12.5): the PDF prints "DIKOREKSI ADMIN · REVISI n ·
+   * time" under its title and Excel Part I gets a Correction row; `null` for the sealed submission.
+   */
+  correction: { revisionNo: number; correctedAt: string } | null;
+}
+
+/** The PDF line and the Excel value of a correction (doc 05 §8.5, §15). */
+export function correctionMark(correction: { revisionNo: number; correctedAt: string }): {
+  pdf: string;
+  excel: string;
+} {
+  const at = formatDateTime(new Date(correction.correctedAt));
+  return {
+    pdf: `DIKOREKSI ADMIN · REVISI ${correction.revisionNo} · ${at}`,
+    excel: `Revisi ${correction.revisionNo}, ${at}`,
+  };
 }
 
 export interface SealedExportInput {
@@ -128,6 +152,95 @@ export function sealedExport({ po, item, mapping, photoBlobs }: SealedExportInpu
   const submission = JSON.parse(item.payloadJson) as SubmissionRequest;
   if (submission.po !== po.po)
     throw new Error(`Outbox item is for PO ${submission.po}, not ${po.po}`);
+  return buildReport(submission, po, mapping, photoBlobs, null);
+}
+
+export interface CorrectedExportInput {
+  correction: CorrectionRow;
+  mapping: MappingIndex;
+  /** The correction's own photos (`correctionPhotos`). */
+  correctionPhotos: Pick<CorrectionPhotoRow, 'defectId' | 'blob' | 'sha256'>[];
+  /** The sealed submission's photos; a kept photo is one of them, found by its SHA-256. */
+  outboxPhotos: Pick<OutboxPhotoRow, 'defectId' | 'blob' | 'sha256'>[];
+}
+
+/**
+ * The report of an admin correction (ADR-023, AC-12.5): the corrected figures, PO, PSI, Factory/Cell, findings,
+ * photos and inspection date, with the revision named in the file.
+ */
+export function correctedExport({
+  correction,
+  mapping,
+  correctionPhotos,
+  outboxPhotos,
+}: CorrectedExportInput): ExportReport {
+  const c = correction.submission;
+  const submission: SubmissionRequest = {
+    submissionUuid: correction.submissionUuid,
+    sealedAt: c.sealedAt,
+    appVersion: '',
+    user: c.user,
+    factory: c.factory,
+    cell: c.cell,
+    po: c.po,
+    partial: c.partial,
+    counts:
+      c.counts.noDefect !== undefined
+        ? {
+            rework: c.counts.rework,
+            bGrade: c.counts.bGrade,
+            reworkApproved: c.counts.reworkApproved,
+            noDefect: c.counts.noDefect,
+          }
+        : {
+            rework: c.counts.rework,
+            bGrade: c.counts.bGrade,
+            reworkApproved: c.counts.reworkApproved,
+            qtyInspection: c.counts.qtyInspection ?? 0,
+          },
+    ...(c.photoRule === 'ALL' ? { photoRule: 'ALL' as const } : {}),
+    findings: c.findings.map((f) => ({
+      inspectionType: f.inspectionType,
+      areaId: f.areaId,
+      subAreaId: f.subAreaId,
+      familyId: f.familyId,
+      defectId: f.defectId,
+      qty: f.qty,
+      firstRecordedAt: f.firstRecordedAt,
+    })),
+    photos: correction.photos.map((p) => ({
+      defectId: p.defectId,
+      part: `photo_${p.defectId}`,
+      sha256: p.sha256,
+    })),
+  };
+  const bySha = new Map(
+    [...outboxPhotos, ...correctionPhotos].map((p) => [p.sha256, p.blob] as const),
+  );
+  const blobs = correction.photos.flatMap((p) => {
+    const blob = bySha.get(p.sha256);
+    return blob ? [{ defectId: p.defectId, blob }] : [];
+  });
+  const po = {
+    po: c.po,
+    article: c.article,
+    model: c.model,
+    destination: c.destination,
+    orderQty: c.orderQty,
+  };
+  return buildReport(submission, po, mapping, blobs, {
+    revisionNo: correction.revisionNo,
+    correctedAt: correction.correctedAt,
+  });
+}
+
+function buildReport(
+  submission: SubmissionRequest,
+  po: Pick<PoRow, 'po' | 'article' | 'model' | 'destination' | 'orderQty'>,
+  mapping: MappingIndex,
+  photoBlobs: Pick<OutboxPhotoRow, 'defectId' | 'blob'>[],
+  correction: ExportReport['correction'],
+): ExportReport {
   const state = stateOf(submission);
   const blobOf = new Map(photoBlobs.map((p) => [p.defectId, p.blob]));
   // The partial in force at SUBMIT PO, not the PO's current one.
@@ -251,5 +364,6 @@ export function sealedExport({ po, item, mapping, photoBlobs }: SealedExportInpu
           submission.photoRule ?? 'TOP5',
         ).map((row) => defectOf(row.defectId).name)
       : [],
+    correction,
   };
 }

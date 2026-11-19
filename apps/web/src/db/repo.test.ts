@@ -515,7 +515,7 @@ describe('update to per-cell data (ADR-021)', () => {
     const updated = createDb(name);
     try {
       await updated.open();
-      expect(updated.verno).toBe(3);
+      expect(updated.verno).toBe(4);
       expect(updated.tables.map((t) => t.name)).not.toContain('pos');
       expect(await updated.poList.count()).toBe(2);
       const rows = await updated.poList.toArray();
