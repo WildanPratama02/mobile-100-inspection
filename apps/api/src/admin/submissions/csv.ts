@@ -56,7 +56,7 @@ export const EXPORT_COLUMNS: readonly string[] = [
   'counting_rule',
   'photo_rule',
   ...TOP5_COLUMNS,
-  // ADR-023, at the end so the earlier columns keep their places: the revision shown and who made it.
+  // ADR-024, at the end so the earlier columns keep their places: the revision shown and who made it.
   'revision_no',
   'corrected_at',
   'corrected_by',

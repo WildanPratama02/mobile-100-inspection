@@ -1,4 +1,4 @@
--- ADR-023: admin corrections of a submission (doc 02 §4.4, §6.5, §8). A correction is a revision: a complete new
+-- ADR-024: admin corrections of a submission (doc 02 §4.4, §6.5, §8). A correction is a revision: a complete new
 -- version of the correctable fields, findings and photos. The original rows in submissions, submission_findings
 -- and submission_photos are never changed; the revisions are as immutable as they are. The reporting views show
 -- the effective version (the newest revision, or the original), with their existing columns unchanged.
@@ -81,7 +81,7 @@ CREATE TABLE submission_revision_photos (
 
 CREATE INDEX submission_revision_photos_object_key_idx ON submission_revision_photos (object_key);
 
--- Immutability (BR-07, ADR-023): the trigger of the original tables.
+-- Immutability (BR-07, ADR-024): the trigger of the original tables.
 CREATE TRIGGER submission_revisions_immutable
   BEFORE UPDATE OR DELETE ON submission_revisions
   FOR EACH ROW EXECUTE FUNCTION reject_submission_change();

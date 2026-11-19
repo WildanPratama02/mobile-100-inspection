@@ -6,7 +6,7 @@ let db: TestDatabase;
 let oldId: string;
 let original: Record<string, unknown>;
 const migrations = listMigrations();
-// Later migrations (0008, ADR-023) are not this test's subject.
+// Later migrations (0008, ADR-024) are not this test's subject.
 const upTo0007 = migrations.filter((m) => m.version < '0008');
 
 beforeAll(async () => {

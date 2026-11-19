@@ -59,6 +59,7 @@ import {
   selectArea,
   up,
 } from './drilldown';
+import { NoDefectDialog } from './NoDefectDialog';
 import './screens.css';
 
 /** The shoe photo in `public/` (design-system Shoe map image), precached with the app. */
@@ -139,10 +140,11 @@ export function DefectScreen({ po }: DefectScreenProps) {
   /** AC-06.3: only the current inspection is listed; ended ones stay on Home and in the export. */
   const history = active ? findingsOf(active.defects) : [];
   /**
-   * PSI lv.2 (FR-09, 10 Nov 2026): while no inspection runs, the session's NO DEFECT pairs (Qty A-Grade) are one
-   * history row, so a tap or UNDO is visible.
+   * PSI lv.2 (FR-09, ADR-023): while no inspection runs, the session's NO DEFECT pairs (Qty A-Grade) are one
+   * history row, always shown (also at 0) so a tap or UNDO is visible; tapping it opens S6a, also at the maximum.
    */
-  const noDefectRow = state.mode === 'TAPPED' && !active && state.noDefect > 0;
+  const noDefectRow = state.mode === 'TAPPED' && !active;
+  const [noDefectOpen, setNoDefectOpen] = useState(false);
   /** Why END INSPECTION is disabled, while the inspection has no finding yet (doc 05 §15). */
   const endHint = active !== null && defects.length === 0;
 
@@ -218,8 +220,13 @@ export function DefectScreen({ po }: DefectScreenProps) {
         go(NO_PATH);
         toast('Inspeksi dibatalkan');
       } else {
-        if (after.noDefect > 0) flashHistory(NO_DEFECT_KEY);
-        toast('No Defect dibatalkan');
+        // NO_DEFECT: one tapped pair back; SET_NO_DEFECT: the total before the save (ADR-023).
+        if (after.mode === 'TAPPED' && !after.active) flashHistory(NO_DEFECT_KEY);
+        toast(
+          before.undo === 'SET_NO_DEFECT'
+            ? 'Perubahan No Defect dibatalkan'
+            : 'No Defect dibatalkan',
+        );
       }
     });
 
@@ -349,14 +356,11 @@ export function DefectScreen({ po }: DefectScreenProps) {
                   path="A-Grade"
                   qty={state.noDefect}
                   flash={historyFlash?.key === NO_DEFECT_KEY}
+                  onClick={() => setNoDefectOpen(true)}
                 />
               </div>
             ) : history.length === 0 ? (
-              <p className="defect__hist-empty">
-                {active || state.mode !== 'TAPPED'
-                  ? 'Belum ada defect tercatat untuk inspeksi ini.'
-                  : 'Belum ada data tercatat.'}
-              </p>
+              <p className="defect__hist-empty">Belum ada defect tercatat untuk inspeksi ini.</p>
             ) : (
               history.map((f, i) => {
                 const key = historyKey(f);
@@ -393,6 +397,14 @@ export function DefectScreen({ po }: DefectScreenProps) {
           ]}
         />
       </section>
+      {noDefectOpen && noDefectRow ? (
+        <NoDefectDialog
+          po={po}
+          state={state}
+          onClose={() => setNoDefectOpen(false)}
+          onSaved={() => flashHistory(NO_DEFECT_KEY)}
+        />
+      ) : null}
     </main>
   );
 }

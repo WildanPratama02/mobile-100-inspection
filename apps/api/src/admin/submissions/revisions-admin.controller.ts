@@ -5,7 +5,7 @@ import { type AdminRevisionHistory, RevisionsAdminService } from './revisions-ad
 import type { AdminSubmissionDetail } from './submissions-admin.service';
 
 /**
- * Corrections of a submission (ADR-023, doc 04 §8.1): the history and a new revision. Needs the admin session and,
+ * Corrections of a submission (ADR-024, doc 04 §8.1): the history and a new revision. Needs the admin session and,
  * for the `POST`, `X-Requested-With: m100-admin` (`AdminGuard`). Nothing here changes or deletes a stored row.
  */
 @Controller('admin/submissions')

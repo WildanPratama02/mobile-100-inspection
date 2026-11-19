@@ -40,7 +40,7 @@ function imagesDrawn(pdf: string): number {
 }
 
 describe('toPdf (FR-12)', () => {
-  it('prints the correction under the title of a file made from an admin correction (ADR-023)', async () => {
+  it('prints the correction under the title of a file made from an admin correction (ADR-024)', async () => {
     const pdf = await pdfText({
       ...REPORT,
       correction: { revisionNo: 2, correctedAt: '2026-11-19T02:05:00.000Z' },

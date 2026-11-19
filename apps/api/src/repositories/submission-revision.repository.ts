@@ -1,5 +1,5 @@
 /**
- * Revisions of a submission (ADR-023, doc 02 §4.4, §6.5): reading a version (the original, a revision, or the
+ * Revisions of a submission (ADR-024, doc 02 §4.4, §6.5): reading a version (the original, a revision, or the
  * effective one), writing a correction inside the caller's transaction, the history, and the reads the tablet's
  * correction endpoints need (doc 04 §3.4). Rows are only ever inserted; the trigger and the grants refuse any change.
  */

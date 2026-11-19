@@ -11,6 +11,8 @@ export interface HistoryRowProps {
   qty?: number;
   flash?: boolean;
   className?: string;
+  /** Renders the row as a button with the accessible label "Ubah {name}" (doc 05 §11.1, ADR-023). */
+  onClick?: () => void;
 }
 
 export function HistoryRow({
@@ -22,6 +24,7 @@ export function HistoryRow({
   qty,
   flash,
   className,
+  onClick,
 }: HistoryRowProps) {
   if (head) {
     return (
@@ -33,15 +36,23 @@ export function HistoryRow({
       </div>
     );
   }
+  const Tag = onClick ? 'button' : 'div';
+  // A button may only hold phrasing content; as grid items the spans lay out like the divs.
+  const Cell = onClick ? 'span' : 'div';
   return (
-    <div className={cx('m100-hist', flash && 'm100-flash', className)}>
-      <div className="m100-hist__no">{no}.</div>
-      <div className="m100-hist__nm">
+    <Tag
+      className={cx('m100-hist', flash && 'm100-flash', className)}
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      aria-label={onClick ? `Ubah ${name ?? ''}`.trim() : undefined}
+    >
+      <Cell className="m100-hist__no">{no}.</Cell>
+      <Cell className="m100-hist__nm">
         {name}
         {path ? <small>{path}</small> : null}
-      </div>
-      <div>{classification != null ? <Chip tone={classification} /> : null}</div>
-      <div className="m100-hist__q">{qty}</div>
-    </div>
+      </Cell>
+      <Cell>{classification != null ? <Chip tone={classification} /> : null}</Cell>
+      <Cell className="m100-hist__q">{qty}</Cell>
+    </Tag>
   );
 }

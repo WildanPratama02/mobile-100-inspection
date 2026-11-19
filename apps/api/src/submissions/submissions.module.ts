@@ -9,7 +9,7 @@ import { SubmissionsController } from './submissions.controller';
 /**
  * `SubmissionsModule` of doc 03 §5.1: `POST /submissions`, request parsing (`readSubmissionParts`), validation
  * (doc 04 §4.2) and the write procedure (doc 03 §5.4); the tablet's reads of admin corrections (doc 04 §3.4,
- * ADR-023).
+ * ADR-024).
  */
 @Module({
   imports: [MasterDataModule],

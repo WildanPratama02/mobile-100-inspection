@@ -1,4 +1,4 @@
-import { setQtyInspection } from './helpers';
+import { photoSource, setQtyInspection } from './helpers';
 // EXPORT PDF / EXPORT EXCEL on Home (T1.6: FR-12, AC-12.1 … AC-12.4). Both files describe the PO's
 // sealed submission in the outbox, so each test SUBMIT POs first; the buttons are dead before that.
 import { readFile } from 'node:fs/promises';
@@ -64,7 +64,7 @@ async function homeWithDefect(page: Page, name: string) {
   await page.getByRole('button', { name: 'END INSPECTION' }).click();
   // Two pairs: PSI lv.2 taps NO DEFECT (ADR-021), PSI lv.1 enters Qty Inspection (ADR-019).
   const tapped = name === 'DEWI CONTOH';
-  if (tapped) await page.getByRole('button', { name: 'NO DEFECT' }).click();
+  if (tapped) await page.getByRole('button', { name: 'NO DEFECT', exact: true }).click();
   await page
     .getByRole('navigation', { name: 'Navigasi input defect' })
     .getByRole('button', { name: 'HOME' })
@@ -204,11 +204,12 @@ test('PSI lv.2 exports the sealed submission with its photo, and the PDF carries
     }),
     'base64',
   );
-  const chooser = page.waitForEvent('filechooser');
   await page
     .getByRole('region', { name: 'ALL DEFECT' })
     .getByRole('button', { name: 'Foto wajib' })
     .click();
+  const chooser = page.waitForEvent('filechooser');
+  await photoSource(page, 'Ambil Foto');
   await (await chooser).setFiles({ name: 'camera.jpg', mimeType: 'image/jpeg', buffer: jpeg });
   await expect(page.getByText('Foto tersimpan')).toBeVisible();
   expect(downloads).toBe(0);

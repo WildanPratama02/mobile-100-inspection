@@ -1,7 +1,7 @@
 /**
  * The weekly orphan sweep (doc 02 §6.2, doc 03 §5.4). Photos go into the store before the submission's transaction,
  * so a crash in between leaves objects without a `submission_photos` row (or, for a correction, without a
- * `submission_revision_photos` row, ADR-023); a retry overwrites them with the same
+ * `submission_revision_photos` row, ADR-024); a retry overwrites them with the same
  * bytes. Objects older than 24 hours that no row points to are removed: by then the tablet has either retried (and a
  * retry's put renews the object's time) or never will. A real run writes one `audit_log` row; `--dry-run` only reports.
  *

@@ -45,7 +45,7 @@ const FINDINGS: Column<AdminFinding>[] = [
   { key: 'qty', header: 'Qty', numeric: true, cell: (f) => formatCount(f.qty) },
 ];
 
-/** `?revision=<n>` of the detail: an earlier version (ADR-023); none for the effective one. */
+/** `?revision=<n>` of the detail: an earlier version (ADR-024); none for the effective one. */
 function revisionOf(query: URLSearchParams): number | undefined {
   const text = query.get('revision');
   return text !== null && /^\d+$/.test(text) ? Number(text) : undefined;
@@ -53,7 +53,7 @@ function revisionOf(query: URLSearchParams): number | undefined {
 
 /**
  * A1b — one submission: its effective version, or an earlier one with `?revision=<n>`. No delete or void (AC-14.4);
- * KOREKSI opens the correction form (A1c, ADR-023), and the history lists every version.
+ * KOREKSI opens the correction form (A1c, ADR-024), and the history lists every version.
  */
 export function SubmissionDetail({ id }: { id: string }) {
   const { query } = useLocation();

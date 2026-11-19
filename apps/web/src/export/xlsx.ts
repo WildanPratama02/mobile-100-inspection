@@ -39,7 +39,7 @@ function summary(report: ExportReport): SheetData {
     [filled('Part I: General Data')],
     [bold('Date'), cell(formatDate(report.date))],
     [bold('PSI Name'), cell(report.psiName)],
-    // ADR-023, AC-12.5: a third Part I row when the file is made from an admin correction.
+    // ADR-024, AC-12.5: a third Part I row when the file is made from an admin correction.
     ...(report.correction
       ? [[bold('Correction'), cell(correctionMark(report.correction).excel)]]
       : []),

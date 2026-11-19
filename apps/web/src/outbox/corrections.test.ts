@@ -134,7 +134,7 @@ afterEach(async () => {
   await db.delete();
 });
 
-describe('the correction check (ADR-023, doc 03 §4.11)', () => {
+describe('the correction check (ADR-024, doc 03 §4.11)', () => {
   it('asks per author for the sent items only and stores a correction with only the photos it lacks', async () => {
     await repo.putOutboxItem(db, item('u1'));
     await repo.putOutboxItem(db, item('u2', { state: 'waiting', sentAt: null }));

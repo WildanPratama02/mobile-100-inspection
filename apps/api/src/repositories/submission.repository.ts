@@ -100,7 +100,7 @@ export interface SubmissionRepository {
   write(submission: NewSubmission): Promise<WriteResult>;
   /**
    * Those of `keys` that a `submission_photos` or a `submission_revision_photos` row points to (the orphan sweep,
-   * doc 02 §6.2; a correction's photos, ADR-023).
+   * doc 02 §6.2; a correction's photos, ADR-024).
    */
   photoKeysInUse(keys: readonly string[], q?: Queryable): Promise<Set<string>>;
 }

@@ -10,7 +10,7 @@
     "dev": "pnpm --filter web dev",
     "dev:admin": "pnpm --filter admin dev",
     "build": "pnpm -r build",
-    "test": "pnpm -r test",
+    "test": "pnpm -r --workspace-concurrency=1 test",
     "test:load": "pnpm --filter api test:load",
     "lint": "eslint .",
     "typecheck": "pnpm -r typecheck",

@@ -4,7 +4,7 @@ import { cutOnFailure } from '../admin/submissions/submissions-admin.controller'
 import { type Correction, CorrectionsService } from './corrections.service';
 
 /**
- * The tablet's reads of admin corrections (ADR-023, doc 04 §3.4). Device key and user token, the default for a route
+ * The tablet's reads of admin corrections (ADR-024, doc 04 §3.4). Device key and user token, the default for a route
  * without `@Auth`; an admin cookie is no tablet token. Both count towards the device's rate limit.
  */
 @Controller('submissions')

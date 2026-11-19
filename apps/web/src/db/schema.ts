@@ -105,7 +105,7 @@ export interface OutboxPhotoRow {
 
 /**
  * The corrected submission as `GET /submissions/corrections` gives it (doc 04 §3.4, `Correction.submission`):
- * the effective version the exports use (ADR-023).
+ * the effective version the exports use (ADR-024).
  */
 export interface CorrectedSubmission {
   displayNo: string;
@@ -143,7 +143,7 @@ export interface CorrectedSubmission {
 }
 
 /**
- * The newest admin correction of one of the tablet's sent submissions (ADR-023, doc 03 §4.11), kept while the
+ * The newest admin correction of one of the tablet's sent submissions (ADR-024, doc 03 §4.11), kept while the
  * outbox item is (7 days after sending). The outbox item itself never changes.
  */
 export interface CorrectionRow {
@@ -255,7 +255,7 @@ export class M100Db extends Dexie {
           });
       });
     this.version(3).stores({ pos: null, view: null });
-    // ADR-023: the admin corrections of sent submissions; no existing table changes.
+    // ADR-024: the admin corrections of sent submissions; no existing table changes.
     this.version(4).stores({
       corrections: 'submissionUuid, authorUsername',
       correctionPhotos: '[submissionUuid+defectId], submissionUuid',

@@ -225,7 +225,7 @@ export async function insertPhoto(
   );
 }
 
-/** An admin row for revisions (ADR-023); returns its id. */
+/** An admin row for revisions (ADR-024); returns its id. */
 export async function insertAdmin(db: ClientBase, username = 'qip.digital'): Promise<number> {
   const { rows } = await db.query<{ id: number }>(
     `INSERT INTO admins (username, password_hash, active) VALUES ($1, 'not-a-hash', true) RETURNING id`,
@@ -263,7 +263,7 @@ const REVISION_COPIED = [
 ] as const;
 
 /**
- * A revision row (ADR-023) for `submission`, a row of `submissionRow`, with `overrides`: by default a copy of its
+ * A revision row (ADR-024) for `submission`, a row of `submissionRow`, with `overrides`: by default a copy of its
  * figures with Rework and Approved 0, numbered 1, by `adminId`.
  */
 export function revisionRow(

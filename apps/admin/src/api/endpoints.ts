@@ -87,7 +87,7 @@ export function runImport(kind: ImportKind, file: File, dryRun: boolean): Promis
   });
 }
 
-// A1 Submissions; a correction adds a revision (ADR-023), nothing is deleted (AC-14.4).
+// A1 Submissions; a correction adds a revision (ADR-024), nothing is deleted (AC-14.4).
 export const listSubmissions = (filter: SubmissionFilter, page: number) =>
   request<Page<AdminSubmissionSummary>>('/submissions', { query: { ...filter, page } });
 /** The effective version, or version `revision` (0 = the PSI's submission). */

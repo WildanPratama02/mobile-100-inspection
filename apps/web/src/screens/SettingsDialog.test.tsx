@@ -65,7 +65,7 @@ async function renderMenu(...items: OutboxRow[]) {
 }
 
 describe('Pengiriman in the gear menu (AC-11.3, doc 05 §14)', () => {
-  it('marks a sent item an admin corrected, with the time and the reason (ADR-023)', async () => {
+  it('marks a sent item an admin corrected, with the time and the reason (ADR-024)', async () => {
     await repo.saveCorrection(
       db,
       {

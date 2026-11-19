@@ -1,5 +1,5 @@
 /**
- * Admin corrections of a submission (ADR-023, PRD FR-17, doc 02 §4.4, §6.5, doc 04 §8.1). A correction is a
+ * Admin corrections of a submission (ADR-024, PRD FR-17, doc 02 §4.4, §6.5, doc 04 §8.1). A correction is a
  * complete new version, checked with the same rules as a submission (`rules.ts`) for the original's counting and
  * photo rule. The master lookups (does the PSI, the cell, the PO exist) are the API's; everything here is pure.
  */
@@ -176,7 +176,7 @@ function checkRevisionPhotos(
 }
 
 /**
- * The new version a correction writes (doc 02 §4.4, ADR-023 decision 6). A changed PO takes article, model,
+ * The new version a correction writes (doc 02 §4.4, ADR-024 decision 6). A changed PO takes article, model,
  * destination, Qty Order, PODD and CRD from `poMaster` (required then); an unchanged PO keeps the base's
  * snapshot. A finding keeps the `firstRecordedAt` of the base finding with the same identity, else of the base's
  * first finding of the same defect, else gets `correctedAt`, so the ranking ties stay as the PSI recorded them.

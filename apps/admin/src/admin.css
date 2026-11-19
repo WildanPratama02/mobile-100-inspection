@@ -629,7 +629,7 @@ a.m100-btn {
   text-align: center;
 }
 
-/* A1c correction form (doc 05 §20.3a, ADR-023). */
+/* A1c correction form (doc 05 §20.3a, ADR-024). */
 .adm-correction {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));

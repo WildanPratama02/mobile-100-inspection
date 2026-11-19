@@ -118,11 +118,12 @@ function Breadcrumb(p){
 }
 function HistoryRow(p){
   if (p.head) return h('div', {className:cx('m100-hist','m100-hist--head',p.className)}, h('div',null,'No'), h('div',null,'Defect name'), h('div',null,'Kelas'), h('div',{style:{textAlign:'right'}},'Qty'));
-  return h('div', {className:cx('m100-hist', p.flash&&'m100-flash', p.className)},
-    h('div', {className:'m100-hist__no'}, p.no + '.'),
-    h('div', {className:'m100-hist__nm'}, p.name, p.path ? h('small', null, p.path) : null),
-    h('div', null, h(Chip,{tone:p.classification})),
-    h('div', {className:'m100-hist__q'}, p.qty));
+  var c = p.onClick ? 'span' : 'div';
+  return h(p.onClick ? 'button' : 'div', {type:p.onClick?'button':undefined,onClick:p.onClick,'aria-label':p.onClick?'Ubah '+(p.name||''):undefined,className:cx('m100-hist', p.flash&&'m100-flash', p.className)},
+    h(c, {className:'m100-hist__no'}, p.no + '.'),
+    h(c, {className:'m100-hist__nm'}, p.name, p.path ? h('small', null, p.path) : null),
+    h(c, null, h(Chip,{tone:p.classification})),
+    h(c, {className:'m100-hist__q'}, p.qty));
 }
 function AreaPill(p){
   var lines = p.lines || [p.label];
@@ -187,7 +188,7 @@ function NumberPad(p){
   var fmt = function(s){ return s === '' ? '' : s.replace(/\B(?=(\d{3})+(?!\d))/g,'.'); };
   function press(d){ if(!p.onChange) return; var nx = (digits === '0' ? '' : digits) + d; if (nx.length > 9) return; p.onChange(nx); }
   var keys = ['1','2','3','4','5','6','7','8','9'];
-  var msg = over ? 'Maksimum '+fmt(String(max))+' pasang' : zero ? 'Minimal '+fmt(String(p.min == null ? 1 : p.min))+' pasang' : (p.hint || '');
+  var msg = over ? (p.overMessage || 'Maksimum '+fmt(String(max))+' pasang') : zero ? 'Minimal '+fmt(String(p.min == null ? 1 : p.min))+' pasang' : (p.hint || '');
   return h('div',{className:cx('m100-pad',p.className), role:'group', 'aria-label': p.label || 'Input angka'},
     p.label ? h('span',{className:'m100-pad__label'},p.label) : null,
     h('output',{className:cx('m100-pad__out', (over||zero)&&'m100-pad__out--bad'), 'aria-live':'polite'}, digits === '' ? h('span',{className:'m100-ph'},p.placeholder||'0') : fmt(digits), p.unit ? h('small',null,p.unit) : null),

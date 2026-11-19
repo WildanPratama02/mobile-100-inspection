@@ -73,7 +73,7 @@ export function toPdf(report: ExportReport, assets: PdfAssets): Blob {
     doc.setTextColor(INK);
     doc.text(EXPORT_TITLE, MARGIN + logo.w + 4, 15.5);
     if (report.correction) {
-      // ADR-023, AC-12.5: the file is made from an admin correction.
+      // ADR-024, AC-12.5: the file is made from an admin correction.
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
       doc.text(correctionMark(report.correction).pdf, MARGIN + logo.w + 4, 19.5);

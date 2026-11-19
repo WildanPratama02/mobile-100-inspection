@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { encodeWithin, fitWithin, MAX_BYTES, PhotoProcessingError, QUALITIES } from './resize';
+import {
+  encodeWithin,
+  fitWithin,
+  MAX_BYTES,
+  PhotoDecodeError,
+  PhotoProcessingError,
+  QUALITIES,
+  toJpeg,
+} from './resize';
 
 describe('fitWithin (AC-10.1)', () => {
   it('scales a landscape photo to 960 px wide', () => {
@@ -44,5 +52,21 @@ describe('encodeWithin (AC-10.1)', () => {
     await expect(encodeWithin(() => Promise.resolve(ofSize(MAX_BYTES + 1)))).rejects.toThrow(
       PhotoProcessingError,
     );
+  });
+});
+
+describe('toJpeg: an image the browser cannot decode (AC-10.7, ADR-023)', () => {
+  it('throws PhotoDecodeError, a PhotoProcessingError, with the decoder error as its cause', async () => {
+    const cause = new DOMException('The source image could not be decoded.', 'InvalidStateError');
+    vi.stubGlobal('createImageBitmap', vi.fn().mockRejectedValue(cause));
+    try {
+      const heic = new Blob(['heic'], { type: 'image/heic' });
+      const error: unknown = await toJpeg(heic).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(PhotoDecodeError);
+      expect(error).toBeInstanceOf(PhotoProcessingError);
+      expect((error as PhotoDecodeError).cause).toBe(cause);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -1,4 +1,4 @@
-// An admin correction reaches the tablet (ADR-023, PRD AC-17.6, AC-12.5, doc 03 §4.11) against the real API: the PSI
+// An admin correction reaches the tablet (ADR-024, PRD AC-17.6, AC-12.5, doc 03 §4.11) against the real API: the PSI
 // submits, the correction is written (here straight into the test database, as the admin endpoint would: the admin
 // screens have their own tests in apps/admin/e2e/corrections.spec.ts), and Pengaturan and EXPORT EXCEL show it.
 import { readFile } from 'node:fs/promises';

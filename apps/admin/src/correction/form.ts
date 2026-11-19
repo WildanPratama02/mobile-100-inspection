@@ -1,5 +1,5 @@
 /**
- * The correction form of A1c (doc 05 §20.3a, ADR-023) as plain data: built from the detail of the effective version,
+ * The correction form of A1c (doc 05 §20.3a, ADR-024) as plain data: built from the detail of the effective version,
  * turned into the `RevisionRequest` of doc 04 §8.1, and checked with the same shared rules the API applies
  * (`checkRevision`), so the admin sees a problem before saving. No React here; the screen holds the state.
  */

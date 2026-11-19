@@ -54,7 +54,7 @@ export function App({ store, sources }: AppProps) {
       }),
     [appStore, dataSources],
   );
-  // Admin corrections of sent submissions (ADR-023, doc 03 §4.11).
+  // Admin corrections of sent submissions (ADR-024, doc 03 §4.11).
   const checker = useMemo(
     () =>
       createCorrectionChecker({

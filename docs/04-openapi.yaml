@@ -224,7 +224,7 @@ paths:
     get:
       tags: [submissions]
       operationId: getOwnCorrections
-      summary: Newest admin correction of the token's own submissions (doc 04 section 3.4, ADR-023).
+      summary: Newest admin correction of the token's own submissions (doc 04 section 3.4, ADR-024).
       description: |
         Up to 50 submission UUIDs. Only UUIDs that have a revision and whose original username is the token's
         `sub` are answered; every other UUID is absent from `items`. Changes nothing.
@@ -569,7 +569,7 @@ paths:
       description: |
         Every filter is optional and they all apply together. `from` and `to` are inclusive WIB dates on the
         inspection date; `factory`, `cell` and `username` match exactly; `po` matches any part of the PO number,
-        ignoring case. An empty value means no filter. Rows and filters use the effective version (ADR-023); a correction adds a revision and never changes a row (AC-14.4).
+        ignoring case. An empty value means no filter. Rows and filters use the effective version (ADR-024); a correction adds a revision and never changes a row (AC-14.4).
       security: [{ adminCookie: [] }]
       parameters:
         - $ref: '#/components/parameters/SubmissionFrom'
@@ -608,7 +608,7 @@ paths:
         qty_bgrade_inspections, qty_no_defect, qty_inspection, qty_a_grade, qty_b_grade, qty_defect, rft,
         defect_rate, photo_count, counting_rule, photo_rule, then top1_defect_id, top1_defect_name, top1_qty … top5_qty (empty
         when the submission has fewer defects; qty_no_defect is empty when counting_rule is ADR-019), then revision_no,
-        corrected_at, corrected_by, correction_reason (ADR-023; every column is the effective version, the last three
+        corrected_at, corrected_by, correction_reason (ADR-024; every column is the effective version, the last three
         are empty for revision 0).
         qty_rework_approved is empty for legacy NULL; photo_rule is ALL / TOP5 for new PSI lv.2 rows, empty for PSI lv.1 and existing PSI lv.2 NULL rows (legacy Top 5 rule). Numbers are raw: no thousands separator and a dot for decimals;
         rft and defect_rate are the stored fractions with 5 decimals (`0.60000` = 60,0%). Text typed by people that
@@ -666,7 +666,7 @@ paths:
     post:
       tags: [admin]
       operationId: adminCreateRevision
-      summary: Correct a submission by adding a revision (ADR-023, doc 04 section 8.1). Idempotent by `revisionId`.
+      summary: Correct a submission by adding a revision (ADR-024, doc 04 section 8.1). Idempotent by `revisionId`.
       description: |
         `multipart/form-data` with one JSON part `revision` and one part `photo_<DEFECT_ID>` per new photo.
         Needs `X-Requested-With: m100-admin`. Validated like a submission for the original's counting and photo rule.
@@ -1347,7 +1347,7 @@ components:
         defectRate: { type: number, description: 'Fraction; can exceed 1.' }
         photoCount: { type: integer }
         countingRule: { type: string, enum: ['ADR-008', 'ADR-019'], description: 'ADR-019 = Qty Inspection entered by the PSI (doc 02 section 4.1).' }
-        revisionNo: { type: integer, minimum: 0, description: 'Revision shown; 0 = the submission sent by the PSI (ADR-023).' }
+        revisionNo: { type: integer, minimum: 0, description: 'Revision shown; 0 = the submission sent by the PSI (ADR-024).' }
     AdminSubmissionDetail:
       allOf:
         - $ref: '#/components/schemas/AdminSubmissionSummary'
@@ -1423,7 +1423,7 @@ components:
               items: { type: object, required: [id, defectId, url], properties: { id: { type: integer }, defectId: { $ref: '#/components/schemas/DefectId' }, url: { type: string, description: 'Where to load it (see top5.photoUrl).' } } }
             audit:
               type: array
-              description: Audit-log rows about this submission (entity `submissions`), such as `submission.revise` (ADR-023).
+              description: Audit-log rows about this submission (entity `submissions`), such as `submission.revise` (ADR-024).
               items:
                 type: object
                 required: [id, at, actor, action, details]
@@ -1489,7 +1489,7 @@ components:
               sizeBytes: { type: integer }
     RevisionRequest:
       type: object
-      description: A complete new version of a submission (doc 04 section 8.1, ADR-023).
+      description: A complete new version of a submission (doc 04 section 8.1, ADR-024).
       required: [revisionId, baseRevisionNo, reason, sealedAt, username, factory, cell, po, partial, counts, findings, photos]
       properties:
         revisionId: { type: string, format: uuid }

@@ -1,5 +1,5 @@
 /**
- * The tablet's reads of admin corrections (ADR-023, doc 04 §3.4, doc 03 §4.11): the newest correction of the
+ * The tablet's reads of admin corrections (ADR-024, doc 04 §3.4, doc 03 §4.11): the newest correction of the
  * token's own submissions, and the photos of that correction. Only submissions whose original PSI is the token's
  * `sub` are answered; any other id is simply left out, so the answer never tells whether another PSI's submission
  * exists. Nothing here writes.

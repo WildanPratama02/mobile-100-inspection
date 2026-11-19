@@ -130,7 +130,7 @@ export interface AdminSubmissionSummary {
   rft: number;
   defectRate: number;
   photoCount: number;
-  /** The revision shown (ADR-023): 0 for the PSI's submission. */
+  /** The revision shown (ADR-024): 0 for the PSI's submission. */
   revisionNo: number;
 }
 
@@ -180,12 +180,12 @@ export interface AdminSubmissionDetail extends AdminSubmissionSummary {
     classification: Classification;
     qty: number;
     photoId: number | null;
-    /** Where to load the photo (original or correction, ADR-023); `null` without a photo. */
+    /** Where to load the photo (original or correction, ADR-024); `null` without a photo. */
     photoUrl: string | null;
   }[];
   photos: { id: number; defectId: DefectId; url: string }[];
   audit: { id: string; at: string; actor: string; action: string; details: unknown }[];
-  /** The newest revision; a correction is made from it (`baseRevisionNo`, ADR-023). */
+  /** The newest revision; a correction is made from it (`baseRevisionNo`, ADR-024). */
   latestRevisionNo: number;
   correctedAt: string | null;
   correctedBy: string | null;

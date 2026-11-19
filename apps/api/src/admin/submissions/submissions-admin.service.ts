@@ -72,7 +72,7 @@ const filterFields = {
 };
 const filterSchema = z.object(filterFields).refine(rangeInOrder, RANGE_ERROR);
 const listSchema = z.object({ ...filterFields, page: pageQuery }).refine(rangeInOrder, RANGE_ERROR);
-/** `?revision=<n>` of the detail (ADR-023, doc 04 §8.1). */
+/** `?revision=<n>` of the detail (ADR-024, doc 04 §8.1). */
 const detailSchema = z.object({
   revision: optionalQuery(
     z
@@ -101,7 +101,7 @@ export interface AdminSubmissionSummary {
   rft: number;
   defectRate: number;
   photoCount: number;
-  /** The revision shown (ADR-023); 0 for the PSI's submission. */
+  /** The revision shown (ADR-024); 0 for the PSI's submission. */
   revisionNo: number;
 }
 
@@ -163,7 +163,7 @@ export interface AdminSubmissionDetail extends AdminSubmissionSummary {
   top5: AdminTop5Place[];
   photos: { id: number; defectId: string; url: string }[];
   audit: { id: string; at: string; actor: string; action: string; details: unknown }[];
-  /** The newest revision; the correction form sends it as `baseRevisionNo` (ADR-023). */
+  /** The newest revision; the correction form sends it as `baseRevisionNo` (ADR-024). */
   latestRevisionNo: number;
   correctedAt: string | null;
   correctedBy: string | null;
@@ -210,7 +210,7 @@ export class SubmissionsAdminService {
   }
 
   /**
-   * One submission: its effective version (ADR-023), or version `revision` (0 = the PSI's submission) when the
+   * One submission: its effective version (ADR-024), or version `revision` (0 = the PSI's submission) when the
    * query names one; `404` for an unknown submission or revision.
    */
   async detail(id: string, query: unknown = {}): Promise<AdminSubmissionDetail> {
@@ -241,7 +241,7 @@ export class SubmissionsAdminService {
     return this.stream(row.id, row.objectKey);
   }
 
-  /** The JPEG of a correction's photo (`submission_revision_photos`, ADR-023), like `photo`. */
+  /** The JPEG of a correction's photo (`submission_revision_photos`, ADR-024), like `photo`. */
   async revisionPhoto(id: string): Promise<Readable> {
     const n = photoIdOf(id);
     const row = await this.db.run(() => this.revisions.revisionPhoto(n));
@@ -355,7 +355,7 @@ function top5Of(
     }));
 }
 
-/** Where the admin app loads a photo of a version (ADR-023). */
+/** Where the admin app loads a photo of a version (ADR-024). */
 export function photoUrl(photo: Pick<VersionPhoto, 'source' | 'id'>): string {
   return photo.source === 'revision'
     ? `/v1/admin/revision-photos/${photo.id}`

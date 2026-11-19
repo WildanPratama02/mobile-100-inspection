@@ -18,7 +18,7 @@ export function useOutboxSender(): OutboxSender | null {
 /** How often the correction check runs while the app is open (AC-17.6: within 30 minutes). */
 export const CORRECTION_CHECK_MS = 30 * 60 * 1000;
 
-/** The app's correction check (ADR-023); `null` in screen tests without one. */
+/** The app's correction check (ADR-024); `null` in screen tests without one. */
 export const CorrectionCheckerContext = createContext<CorrectionChecker | null>(null);
 
 export function useCorrectionChecker(): CorrectionChecker | null {
@@ -37,7 +37,9 @@ export function useCorrectionCheckLoop(
   useEffect(() => {
     if (!checker || !enabled) return;
     const check = () => void checker.check();
-    const afterSend = () => void (sender?.run() ?? Promise.resolve()).finally(check);
+    // The sender logs its own failures (useOutboxSenderLoop); here only the check after its pass matters.
+    const afterSend = () =>
+      void (sender?.run() ?? Promise.resolve()).catch(() => undefined).finally(check);
     afterSend();
     const timer = window.setInterval(check, CORRECTION_CHECK_MS);
     window.addEventListener('online', afterSend);

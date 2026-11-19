@@ -110,7 +110,7 @@ function context(level: RevisionOriginal['level'], orderQty = 100): RevisionCont
 
 const codes = (failures: { path: string; code: string }[]) => failures.map((f) => [f.path, f.code]);
 
-describe('checkRevision (ADR-023)', () => {
+describe('checkRevision (ADR-024)', () => {
   it('accepts the doc 02 §9 example corrected to Qty Inspection 25, giving A-Grade 14', () => {
     const request = unchanged(LV1_BASE);
     request.counts.qtyInspection = 25;

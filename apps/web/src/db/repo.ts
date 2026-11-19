@@ -446,7 +446,7 @@ export function purgeSentOutbox(db: M100Db, now: string): Promise<string[]> {
     );
     const ids = old.map((o) => o.submissionUuid);
     await db.outboxPhotos.where('submissionUuid').anyOf(ids).delete();
-    // A correction leaves the tablet with its item (ADR-023, doc 03 §4.11).
+    // A correction leaves the tablet with its item (ADR-024, doc 03 §4.11).
     await db.correctionPhotos.where('submissionUuid').anyOf(ids).delete();
     await db.corrections.bulkDelete(ids);
     await db.outbox.bulkDelete(ids);
@@ -454,7 +454,7 @@ export function purgeSentOutbox(db: M100Db, now: string): Promise<string[]> {
   });
 }
 
-// ---- Admin corrections (ADR-023, doc 03 §4.11) ----
+// ---- Admin corrections (ADR-024, doc 03 §4.11) ----
 
 /** The corrections of a PSI's own submissions. */
 export function listCorrections(db: M100Db, username: string): Promise<CorrectionRow[]> {

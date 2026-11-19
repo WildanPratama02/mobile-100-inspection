@@ -91,9 +91,9 @@ export interface MasterDataRepository {
   defectFamilies(q?: Queryable): Promise<{ defectId: DefectId; familyId: string }[]>;
 
   findActiveUser(username: string, level: PsiLevel, q?: Queryable): Promise<User | null>;
-  /** The levels a name has in `psi_users`, active or not (an admin correction, ADR-023). */
+  /** The levels a name has in `psi_users`, active or not (an admin correction, ADR-024). */
   findUserLevels(username: string, q?: Queryable): Promise<PsiLevel[]>;
-  /** The cell when it belongs to that factory, active or not (an admin correction, ADR-023). */
+  /** The cell when it belongs to that factory, active or not (an admin correction, ADR-024). */
   findCell(factory: string, cell: string, q?: Queryable): Promise<Cell | null>;
   /** The cell when it and its factory are both active and it belongs to that factory. */
   findActiveCell(factory: string, cell: string, q?: Queryable): Promise<Cell | null>;

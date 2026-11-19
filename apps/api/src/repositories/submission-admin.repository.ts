@@ -2,7 +2,7 @@
  * The admin's read side of the submissions (doc 04 §8, doc 05 §20.3, AC-14.4): the filtered list, one submission
  * with its findings and photos, a photo row, and the batches of the CSV export. Read only: nothing here writes, and
  * the trigger and the grants refuse any change anyway (BR-07). Rows come from `v_submissions` (doc 02 §8), so the
- * admin app and the reporting tools see the same values: the effective version of each submission (ADR-023), its
+ * admin app and the reporting tools see the same values: the effective version of each submission (ADR-024), its
  * newest correction or the original.
  */
 import type {
@@ -70,7 +70,7 @@ export interface SubmissionRow {
   qtyReworkApproved: number | null;
   /** `null` for PSI lv.1 and for PSI lv.2 rows sealed before ADR-022 (Top 5 rule). */
   photoRule: PhotoRule | null;
-  /** The revision shown (ADR-023): 0 for the original. */
+  /** The revision shown (ADR-024): 0 for the original. */
   revisionNo: number;
   correctedAt: Date | null;
   correctedBy: string | null;
@@ -95,7 +95,7 @@ export interface SubmissionFindingRow {
 }
 
 export interface SubmissionPhotoRow {
-  /** `original`: a `submission_photos` row; `revision`: a `submission_revision_photos` row (ADR-023). */
+  /** `original`: a `submission_photos` row; `revision`: a `submission_revision_photos` row (ADR-024). */
   source: 'original' | 'revision';
   id: number;
   submissionId: string;
@@ -149,7 +149,7 @@ const COLUMNS = `
   v.defect_rate::text AS "defectRate", v.photo_count AS "photoCount", v.counting_rule AS "countingRule",
   v.qty_rework_approved AS "qtyReworkApproved", v.photo_rule AS "photoRule", v.revision_no AS "revisionNo",
   s.corrected_at AS "correctedAt", v.corrected_by AS "correctedBy", v.correction_reason AS "correctionReason"`;
-// `s`: the effective version with its time zone and bookkeeping columns (ADR-023, doc 02 §4.4).
+// `s`: the effective version with its time zone and bookkeeping columns (ADR-024, doc 02 §4.4).
 const FROM = `FROM v_submissions v JOIN v_effective_submissions s ON s.id = v.id`;
 const ORDER = `ORDER BY s.sealed_at DESC, v.display_no DESC`;
 

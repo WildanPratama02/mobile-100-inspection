@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   allDefects,
+  computeTotals,
   findings,
   replay,
   top5,
+  totals,
   type PoQuantities,
   type SessionEventPayload,
   type SessionState,
@@ -296,6 +298,42 @@ describe('PSI lv.2 with tapped counts (ADR-021)', () => {
       bGrade: 1,
       noDefect: 2,
       reworkApproved: 0,
+    });
+  });
+
+  describe('NO DEFECT total set with the number pad (ADR-023)', () => {
+    const SET = (qty: number): SessionEventPayload => ({ type: 'SET_NO_DEFECT', qty });
+
+    it('sends the set total plus later taps in counts.noDefect; totals match computeTotals', () => {
+      const state = tapped(NO_DEFECT, SET(120), NO_DEFECT, REWORK, defect('D035'), END);
+      const request = buildSubmission(input(state));
+      expect(request.counts).toEqual({ rework: 1, bGrade: 0, noDefect: 121, reworkApproved: 0 });
+      const api = computeTotals(request.counts, request.findings);
+      const shown = totals(state, po(10002));
+      expect(api).toEqual({
+        qtyInspection: shown.qtyInspection,
+        qtyAGrade: shown.qtyAGrade,
+        qtyDefect: shown.qtyDefect,
+        qtyBGrade: shown.qtyBGrade,
+        defectRate: shown.defectRate,
+        passRate: shown.passRate,
+      });
+      expect(api).toMatchObject({ qtyInspection: 122, qtyAGrade: 121 });
+    });
+
+    it('sends the total before the set after UNDO of the set', () => {
+      const state = tapped(NO_DEFECT, NO_DEFECT, SET(120), UNDO);
+      expect(buildSubmission(input(state)).counts).toMatchObject({ noDefect: 2 });
+    });
+
+    it('a set total counts as pairs; set to 0 with nothing else stops SUBMIT PO', () => {
+      expect(blockFor(tapped(SET(30)))).toBeNull();
+      expect(blockFor(tapped(NO_DEFECT, SET(0)))).toEqual({ kind: 'NO_PAIRS' });
+    });
+
+    it('stops above a partial quantity lowered after the set, until the total is lowered', () => {
+      expect(blockFor(tapped(SET(30)), po(100, 20))).toEqual({ kind: 'ABOVE', max: 20 });
+      expect(blockFor(tapped(SET(30), SET(20)), po(100, 20))).toBeNull();
     });
   });
 });

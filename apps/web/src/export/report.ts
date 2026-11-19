@@ -92,7 +92,7 @@ export interface ExportReport {
    */
   missingPhotos: string[];
   /**
-   * The admin correction the file was made from (ADR-023, AC-12.5): the PDF prints "DIKOREKSI ADMIN · REVISI n ·
+   * The admin correction the file was made from (ADR-024, AC-12.5): the PDF prints "DIKOREKSI ADMIN · REVISI n ·
    * time" under its title and Excel Part I gets a Correction row; `null` for the sealed submission.
    */
   correction: { revisionNo: number; correctedAt: string } | null;
@@ -165,7 +165,7 @@ export interface CorrectedExportInput {
 }
 
 /**
- * The report of an admin correction (ADR-023, AC-12.5): the corrected figures, PO, PSI, Factory/Cell, findings,
+ * The report of an admin correction (ADR-024, AC-12.5): the corrected figures, PO, PSI, Factory/Cell, findings,
  * photos and inspection date, with the revision named in the file.
  */
 export function correctedExport({

@@ -57,7 +57,7 @@ export function sha256Hex(bytes: Buffer): string {
 export function readSubmissionParts(
   req: IncomingMessage,
   limits: MultipartLimits = MULTIPART_LIMITS,
-  /** The JSON part: `submission`, or `revision` for an admin correction (ADR-023, doc 04 §8.1). */
+  /** The JSON part: `submission`, or `revision` for an admin correction (ADR-024, doc 04 §8.1). */
   jsonPart: string = SUBMISSION_PART,
 ): Promise<SubmissionParts> {
   return new Promise((resolve, reject) => {

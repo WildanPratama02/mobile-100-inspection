@@ -204,7 +204,7 @@ const bytesOf = (r: request.Test) =>
     res.on('end', () => done(null, Buffer.concat(chunks)));
   });
 
-describe('GET /v1/submissions/corrections (ADR-023, doc 04 §3.4)', () => {
+describe('GET /v1/submissions/corrections (ADR-024, doc 04 §3.4)', () => {
   it('gives the author the newest correction of their own submission and nothing else', async () => {
     const res = await corrections(budi, `${id},${randomUUID()}`);
     expect(res.status).toBe(200);

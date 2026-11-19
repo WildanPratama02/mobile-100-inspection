@@ -18,7 +18,7 @@ describe('parseRoute / routePath', () => {
         id: '0b8e5a4c-1f3e-4c55-9a43-2d6f1d2f9a10',
       },
     ],
-    // A1c, the correction form (ADR-023).
+    // A1c, the correction form (ADR-024).
     [
       '/admin/submissions/0b8e5a4c-1f3e-4c55-9a43-2d6f1d2f9a10/koreksi',
       { name: 'submission-correction', id: '0b8e5a4c-1f3e-4c55-9a43-2d6f1d2f9a10' },

@@ -411,6 +411,12 @@
   gap: var(--space-2);
 }
 
+/* ---- S7a photo menu (ADR-023) ---- */
+.photo-source__choices {
+  display: grid;
+  gap: var(--space-2);
+}
+
 /* ---- S7b photo view ---- */
 .photo-view__defect {
   display: flex;
@@ -899,7 +905,7 @@
   }
 }
 
-/* S9: a sent submission an admin corrected (ADR-023, doc 05 §14). */
+/* S9: a sent submission an admin corrected (ADR-024, doc 05 §14). */
 .settings__corrected {
   margin: 0;
   padding: var(--space-1) 12px var(--space-2);

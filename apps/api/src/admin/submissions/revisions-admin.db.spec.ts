@@ -214,7 +214,7 @@ afterAll(async () => {
   if (photoDir) rmSync(photoDir, { recursive: true, force: true });
 });
 
-describe('POST /v1/admin/submissions/{id}/revisions (ADR-023, doc 04 §8.1)', () => {
+describe('POST /v1/admin/submissions/{id}/revisions (ADR-024, doc 04 §8.1)', () => {
   it('writes a correction as revision 1; the original rows stay byte for byte', async () => {
     const before = await testDb.client.query('SELECT * FROM submissions WHERE id = $1', [lv1]);
     const findingsBefore = await testDb.client.query(

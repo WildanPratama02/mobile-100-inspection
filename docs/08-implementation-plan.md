@@ -204,7 +204,7 @@ PowerShell `install.ps1` and `upgrade.ps1`, WinSW service definitions for Caddy 
 - [ ] **Restore test:** the nightly backup is restored on another machine; submission counts match and sample photos open (doc 03 §7.6).
 
 ### T4.2 Device checklist on a real Redmi Pad 2
-Install, setup-link storage visible in the installed app, camera `capture`, offline start, certificate trust, 1280 × 800 layout (doc 03 R8, R9).
+Install, setup-link storage visible in the installed app, camera `capture` and gallery pick (ADR-023: Ambil Foto and Pilih dari Galeri), offline start, certificate trust, 1280 × 800 layout (doc 03 R8, R9).
 - [ ] Every item passes, or the fallback of doc 03 §4.9 is applied.
 
 ### T4.3 Runbook and PSI instruction card
@@ -331,28 +331,63 @@ Migration `0007`: `submissions.qty_rework_approved` (NULL allowed, CHECK 0 ≤ v
 ### T7.8 Load test
 - [x] `pnpm test:load` with 15 photos per PSI lv.2 submission (`LOAD_PHOTOS`, default 15) passes the T3.7 targets; figures recorded in the PR.
 
-## Phase 8 — Admin corrections of submissions (ADR-023) · Planned 19 Nov 2026
+## Phase 8 — NO DEFECT total with the number pad, defect photo from the gallery (ADR-023) · Done 11 Nov 2026
 
-A change request of 19 Nov 2026 (ADR-023, PRD FR-17). Spec: ADR-023; the PRD, doc 02, doc 03, doc 04 and doc 05 sections are written in T8.1 before any code. One branch (`phase-8-corrections`), one PR, one release; one database migration (`0008`). Order: T8.1 → T8.2 → T8.3 → T8.4 / T8.5 → T8.6.
+A change request of 10 Nov 2026 to code that is already built (Phase 7). Spec: ADR-023; PRD v0.9.3 FR-06, FR-08, FR-09 (AC-09.3), FR-10 (AC-10.7), BR-01; doc 03 v0.6.3 §4.2, §4.5, R8; doc 05 §11.1, §11.2, §11.4, §11.6 (S6a), §12.1, §12.2, §G. Tablet only: no database migration, no API or contract change, exports and admin app unchanged. One branch (`phase-8-no-defect-photo-source`, in a worktree), one PR, one release. Order: T8.1 → T8.2 → T8.3 / T8.4 → T8.5.
 
-### T8.1 Docs (ADR-023)
-Bring every spec in line with ADR-023 before code; no code in this task.
-- [x] ADR-023 written and accepted; ADR-018 decision 6 amended.
+### T9.1 Docs (ADR-024)
+Bring every spec in line with ADR-024 before code; no code in this task.
+- [x] ADR-023 in doc 07 (and the missing ADR-021 row of its summary table); amendment notes on ADR-021 decisions 1 and 2 and ADR-022 decision 3.
+- [x] PRD v0.9.3: FR-06, FR-08 (UNDO of a set total), FR-09 and AC-09.3 (NO DEFECT row and its limit), FR-10 and AC-10.7 (camera or gallery, unreadable image), BR-01, BR-02 and the glossary ("NO DEFECT pairs").
+- [x] Doc 03 v0.6.3: event `SET_NO_DEFECT{qty}`, `setNoDefect`, `noDefectRun` as a list of steps, the two photo inputs, R8.
+- [x] Doc 05: the always-shown NO DEFECT row (`HistoryRow onClick`), S6a, UNDO toast, the photo menu for add and GANTI FOTO, copy in §G.
+- [x] `CLAUDE.md`: ADR range up to 023, hard rules 5 and 6.
+
+### T9.2 Shared rules (`packages/shared`)
+Event `SET_NO_DEFECT{qty}`; command `setNoDefect(state, qty, po)`; `noDefectRun` becomes the list of the run's steps (tap, or set with the total before it).
+- [x] `TAPPED`: `SET_NO_DEFECT` replaces the NO DEFECT pairs counted so far; later `NO_DEFECT` taps add one each; Qty Inspection, Qty A-Grade and both rates follow; `buildSubmission` sends the set value in `counts.noDefect` and `totals` equals `computeTotals` of the submitted counts.
+- [x] `setNoDefect` accepts integers 0 ≤ qty ≤ (partial or Qty Order) − REWORK − B-GRADE pairs; refuses above it and during an inspection; accepts lowering when the maximum is already exceeded (ABOVE cleared); returns no event for an unchanged value.
+- [x] UNDO after taps, a set and more taps takes back the later taps one by one, then the set (back to the total before it), then the earlier taps; a REWORK / B-GRADE start ends the run; UNDO is disabled once the run is empty.
+- [x] `ENTERED` (PSI lv.1) ignores `SET_NO_DEFECT`; a session without the event replays to the same state as before.
+
+### T8.3 Tablet Defect screen (web)
+- [x] `HistoryRow` gets the optional `onClick` (button, ≥ `--tap-min`) in `apps/web/src/ui`, `design-system/components/index.d.ts` and its README.
+- [x] PSI lv.2 with no inspection running: the NO DEFECT row shows at 0, after taps and at the maximum, and opens S6a; hidden during an inspection; PSI lv.1 never sees it; the empty text "Belum ada data tercatat." is removed.
+- [x] S6a: pre-filled, "Maksimum {max} pasang", above the maximum "Melebihi maksimum {max} pasang" and SIMPAN disabled, empty saves 0; SIMPAN writes the event to IndexedDB before closing (NFR-05), toast "No Defect diubah menjadi {n}"; BATAL changes nothing; UNDO toast "Perubahan No Defect dibatalkan".
+- [x] Vitest for the row and the dialog.
+
+### T8.4 Tablet photo menu (web)
+- [x] The photo button and GANTI FOTO open "Foto defect" with Ambil Foto (input with `capture="environment"`) and Pilih dari Galeri (input without `capture`), both `accept="image/*"`; BATAL or a cancelled picker changes nothing.
+- [x] An image that can't be decoded → toast "Foto tidak bisa dibaca. Pilih foto JPG atau PNG.", nothing stored; a gallery photo goes through the same resize (≤ 960 px, ≤ 500 KB).
+- [x] `HomeScreen.test.tsx` (the `capture` check) and the photo tests updated.
+
+### T8.5 End-to-end
+- [x] Playwright, PSI lv.2: set NO DEFECT to 120, tap NO DEFECT once, UNDO twice (121 → 120 → previous total), set again, SUBMIT PO; the API stores `qty_no_defect` equal to the total.
+- [x] Playwright, PSI lv.2: a photo attached through Pilih dari Galeri (`setInputFiles`) is accepted and SUBMIT PO succeeds.
+- [x] Device check of both photo paths on a physical tablet (manual; target Redmi Pad 2, T4.2). Done on a substitute tablet: Samsung SM-T225, Android 12, Chrome 156, installed app (11 Nov 2026, `phase5-integration-review.md`); the product owner accepted that result for this task on 11 Nov 2026. The Redmi Pad 2 run stays open in T4.2 and go-live step G0 (`phase5-release-preparation.md` §8.2).
+
+## Phase 9 — Admin corrections of submissions (ADR-024) · Planned 19 Nov 2026
+
+A change request of 19 Nov 2026 (ADR-024, PRD FR-17). Spec: ADR-024; the PRD, doc 02, doc 03, doc 04 and doc 05 sections are written in T9.1 before any code. One branch (`phase-8-corrections`), one PR, one release; one database migration (`0008`). Order: T9.1 → T9.2 → T9.3 → T9.4 / T9.5 → T9.6.
+
+### T9.1 Docs (ADR-024)
+Bring every spec in line with ADR-024 before code; no code in this task.
+- [x] ADR-024 written and accepted; ADR-018 decision 6 amended.
 - [x] PRD v0.10: FR-17 with AC-17.1–17.7, AC-12.5, BR-07, AC-14.4, scope, glossary (Revision, Effective version).
 - [x] Doc 02 v2.4: §4.4 revision tables, §6.5 correction write, §7 revision photo keys and tablet read-back, §8 views on the effective version, Q4, Q8, Q9.
 - [x] Doc 04 v2.4 + `04-openapi.yaml` 2.4.0: §3.4 tablet correction reads, §8.1 correction endpoint, `REVISION_CONFLICT`, A20.
 - [x] Doc 03 v0.7: §4.2 Dexie version 4, §4.10 exports from a correction, §4.11 correction check, §5.4.1 correction procedure.
 - [x] Doc 05 v0.6: A1 "Rev" chip, A1b KOREKSI and Riwayat, A1c correction form, S9 "Dikoreksi admin", §8.5 export mark, copy, U18, U23.
-- [x] `CLAUDE.md` hard rules 2 and 6 and the `.claude/rules/api-postgres.md` immutability rule follow ADR-023.
+- [x] `CLAUDE.md` hard rules 2 and 6 and the `.claude/rules/api-postgres.md` immutability rule follow ADR-024.
 
-### T8.2 Shared rules (`packages/shared`)
+### T9.2 Shared rules (`packages/shared`)
 The database-free checks of doc 04 §4.2 (counts, duplicate findings, partial, photo coverage, clock) move from `apps/api/src/submissions/submission-checks.ts` to `packages/shared/src/rules.ts`, unchanged, so the API, the correction and the admin form use one copy. `revision.ts`: `checkRevision(request, original, base, context)`: those checks for the original's counting rule and photo rule, plus reason (10–500), level unchanged, the counts field of the rule, `reworkApproved` required, `keep` only for a base photo, `NO_CHANGE`; `revisionVersion` builds the new version (PO snapshot, `firstRecordedAt`, kept photos); `versionTotals` reuses `computeTotals`; `revisionChanges(before, after)` builds the `changes` object.
 - [x] Unit tests: a correction of the ADR-019 example (doc 02 §9) to Qty Inspection 25 gives A-Grade 14; Qty Inspection below Qty Defect, above the partial or Qty Order → the same errors as a submission; PSI lv.2 noDefect above the maximum refused; reworkApproved above rework refused; a level change refused; an identical correction is `NO_CHANGE`.
 - [x] Photo rule: `ALL` with a new defect and no photo → `PHOTO_MISSING`; `TOP5` needs only the Top 5; PSI lv.1 with a photo → `PHOTO_NOT_ALLOWED`.
 - [x] `revisionChanges` lists changed header fields, counts, findings added / removed / changed and photos replaced, and nothing for equal versions.
 
-### T8.3 Database and API
-Migration `0008`: `submission_revisions`, `submission_revision_findings`, `submission_revision_photos`, their immutability triggers and the rule constraint trigger, grants (`m100_app` SELECT + INSERT), `v_effective_submissions`, the four reporting views rebuilt on the effective version with the new `v_submissions` columns. `SubmissionRevisionRepository`; `POST/GET /admin/submissions/{id}/revisions`, `GET /admin/submissions/{id}?revision=`, `GET /admin/revision-photos/{id}`; list, detail and CSV on the effective version; `GET /submissions/corrections`, `GET /submissions/{id}/corrections/{n}/photos/{defectId}`; `sweep-photos` also keeps revision photo keys. As built: three commits (T8.3a migration and repository, T8.3b admin endpoints, T8.3c tablet endpoints and sweep); corrections of one submission are serialised by a transaction advisory lock, not `FOR UPDATE` (that needs an UPDATE grant); the CSV's revision columns come after the Top 5.
+### T9.3 Database and API
+Migration `0008`: `submission_revisions`, `submission_revision_findings`, `submission_revision_photos`, their immutability triggers and the rule constraint trigger, grants (`m100_app` SELECT + INSERT), `v_effective_submissions`, the four reporting views rebuilt on the effective version with the new `v_submissions` columns. `SubmissionRevisionRepository`; `POST/GET /admin/submissions/{id}/revisions`, `GET /admin/submissions/{id}?revision=`, `GET /admin/revision-photos/{id}`; list, detail and CSV on the effective version; `GET /submissions/corrections`, `GET /submissions/{id}/corrections/{n}/photos/{defectId}`; `sweep-photos` also keeps revision photo keys. As built: three commits (T9.3a migration and repository, T9.3b admin endpoints, T9.3c tablet endpoints and sweep); corrections of one submission are serialised by a transaction advisory lock, not `FOR UPDATE` (that needs an UPDATE grant); the CSV's revision columns come after the Top 5.
 - [x] `pnpm db:migrate` applies `0008` once; a second run applies nothing; UPDATE, DELETE and TRUNCATE of every revision table fail, and the original tables' triggers are unchanged.
 - [x] A correction is written with its findings, photos and one `audit_log` row (`submission.revise`); the original rows are byte-for-byte unchanged; `v_submissions` and `v_top5` show the new figures with `revision_no` 1; `revision=0` returns the original.
 - [x] Refused with `422` and nothing written: reason under 10 characters, level change, BR-10 / BR-11 break, duplicate finding, missing photo under `ALL`, no change. `baseRevisionNo` stale → `409 REVISION_CONFLICT`; two admins at once → one `201`, one `409`; same `revisionId` and bytes → `200`, other bytes → `409 CONFLICT`.
@@ -361,19 +396,19 @@ Migration `0008`: `submission_revisions`, `submission_revision_findings`, `submi
 - [x] A tablet resend of the original after a correction → `200` with the original's result.
 - [x] Tablet endpoints: the author's token gets the newest correction; another PSI's token, an uncorrected or unknown UUID → absent; more than 50 ids → `422`; a photo of an older revision or another PSI → `404`; an admin cookie on them → `401`, a tablet token on the admin endpoints → `401`.
 - [x] CSV carries `revision_no`, `corrected_at`, `corrected_by`, `correction_reason`.
-- [x] `04-openapi.yaml`: `AdminSubmissionDetail` lists `revisionNo`, `latestRevisionNo`, `correctedAt`, `correctedBy`, `correctionReason` and `photos[].url` as required again (left optional in T8.1/T8.2 so the contract tests stay green until the API returns them).
+- [x] `04-openapi.yaml`: `AdminSubmissionDetail` lists `revisionNo`, `latestRevisionNo`, `correctedAt`, `correctedBy`, `correctionReason` and `photos[].url` as required again (left optional in T9.1/T9.2 so the contract tests stay green until the API returns them).
 
-### T8.4 Admin app
+### T9.4 Admin app
 - [x] A1: "Rev {n}" chip; filters on the effective version.
 - [x] A1b: KOREKSI, the correction notice, Riwayat with each change, earlier versions read-only.
 - [x] A1c: the form of doc 05 §20.3a for PSI lv.1 and PSI lv.2 (counts, findings, photos, live totals), the reason dialog, `409 REVISION_CONFLICT` and `422` handling, unsaved-changes warning.
 - [x] Playwright: correct a PSI lv.1 submission (Qty Inspection and a finding) and a PSI lv.2 submission (replace a photo, add a defect with its photo); check the list chip, detail, history and CSV; a stale form gets the conflict notice.
 
-### T8.5 Tablet app (web)
+### T9.5 Tablet app (web)
 Dexie version 4 (`corrections`, `correctionPhotos`); the correction check in the outbox loop (doc 03 §4.11); the S9 mark; exports from the correction (doc 03 §4.10).
 - [x] Vitest: a received correction is stored in one transaction with its photos; a failed photo download stores nothing; a newer revision replaces the older; the outbox item's `payloadJson` and photos are unchanged; rows go with the outbox item after 7 days.
 - [x] Vitest on the report model: the export of a corrected item uses the correction's figures, photos and inspection date and carries the revision mark.
 - [x] Playwright against the real API: a PSI submits, an admin corrects through the API, the tablet shows "Dikoreksi admin" with the reason in Pengaturan and EXPORT PDF / EXCEL carry the corrected numbers; Home and the open session are unchanged.
 
-### T8.6 Load and regression
+### T9.6 Load and regression
 - [ ] `pnpm test`, `pnpm e2e`, `pnpm typecheck`, `pnpm lint` green; `pnpm test:load` (quick settings) passes with the correction check of 50 tablets running.

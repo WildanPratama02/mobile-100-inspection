@@ -88,7 +88,7 @@ function newRevision(
   };
 }
 
-describe('PgSubmissionRevisionRepository (ADR-023, doc 02 §4.4)', () => {
+describe('PgSubmissionRevisionRepository (ADR-024, doc 02 §4.4)', () => {
   it('reads the original as revision 0 and as the effective version before any correction', async () => {
     expect(await repo.latestRevisionNo(subId)).toBe(0);
     expect(await repo.latestRevisionNo(randomUUID())).toBeNull();

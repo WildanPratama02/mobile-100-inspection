@@ -66,7 +66,7 @@ describe('CSV fields (RFC 4180)', () => {
     const header = csvHeader();
     expect(header.startsWith(CSV_BOM)).toBe(true);
     expect(header).toBe(`${CSV_BOM}${EXPORT_COLUMNS.join(',')}\r\n`);
-    // The Top 5, then the revision columns of ADR-023 at the end.
+    // The Top 5, then the revision columns of ADR-024 at the end.
     expect(EXPORT_COLUMNS.slice(-7)).toEqual([
       'top5_defect_id',
       'top5_defect_name',

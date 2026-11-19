@@ -8,6 +8,7 @@ import {
   CommandButton,
   CountBadge,
   Dialog,
+  HistoryRow,
   NumberPad,
   OptionRow,
   OutboxItem,
@@ -110,6 +111,40 @@ describe('NumberPad', () => {
   it('flags a value below 1', () => {
     render(<Pad initial="0" max={10002} />);
     expect(screen.getByText('Minimal 1 pasang')).toHaveClass('m100-pad__msg--bad');
+  });
+
+  it('shows overMessage instead of the maximum above max, and the hint within it (S6a)', () => {
+    const props = {
+      min: 0,
+      max: 120,
+      hint: 'Maksimum 120 pasang',
+      overMessage: 'Melebihi maksimum 120 pasang',
+    };
+    const { rerender } = render(<NumberPad value="121" {...props} />);
+    expect(screen.getByText('Melebihi maksimum 120 pasang')).toHaveClass('m100-pad__msg--bad');
+    expect(screen.queryByText('Maksimum 120 pasang')).not.toBeInTheDocument();
+    rerender(<NumberPad value="120" {...props} />);
+    expect(screen.getByText('Maksimum 120 pasang')).not.toHaveClass('m100-pad__msg--bad');
+  });
+});
+
+describe('HistoryRow', () => {
+  it('is a plain row without onClick', () => {
+    render(<HistoryRow no={1} name="NO DEFECT" path="A-Grade" qty={3} />);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(document.querySelector('.m100-hist__q')).toHaveTextContent('3');
+  });
+
+  it('is a button named "Ubah {name}" with onClick (ADR-023)', () => {
+    const onClick = vi.fn();
+    render(<HistoryRow no={1} name="NO DEFECT" path="A-Grade" qty={0} flash onClick={onClick} />);
+    const row = screen.getByRole('button', { name: 'Ubah NO DEFECT' });
+    expect(row).toHaveAttribute('type', 'button');
+    expect(row).toHaveClass('m100-hist', 'm100-flash');
+    expect(row.querySelector('div')).toBeNull();
+    expect(row.querySelector('.m100-hist__q')).toHaveTextContent('0');
+    fireEvent.click(row);
+    expect(onClick).toHaveBeenCalledOnce();
   });
 });
 

@@ -63,6 +63,7 @@
   },
   "jest": {
     "testTimeout": 30000,
+    "maxWorkers": "50%",
     "rootDir": "src",
     "testEnvironment": "node",
     "testRegex": ".*\\.spec\\.ts$",

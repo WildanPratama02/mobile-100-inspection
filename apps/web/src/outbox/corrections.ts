@@ -1,5 +1,5 @@
 /**
- * The tablet's check for admin corrections (ADR-023, doc 03 §4.11, doc 04 §3.4). For the sent submissions still on
+ * The tablet's check for admin corrections (ADR-024, doc 03 §4.11, doc 04 §3.4). For the sent submissions still on
  * the tablet (Terkirim, 7 days after sending), each author's token asks `GET /submissions/corrections`; a newer
  * revision is stored with the photos the tablet does not hold yet, all in one Dexie transaction. A failed or
  * interrupted check writes nothing and is simply repeated next time. The outbox item, its `payloadJson` and its

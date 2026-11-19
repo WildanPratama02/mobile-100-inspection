@@ -86,7 +86,7 @@ it('applies 0008 once; existing rows and their view values stay; a second run ap
   expect(rows[0]).toEqual({ defect_id: 'D001', rank_in_submission: 1, has_photo: true });
 });
 
-describe('a revision (ADR-023, doc 02 §4.4)', () => {
+describe('a revision (ADR-024, doc 02 §4.4)', () => {
   let revisionId: string;
 
   beforeAll(async () => {

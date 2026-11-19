@@ -35,7 +35,7 @@ import {
 } from '../correction/form';
 import { moment, rate } from '../format';
 
-/** The reason's length after trimming (doc 02 §4.4, ADR-023). */
+/** The reason's length after trimming (doc 02 §4.4, ADR-024). */
 const REASON_MIN = 10;
 const REASON_MAX = 500;
 const PHOTO_MAX_BYTES = 1024 * 1024;

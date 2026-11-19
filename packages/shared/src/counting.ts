@@ -1,12 +1,13 @@
 /**
- * Counting engine (BR-01, BR-02, BR-05, BR-10, FR-08, FR-15; ADR-019, ADR-021).
+ * Counting engine (BR-01, BR-02, BR-05, BR-10, FR-08, FR-15; ADR-019, ADR-021, ADR-023).
  *
  * A session is the reduction of its event log (doc 03 §4.2). Commands check whether a tap is allowed and
  * return the event to persist; `applyEvent` folds a stored event into the state; totals, findings and the
  * Top 5 are derived from the state, never stored. Everything here is pure.
  *
  * Two counting modes (ADR-021): PSI lv.1 enters Qty Inspection (`ENTERED`, ADR-019); PSI lv.2 counts it with
- * taps (`TAPPED`): NO DEFECT adds an A-Grade pair, each ended REWORK or B-GRADE inspection a pair with a defect.
+ * taps (`TAPPED`): NO DEFECT adds an A-Grade pair, each ended REWORK or B-GRADE inspection a pair with a defect;
+ * the PSI can also set the NO DEFECT total with the number pad (ADR-023).
  */
 import type {
   AreaId,
@@ -49,20 +50,27 @@ export interface ActiveInspection {
   defects: readonly RecordedDefect[];
 }
 
-/** What UNDO would do now (FR-08); each kind has its own toast (doc 05 §11.4). NO_DEFECT: `TAPPED` only. */
-export type UndoKind = 'DEFECT' | 'INSPECTION' | 'NO_DEFECT';
+/**
+ * What UNDO would do now (FR-08); each kind has its own toast (doc 05 §11.4). `TAPPED` only: NO_DEFECT takes back
+ * one tapped pair, SET_NO_DEFECT a set total (back to the total before it, ADR-023).
+ */
+export type UndoKind = 'DEFECT' | 'INSPECTION' | 'NO_DEFECT' | 'SET_NO_DEFECT';
+
+/** One step of the NO DEFECT run (`TAPPED`): a NO DEFECT tap, or a set total with the total before it (ADR-023). */
+export type NoDefectStep = { kind: 'TAP' } | { kind: 'SET'; before: number };
 
 export interface SessionState {
   mode: CountingMode;
   /** REWORK and B-GRADE inspections started, the active one included. */
   counts: InspectionCounts;
-  /** NO DEFECT taps (`TAPPED`); always 0 in `ENTERED`. */
+  /** NO DEFECT pairs (`TAPPED`), tapped or set as a total (ADR-023); always 0 in `ENTERED`. */
   noDefect: number;
   /**
-   * The latest consecutive NO DEFECT taps not undone yet (`TAPPED`): how far UNDO may still go back through
-   * them, one per UNDO. A REWORK / B-GRADE start ends the run, so UNDO never reaches an ended inspection (FR-08).
+   * The steps of the latest NO DEFECT run not undone yet (`TAPPED`), oldest first: how far UNDO may still go
+   * back, one step per UNDO. A REWORK / B-GRADE start ends the run, so UNDO never reaches an ended inspection
+   * (FR-08, ADR-023). Derived from the events; nothing extra is stored.
    */
-  noDefectRun: number;
+  noDefectRun: readonly NoDefectStep[];
   /** Entered by the PSI (FR-15, `ENTERED`); `null` until the first SET_QTY_INSPECTION, always in `TAPPED`. */
   qtyInspection: number | null;
   /** Entered approval for both PSI levels (FR-16); null is empty, counted as 0 in report figures. */
@@ -79,7 +87,7 @@ export function emptySession(mode: CountingMode): SessionState {
     mode,
     counts: { rework: 0, bGrade: 0 },
     noDefect: 0,
-    noDefectRun: 0,
+    noDefectRun: [],
     qtyInspection: null,
     reworkApproved: null,
     active: null,
@@ -102,6 +110,16 @@ export function tappedPairs(state: SessionState): number {
 /** `TAPPED`: whether one more pair is allowed for this PO (ADR-021). Always true in `ENTERED`. */
 export function canAddPair(state: SessionState, po: PoQuantities): boolean {
   return state.mode !== 'TAPPED' || tappedPairs(state) < (po.partial?.qty ?? po.orderQty);
+}
+
+/**
+ * `TAPPED`: the highest NO DEFECT total the PSI can set (ADR-023 decision 4): the partial quantity, else Qty
+ * Order, minus the REWORK and B-GRADE pairs counted, never below 0. `null` in `ENTERED`.
+ */
+export function noDefectMax(state: SessionState, po: PoQuantities): number | null {
+  if (state.mode !== 'TAPPED') return null;
+  const max = po.partial?.qty ?? po.orderQty;
+  return Math.max(0, max - state.counts.rework - state.counts.bGrade);
 }
 
 /** The PO quantities that bound Qty Inspection (BR-10). */
@@ -165,6 +183,22 @@ export function startInspection(
 export function noDefect(state: SessionState, po: PoQuantities): SessionEventPayload | null {
   if (state.mode !== 'TAPPED' || state.active || !canAddPair(state, po)) return null;
   return { type: 'NO_DEFECT' };
+}
+
+/**
+ * SIMPAN in the NO DEFECT dialog (`TAPPED` only, ADR-023): the new NO DEFECT total, a whole number from 0 to
+ * `noDefectMax`, outside an inspection. Allowed also when the maximum is already reached or exceeded, so the
+ * PSI can lower it (which clears ABOVE). An unchanged value returns no event.
+ */
+export function setNoDefect(
+  state: SessionState,
+  qty: number,
+  po: PoQuantities,
+): SessionEventPayload | null {
+  const max = noDefectMax(state, po);
+  if (max === null || state.active || !Number.isInteger(qty) || qty < 0 || qty > max) return null;
+  if (qty === state.noDefect) return null;
+  return { type: 'SET_NO_DEFECT', qty };
 }
 
 /**
@@ -244,7 +278,7 @@ export function applyEvent(state: SessionState, event: SessionEvent): SessionSta
         ...state,
         counts: addStarted(counts, type, 1),
         active: { type, startedAt: event.at, defects: [] },
-        noDefectRun: 0,
+        noDefectRun: [],
         undo: 'INSPECTION',
       };
     }
@@ -255,8 +289,20 @@ export function applyEvent(state: SessionState, event: SessionEvent): SessionSta
       return {
         ...state,
         noDefect: state.noDefect + 1,
-        noDefectRun: state.noDefectRun + 1,
+        noDefectRun: [...state.noDefectRun, { kind: 'TAP' }],
         undo: 'NO_DEFECT',
+      };
+    case 'SET_NO_DEFECT':
+      // `TAPPED` only (ADR-023); `ENTERED` ignores it as it ignores NO_DEFECT. The maximum is checked by
+      // `setNoDefect`; the reducer has no PO and folds any whole number that changes the total.
+      if (state.mode !== 'TAPPED' || active) return state;
+      if (!Number.isInteger(event.qty) || event.qty < 0 || event.qty === state.noDefect)
+        return state;
+      return {
+        ...state,
+        noDefect: event.qty,
+        noDefectRun: [...state.noDefectRun, { kind: 'SET', before: state.noDefect }],
+        undo: 'SET_NO_DEFECT',
       };
     case 'DEFECT': {
       if (!active) return state;
@@ -294,8 +340,9 @@ export function applyEvent(state: SessionState, event: SessionEvent): SessionSta
 
 /**
  * FR-08: the last defect of the active inspection; with none, the inspection itself; after NO DEFECT (`TAPPED`),
- * one pair per UNDO back through the latest consecutive NO DEFECT taps (10 Nov 2026). A cancelled inspection
- * leaves UNDO disabled, so it never reaches an ended inspection. An entered Qty Inspection is never changed.
+ * one step per UNDO back through the latest NO DEFECT run (10 Nov 2026, ADR-023): a tap gives back one pair, a
+ * set total returns to the total before it. A cancelled inspection leaves UNDO disabled, so it never reaches an
+ * ended inspection. An entered Qty Inspection is never changed.
  */
 function applyUndo(state: SessionState): SessionState {
   const { counts, active } = state;
@@ -313,19 +360,29 @@ function applyUndo(state: SessionState): SessionState {
     case 'INSPECTION':
       if (!active) return state;
       return { ...state, counts: addStarted(counts, active.type, -1), active: null, undo: null };
-    case 'NO_DEFECT': {
-      if (active || state.noDefect < 1 || state.noDefectRun < 1) return state;
-      const noDefectRun = state.noDefectRun - 1;
+    case 'NO_DEFECT':
+    case 'SET_NO_DEFECT': {
+      const step = state.noDefectRun.at(-1);
+      if (active || !step) return state;
+      if (step.kind === 'TAP' && state.noDefect < 1) return state;
+      const noDefectRun = state.noDefectRun.slice(0, -1);
       return {
         ...state,
-        noDefect: state.noDefect - 1,
+        noDefect: step.kind === 'TAP' ? state.noDefect - 1 : step.before,
         noDefectRun,
-        undo: noDefectRun > 0 ? 'NO_DEFECT' : null,
+        undo: undoOfRun(noDefectRun),
       };
     }
     case null:
       return state;
   }
+}
+
+/** The UNDO kind for the latest step of a NO DEFECT run; `null` once the run is empty. */
+function undoOfRun(run: readonly NoDefectStep[]): UndoKind | null {
+  const last = run.at(-1);
+  if (!last) return null;
+  return last.kind === 'TAP' ? 'NO_DEFECT' : 'SET_NO_DEFECT';
 }
 
 function addStarted(counts: InspectionCounts, type: InspectionType, n: number): InspectionCounts {
@@ -449,7 +506,7 @@ interface InspectionTotals {
   /**
    * `ENTERED`: Qty Inspection − Qty Defect, and the rates of BR-02; `null` while Qty Inspection is empty or not
    * valid; the screen then shows `0` and `0,0%` (ADR-019 decision 7). Never submitted. `TAPPED`: the NO DEFECT
-   * taps, and rates once a pair is counted (ADR-021).
+   * pairs (tapped or set, ADR-023), and rates once a pair is counted (ADR-021).
    */
   qtyAGrade: number | null;
   defectRate: number | null;

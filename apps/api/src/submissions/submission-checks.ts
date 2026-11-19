@@ -1,7 +1,7 @@
 /**
  * The checks of doc 04 §4.2 that need no database: counts against findings, duplicate findings, the partial
  * quantity, the photo rule and the tablet clock. Each returns every failure it finds; nothing here throws. The
- * rules themselves live in `@m100/shared` (`rules.ts`), so an admin correction is checked the same way (ADR-023);
+ * rules themselves live in `@m100/shared` (`rules.ts`), so an admin correction is checked the same way (ADR-024);
  * the photo entries and bytes are checked here.
  */
 import {
@@ -51,7 +51,7 @@ export function checkSubmission(
   ];
 }
 
-/** Rules 3 and 4 (shared with corrections, ADR-023). */
+/** Rules 3 and 4 (shared with corrections, ADR-024). */
 export function checkCounts(request: SubmissionRequest, orderQty: number | null = null): Failure[] {
   return sharedCheckCounts(request, orderQty);
 }

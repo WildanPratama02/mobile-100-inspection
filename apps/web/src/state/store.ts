@@ -20,6 +20,7 @@ import {
   findings,
   noDefect,
   recordDefect,
+  setNoDefect,
   setQtyInspection,
   setReworkApproved,
   replay,
@@ -64,6 +65,8 @@ export type TapCommand =
   | { type: 'START'; inspection: InspectionType }
   /** PSI lv.2 only (ADR-021). */
   | { type: 'NO_DEFECT' }
+  /** SIMPAN in the NO DEFECT dialog (S6a): the new NO DEFECT total, PSI lv.2 only (ADR-023). */
+  | { type: 'SET_NO_DEFECT'; qty: number }
   | { type: 'SET_QTY_INSPECTION'; qty: number }
   /** SIMPAN in REWORK AND APPROVED (FR-16, both levels); `null` saves it empty. */
   | { type: 'SET_REWORK_APPROVED'; qty: number | null }
@@ -101,7 +104,7 @@ export interface AppState {
   sessions: Readonly<Record<string, PoSession>>;
   /** The PSI's own sealed submissions, newest first (AC-11.3, doc 05 U14). */
   outbox: readonly OutboxRow[];
-  /** Admin corrections of the PSI's sent submissions, by submission UUID (ADR-023, doc 03 §4.11). */
+  /** Admin corrections of the PSI's sent submissions, by submission UUID (ADR-024, doc 03 §4.11). */
   corrections: Readonly<Record<string, CorrectionRow>>;
   view: View;
   /** This tablet's key from the setup link (doc 03 §4.9); `null` when the tablet is not set up. */
@@ -234,6 +237,8 @@ function toPayload(
       return startInspection(state, command.inspection, po);
     case 'NO_DEFECT':
       return noDefect(state, po);
+    case 'SET_NO_DEFECT':
+      return setNoDefect(state, command.qty, po);
     case 'SET_QTY_INSPECTION':
       return setQtyInspection(state, command.qty, po);
     case 'SET_REWORK_APPROVED':

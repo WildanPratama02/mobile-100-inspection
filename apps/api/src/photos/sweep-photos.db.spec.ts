@@ -115,7 +115,7 @@ function describeSweep(name: string, make: () => Promise<PhotoStore>): void {
       expect((await sweepPhotos(deps(store), { now })).orphans).toEqual([]);
     });
 
-    it('keeps the photos of a correction (ADR-023): a submission_revision_photos row counts as in use', async () => {
+    it('keeps the photos of a correction (ADR-024): a submission_revision_photos row counts as in use', async () => {
       const store = await make();
       const [original] = await submissionWithPhotos(['D001']);
       const submissionId = original!.split('/')[3]!;

@@ -1,5 +1,5 @@
 /**
- * Admin corrections of a submission (ADR-023, PRD FR-17, doc 02 §6.5, doc 04 §8.1). A correction is a complete new
+ * Admin corrections of a submission (ADR-024, PRD FR-17, doc 02 §6.5, doc 04 §8.1). A correction is a complete new
  * version, written as a revision; the original rows never change (BR-07). The order follows a Submit PO: read the
  * multipart body, answer a repeat from what is stored, validate at `REPEATABLE READ` with the shared rules of
  * `@m100/shared` for the original's counting and photo rule, put the new photos into the store, then one transaction

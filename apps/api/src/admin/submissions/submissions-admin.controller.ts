@@ -11,7 +11,7 @@ import {
 
 /**
  * The read endpoints of the submissions in doc 04 §8: list, export, detail and photos. A correction adds a revision
- * (`RevisionsAdminController`, ADR-023); no route changes or deletes a submission (AC-14.4). All need the admin session (`AdminGuard`); a tablet token is refused.
+ * (`RevisionsAdminController`, ADR-024); no route changes or deletes a submission (AC-14.4). All need the admin session (`AdminGuard`); a tablet token is refused.
  */
 @Controller('admin')
 @Auth('admin')
@@ -54,7 +54,7 @@ export class SubmissionsAdminController {
     );
   }
 
-  /** A photo a correction added or replaced (ADR-023, doc 04 §8.1). */
+  /** A photo a correction added or replaced (ADR-024, doc 04 §8.1). */
   @Get('revision-photos/:id')
   @AdminPhotoRateLimit()
   @Header('Cache-Control', 'private, no-store')

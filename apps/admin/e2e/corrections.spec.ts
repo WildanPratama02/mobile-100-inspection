@@ -1,4 +1,4 @@
-// A1b / A1c — correcting a submission (ADR-023, PRD FR-17, doc 05 §20.3, §20.3a) against the real API.
+// A1b / A1c — correcting a submission (ADR-024, PRD FR-17, doc 05 §20.3, §20.3a) against the real API.
 import { randomBytes } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { expect, sendSubmission, signIn, test } from './fixtures';

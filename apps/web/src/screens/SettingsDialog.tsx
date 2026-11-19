@@ -22,7 +22,7 @@ export function SettingsDialog({ auth, onClose }: SettingsDialogProps) {
   const pending = useAppStore(unsubmittedCount);
   const [confirming, setConfirming] = useState(false);
   const checker = useCorrectionChecker();
-  // Opening Pengaturan looks for admin corrections when online (doc 05 §14, ADR-023).
+  // Opening Pengaturan looks for admin corrections when online (doc 05 §14, ADR-024).
   useEffect(() => {
     if (navigator.onLine) void checker?.check();
   }, [checker]);

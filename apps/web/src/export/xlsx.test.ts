@@ -92,7 +92,7 @@ describe('toXlsx (FR-12)', () => {
     expect(all).toContain(REPORT.psiName);
   });
 
-  it('adds a Correction row to Part I for a file made from an admin correction (ADR-023, AC-12.5)', async () => {
+  it('adds a Correction row to Part I for a file made from an admin correction (ADR-024, AC-12.5)', async () => {
     const xml = await parts({
       ...REPORT,
       correction: { revisionNo: 2, correctedAt: '2026-11-19T02:05:00.000Z' },

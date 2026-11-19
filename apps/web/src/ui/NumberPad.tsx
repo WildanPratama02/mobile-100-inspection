@@ -11,6 +11,8 @@ export interface NumberPadProps {
   unit?: string;
   placeholder?: string;
   hint?: string;
+  /** Replaces "Maksimum {max} pasang" above `max`, for example "Melebihi maksimum 120 pasang" (S6a). */
+  overMessage?: string;
   onChange?: (digits: string) => void;
   className?: string;
 }
@@ -27,6 +29,7 @@ export function NumberPad({
   unit,
   placeholder,
   hint,
+  overMessage,
   onChange,
   className,
 }: NumberPadProps) {
@@ -37,7 +40,7 @@ export function NumberPad({
   const bad = over != null || zero;
   const message =
     over != null
-      ? `Maksimum ${formatCount(over)} pasang`
+      ? (overMessage ?? `Maksimum ${formatCount(over)} pasang`)
       : zero
         ? `Minimal ${formatCount(min)} pasang`
         : (hint ?? '');

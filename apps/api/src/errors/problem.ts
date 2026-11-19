@@ -87,7 +87,7 @@ export const PROBLEMS = {
   },
   NOT_FOUND: { status: 404, title: 'Not found', retryable: false },
   CONFLICT: { status: 409, title: 'Conflict', retryable: false },
-  // ADR-023: another admin saved a correction of the submission first (doc 04 §8.1).
+  // ADR-024: another admin saved a correction of the submission first (doc 04 §8.1).
   REVISION_CONFLICT: {
     status: 409,
     title: 'Revision conflict',

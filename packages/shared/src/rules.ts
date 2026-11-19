@@ -2,7 +2,7 @@
  * The checks of doc 04 §4.2 that need neither the database nor the photo bytes: counts against findings
  * (rules 3–4), duplicate findings (rule 5), the partial quantity (rule 6), photo coverage (rule 7) and the tablet
  * clock (rule 8). Used by the API for a submission and, with the same messages, for an admin correction
- * (ADR-023), and by the admin app to show the same problems while the form is filled. Nothing here throws.
+ * (ADR-024), and by the admin app to show the same problems while the form is filled. Nothing here throws.
  */
 import { allDefects, type DefectLookup } from './counting';
 import type {
