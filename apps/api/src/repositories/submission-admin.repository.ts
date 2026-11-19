@@ -2,7 +2,8 @@
  * The admin's read side of the submissions (doc 04 §8, doc 05 §20.3, AC-14.4): the filtered list, one submission
  * with its findings and photos, a photo row, and the batches of the CSV export. Read only: nothing here writes, and
  * the trigger and the grants refuse any change anyway (BR-07). Rows come from `v_submissions` (doc 02 §8), so the
- * admin app and the reporting tools see the same values.
+ * admin app and the reporting tools see the same values: the effective version of each submission (ADR-023), its
+ * newest correction or the original.
  */
 import type {
   Classification,
@@ -69,6 +70,11 @@ export interface SubmissionRow {
   qtyReworkApproved: number | null;
   /** `null` for PSI lv.1 and for PSI lv.2 rows sealed before ADR-022 (Top 5 rule). */
   photoRule: PhotoRule | null;
+  /** The revision shown (ADR-023): 0 for the original. */
+  revisionNo: number;
+  correctedAt: Date | null;
+  correctedBy: string | null;
+  correctionReason: string | null;
 }
 
 export interface SubmissionFindingRow {
@@ -89,6 +95,8 @@ export interface SubmissionFindingRow {
 }
 
 export interface SubmissionPhotoRow {
+  /** `original`: a `submission_photos` row; `revision`: a `submission_revision_photos` row (ADR-023). */
+  source: 'original' | 'revision';
   id: number;
   submissionId: string;
   defectId: DefectId;
@@ -139,8 +147,10 @@ const COLUMNS = `
   v.qty_no_defect AS "qtyNoDefect", v.qty_inspection AS "qtyInspection", v.qty_a_grade AS "qtyAGrade",
   v.qty_b_grade AS "qtyBGrade", v.qty_defect AS "qtyDefect", v.rft::text AS rft,
   v.defect_rate::text AS "defectRate", v.photo_count AS "photoCount", v.counting_rule AS "countingRule",
-  v.qty_rework_approved AS "qtyReworkApproved", v.photo_rule AS "photoRule"`;
-const FROM = `FROM v_submissions v JOIN submissions s ON s.id = v.id`;
+  v.qty_rework_approved AS "qtyReworkApproved", v.photo_rule AS "photoRule", v.revision_no AS "revisionNo",
+  s.corrected_at AS "correctedAt", v.corrected_by AS "correctedBy", v.correction_reason AS "correctionReason"`;
+// `s`: the effective version with its time zone and bookkeeping columns (ADR-023, doc 02 §4.4).
+const FROM = `FROM v_submissions v JOIN v_effective_submissions s ON s.id = v.id`;
 const ORDER = `ORDER BY s.sealed_at DESC, v.display_no DESC`;
 
 type RawRow = Omit<SubmissionRow, 'displayNo'> & { displayNo: string };
@@ -217,12 +227,12 @@ export class PgSubmissionAdminRepository implements SubmissionAdminRepository {
               sa.name AS "subAreaName", f.family_id AS "familyId", fam.name AS "familyName",
               f.defect_id AS "defectId", f.defect_name AS "defectName", f.severity, f.qty,
               f.first_recorded_at AS "firstRecordedAt"
-         FROM submission_findings f
+         FROM v_effective_findings f
          JOIN areas a ON a.id = f.area_id
          JOIN sub_areas sa ON sa.id = f.sub_area_id
          JOIN families fam ON fam.id = f.family_id
         WHERE f.submission_id = ANY($1::uuid[])
-        ORDER BY f.submission_id, f.first_recorded_at, f.id`,
+        ORDER BY f.submission_id, f.first_recorded_at, f.finding_id`,
       [submissionIds],
     );
     return rows;
@@ -234,7 +244,7 @@ export class PgSubmissionAdminRepository implements SubmissionAdminRepository {
   ): Promise<SubmissionPhotoRow[]> {
     if (submissionIds.length === 0) return [];
     const { rows } = await q.query<RawPhotoRow>(
-      `SELECT ${PHOTO_COLUMNS} FROM submission_photos
+      `SELECT ${EFFECTIVE_PHOTO_COLUMNS} FROM v_effective_photos
         WHERE submission_id = ANY($1::uuid[]) ORDER BY submission_id, defect_id`,
       [submissionIds],
     );
@@ -243,7 +253,7 @@ export class PgSubmissionAdminRepository implements SubmissionAdminRepository {
 
   async photo(id: number, q: Queryable = this.db): Promise<SubmissionPhotoRow | null> {
     const { rows } = await q.query<RawPhotoRow>(
-      `SELECT ${PHOTO_COLUMNS} FROM submission_photos WHERE id = $1::bigint`,
+      `SELECT 'original' AS source, ${PHOTO_COLUMNS} FROM submission_photos WHERE id = $1::bigint`,
       [id],
     );
     return rows[0] ? toPhotoRow(rows[0]) : null;
@@ -278,6 +288,9 @@ export class PgSubmissionAdminRepository implements SubmissionAdminRepository {
 
 const PHOTO_COLUMNS = `id::text AS id, submission_id AS "submissionId", defect_id AS "defectId",
                        object_key AS "objectKey", size_bytes AS "sizeBytes"`;
+
+const EFFECTIVE_PHOTO_COLUMNS = `source, photo_id::text AS id, submission_id AS "submissionId",
+                                 defect_id AS "defectId", object_key AS "objectKey", size_bytes AS "sizeBytes"`;
 
 type RawPhotoRow = Omit<SubmissionPhotoRow, 'id'> & { id: string };
 const toPhotoRow = ({ id, ...rest }: RawPhotoRow): SubmissionPhotoRow => ({

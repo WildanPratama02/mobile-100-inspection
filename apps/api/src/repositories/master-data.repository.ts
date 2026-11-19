@@ -91,6 +91,10 @@ export interface MasterDataRepository {
   defectFamilies(q?: Queryable): Promise<{ defectId: DefectId; familyId: string }[]>;
 
   findActiveUser(username: string, level: PsiLevel, q?: Queryable): Promise<User | null>;
+  /** The levels a name has in `psi_users`, active or not (an admin correction, ADR-023). */
+  findUserLevels(username: string, q?: Queryable): Promise<PsiLevel[]>;
+  /** The cell when it belongs to that factory, active or not (an admin correction, ADR-023). */
+  findCell(factory: string, cell: string, q?: Queryable): Promise<Cell | null>;
   /** The cell when it and its factory are both active and it belongs to that factory. */
   findActiveCell(factory: string, cell: string, q?: Queryable): Promise<Cell | null>;
   /** Defects by id, active or not; ids that do not exist are missing from the result. */
@@ -215,6 +219,24 @@ export class PgMasterDataRepository implements MasterDataRepository {
     const { rows } = await q.query<User>(
       `SELECT username, level FROM psi_users WHERE active AND username = $1 AND level = $2`,
       [username, level],
+    );
+    return rows[0] ?? null;
+  }
+
+  async findUserLevels(username: string, q: Queryable = this.db): Promise<PsiLevel[]> {
+    const { rows } = await q.query<{ level: PsiLevel }>(
+      'SELECT level FROM psi_users WHERE username = $1 ORDER BY level',
+      [username],
+    );
+    return rows.map((r) => r.level);
+  }
+
+  async findCell(factory: string, cell: string, q: Queryable = this.db): Promise<Cell | null> {
+    const { rows } = await q.query<Cell>(
+      `SELECT f.name AS factory, c.code AS cell
+         FROM cells c JOIN factories f ON f.id = c.factory_id
+        WHERE f.name = $1 AND c.code = $2`,
+      [factory, cell],
     );
     return rows[0] ?? null;
   }

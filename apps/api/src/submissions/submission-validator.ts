@@ -202,9 +202,9 @@ export class SubmissionValidator {
 }
 
 /** The finding's map row, active or not (a deactivated row is still accepted); an active one first. */
-function mapRowOf(
+export function mapRowOf(
   rows: readonly MapRowRef[],
-  f: ParsedSubmission['findings'][number],
+  f: Pick<ParsedSubmission['findings'][number], 'areaId' | 'subAreaId' | 'defectId'>,
 ): MapRowRef | undefined {
   const matching = rows.filter(
     (r) => r.areaId === f.areaId && r.subAreaId === f.subAreaId && r.defectId === f.defectId,

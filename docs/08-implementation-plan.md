@@ -361,7 +361,7 @@ Migration `0008`: `submission_revisions`, `submission_revision_findings`, `submi
 - [ ] A tablet resend of the original after a correction → `200` with the original's result.
 - [ ] Tablet endpoints: the author's token gets the newest correction; another PSI's token, an uncorrected or unknown UUID → absent; more than 50 ids → `422`; a photo of an older revision or another PSI → `404`; an admin cookie on them → `401`, a tablet token on the admin endpoints → `401`.
 - [ ] CSV carries `revision_no`, `corrected_at`, `corrected_by`, `correction_reason`.
-- [ ] `04-openapi.yaml`: `AdminSubmissionDetail` lists `revisionNo`, `latestRevisionNo`, `correctedAt`, `correctedBy`, `correctionReason` and `photos[].url` as required again (left optional in T8.1/T8.2 so the contract tests stay green until the API returns them).
+- [x] `04-openapi.yaml`: `AdminSubmissionDetail` lists `revisionNo`, `latestRevisionNo`, `correctedAt`, `correctedBy`, `correctionReason` and `photos[].url` as required again (left optional in T8.1/T8.2 so the contract tests stay green until the API returns them).
 
 ### T8.4 Admin app
 - [ ] A1: "Rev {n}" chip; filters on the effective version.

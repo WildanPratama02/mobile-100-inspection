@@ -24,6 +24,9 @@ export const SUBMISSION_REVISION_REPOSITORY = Symbol('SubmissionRevisionReposito
 export interface VersionFinding extends Finding {
   defectName: string;
   severity: Classification;
+  areaName: string;
+  subAreaName: string;
+  familyName: string;
 }
 
 /** A photo row of a version: `submission_photos` (`original`) or `submission_revision_photos` (`revision`). */
@@ -55,7 +58,7 @@ export interface VersionRecord {
   correctedAt: Date | null;
   correctedBy: string | null;
   correctionReason: string | null;
-  version: SubmissionVersion & { findings: VersionFinding[] };
+  version: Omit<SubmissionVersion, 'findings'> & { findings: VersionFinding[] };
   totals: {
     qtyInspection: number;
     qtyAGrade: number;
@@ -503,10 +506,10 @@ export class PgSubmissionRevisionRepository implements SubmissionRevisionReposit
     const revisions = headers.filter((h) => h.revisionId).map((h) => h.revisionId!);
     const findings = await q.query<FindingRow>(
       `SELECT f.submission_id::text AS key, ${FINDING_COLUMNS}
-         FROM submission_findings f WHERE f.submission_id = ANY($1::uuid[])
+         FROM submission_findings f ${FINDING_JOINS} WHERE f.submission_id = ANY($1::uuid[])
        UNION ALL
        SELECT f.revision_id::text, ${FINDING_COLUMNS}
-         FROM submission_revision_findings f WHERE f.revision_id = ANY($2::uuid[])
+         FROM submission_revision_findings f ${FINDING_JOINS} WHERE f.revision_id = ANY($2::uuid[])
        ORDER BY 1, "firstRecordedAt", "defectId"`,
       [originals, revisions],
     );
@@ -533,6 +536,9 @@ export class PgSubmissionRevisionRepository implements SubmissionRevisionReposit
           defectId: f.defectId,
           defectName: f.defectName,
           severity: f.severity,
+          areaName: f.areaName,
+          subAreaName: f.subAreaName,
+          familyName: f.familyName,
           qty: f.qty,
           firstRecordedAt: toWibIso(f.firstRecordedAt as unknown as Date),
         }));
@@ -544,7 +550,11 @@ export class PgSubmissionRevisionRepository implements SubmissionRevisionReposit
 
 const FINDING_COLUMNS = `f.inspection_type AS "inspectionType", f.area_id AS "areaId",
   f.sub_area_id AS "subAreaId", f.family_id AS "familyId", f.defect_id AS "defectId",
-  f.defect_name AS "defectName", f.severity, f.qty, f.first_recorded_at AS "firstRecordedAt"`;
+  f.defect_name AS "defectName", f.severity, f.qty, f.first_recorded_at AS "firstRecordedAt",
+  a.name AS "areaName", sa.name AS "subAreaName", fam.name AS "familyName"`;
+
+const FINDING_JOINS = `JOIN areas a ON a.id = f.area_id JOIN sub_areas sa ON sa.id = f.sub_area_id
+  JOIN families fam ON fam.id = f.family_id`;
 
 const PHOTO_COLUMNS = `p.source, p.photo_id::text AS id, p.defect_id AS "defectId", p.object_key AS "objectKey",
   encode(p.sha256, 'hex') AS sha256, p.size_bytes AS "sizeBytes", '' AS key`;

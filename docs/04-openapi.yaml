@@ -606,8 +606,10 @@ paths:
         id, inspection_date, sealed_at (ISO 8601 in WIB), username, level, factory, cell, po, article, model,
         destination, order_qty, podd, crd, partial_no, partial_qty, partial_text, qty_rework, qty_rework_approved,
         qty_bgrade_inspections, qty_no_defect, qty_inspection, qty_a_grade, qty_b_grade, qty_defect, rft,
-        defect_rate, photo_count, counting_rule, photo_rule, revision_no, corrected_at, corrected_by, correction_reason (the effective version, ADR-023; the last three empty for revision 0), then top1_defect_id, top1_defect_name, top1_qty … top5_qty (empty
-        when the submission has fewer defects; qty_no_defect is empty when counting_rule is ADR-019).
+        defect_rate, photo_count, counting_rule, photo_rule, then top1_defect_id, top1_defect_name, top1_qty … top5_qty (empty
+        when the submission has fewer defects; qty_no_defect is empty when counting_rule is ADR-019), then revision_no,
+        corrected_at, corrected_by, correction_reason (ADR-023; every column is the effective version, the last three
+        are empty for revision 0).
         qty_rework_approved is empty for legacy NULL; photo_rule is ALL / TOP5 for new PSI lv.2 rows, empty for PSI lv.1 and existing PSI lv.2 NULL rows (legacy Top 5 rule). Numbers are raw: no thousands separator and a dot for decimals;
         rft and defect_rate are the stored fractions with 5 decimals (`0.60000` = 60,0%). Text typed by people that
         starts with `=`, `+`, `-`, `@`, a tab or CR gets a leading `'` so a spreadsheet does not run it.
@@ -930,6 +932,7 @@ components:
             - ADMIN_LOCKED
             - NOT_FOUND
             - CONFLICT
+            - REVISION_CONFLICT
             - IMPORT_INVALID
             - INTERNAL
         detail: { type: string, description: 'Indonesian, ready to show to the PSI.' }
@@ -1324,7 +1327,7 @@ components:
             properties: { inserted: { type: integer }, updated: { type: integer }, unchanged: { type: integer } }
     AdminSubmissionSummary:
       type: object
-      required: [id, displayNo, sealedAt, inspectionDate, username, level, factory, cell, po, partialText, qtyInspection, qtyDefect, qtyAGrade, qtyBGrade, rft, defectRate, photoCount, countingRule]
+      required: [id, displayNo, sealedAt, inspectionDate, username, level, factory, cell, po, partialText, qtyInspection, qtyDefect, qtyAGrade, qtyBGrade, rft, defectRate, photoCount, countingRule, revisionNo]
       properties:
         id: { type: string, format: uuid }
         displayNo: { type: string, examples: ['M100-000123'] }
@@ -1349,7 +1352,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/AdminSubmissionSummary'
         - type: object
-          required: [receivedAt, appVersion, article, model, destination, orderQty, podd, crd, partial, counts, photoRule, findings, top5, photos, audit]
+          required: [receivedAt, appVersion, article, model, destination, orderQty, podd, crd, partial, counts, photoRule, findings, top5, photos, audit, revisionNo, latestRevisionNo, correctedAt, correctedBy, correctionReason]
           properties:
             latestRevisionNo: { type: integer, minimum: 0, description: 'Newest revision; equals revisionNo unless an earlier version was asked for. The correction form sends it as baseRevisionNo.' }
             correctedAt: { type: [string, 'null'], format: date-time }
@@ -1406,7 +1409,7 @@ components:
               description: The Top 5 order of the tablet (quantity, then severity, then first recorded).
               items:
                 type: object
-                required: [rank, defectId, defectName, classification, qty, photoId]
+                required: [rank, defectId, defectName, classification, qty, photoId, photoUrl]
                 properties:
                   rank: { type: integer, minimum: 1, maximum: 5 }
                   defectId: { $ref: '#/components/schemas/DefectId' }
@@ -1417,7 +1420,7 @@ components:
                   photoUrl: { type: [string, 'null'], description: '/v1/admin/photos/{id} at revision 0, /v1/admin/revision-photos/{id} for a revision; null without a photo.' }
             photos:
               type: array
-              items: { type: object, required: [id, defectId], properties: { id: { type: integer }, defectId: { $ref: '#/components/schemas/DefectId' }, url: { type: string, description: 'Where to load it (see top5.photoUrl).' } } }
+              items: { type: object, required: [id, defectId, url], properties: { id: { type: integer }, defectId: { $ref: '#/components/schemas/DefectId' }, url: { type: string, description: 'Where to load it (see top5.photoUrl).' } } }
             audit:
               type: array
               description: Audit-log rows about this submission (entity `submissions`), such as `submission.revise` (ADR-023).

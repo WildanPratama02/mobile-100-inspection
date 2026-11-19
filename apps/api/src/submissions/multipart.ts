@@ -57,6 +57,8 @@ export function sha256Hex(bytes: Buffer): string {
 export function readSubmissionParts(
   req: IncomingMessage,
   limits: MultipartLimits = MULTIPART_LIMITS,
+  /** The JSON part: `submission`, or `revision` for an admin correction (ADR-023, doc 04 §8.1). */
+  jsonPart: string = SUBMISSION_PART,
 ): Promise<SubmissionParts> {
   return new Promise((resolve, reject) => {
     const unreadable = (message: string) => checksFailed([{ path: '', code: 'INVALID', message }]);
@@ -109,7 +111,7 @@ export function readSubmissionParts(
     const failures: Failure[] = [];
     const seen = new Set<string>();
     const accept = (name: string): boolean => {
-      if (name !== SUBMISSION_PART && !PHOTO_PART.test(name)) {
+      if (name !== jsonPart && !PHOTO_PART.test(name)) {
         failures.push({ path: name, code: 'UNKNOWN_PART', message: 'Part tidak dikenal.' });
         return false;
       }
@@ -128,7 +130,7 @@ export function readSubmissionParts(
     parser.on('field', (name, value, info) => {
       if (info.valueTruncated) return fail(new ApiProblem('PAYLOAD_TOO_LARGE'));
       if (!accept(name)) return;
-      if (name === SUBMISSION_PART) json = Buffer.from(value, 'utf8');
+      if (name === jsonPart) json = Buffer.from(value, 'utf8');
       else
         failures.push({ path: name, code: 'INVALID', message: 'Foto harus dikirim sebagai file.' });
     });
@@ -139,7 +141,7 @@ export function readSubmissionParts(
         stream.resume();
         return;
       }
-      const max = name === SUBMISSION_PART ? limits.body : limits.photo;
+      const max = name === jsonPart ? limits.body : limits.photo;
       const chunks: Buffer[] = [];
       let size = 0;
       stream.on('data', (chunk: Buffer) => {
@@ -149,7 +151,7 @@ export function readSubmissionParts(
       });
       stream.on('end', () => {
         const bytes = Buffer.concat(chunks);
-        if (name === SUBMISSION_PART) json = bytes;
+        if (name === jsonPart) json = bytes;
         else photos.set(name, bytes);
       });
     });
@@ -161,11 +163,11 @@ export function readSubmissionParts(
       settled = true;
       let body: unknown;
       if (json === undefined) {
-        if (!seen.has(SUBMISSION_PART)) {
+        if (!seen.has(jsonPart)) {
           failures.push({
-            path: SUBMISSION_PART,
+            path: jsonPart,
             code: 'REQUIRED',
-            message: 'Part submission tidak ada.',
+            message: `Part ${jsonPart} tidak ada.`,
           });
         }
       } else {
@@ -173,9 +175,9 @@ export function readSubmissionParts(
           body = JSON.parse(json.toString('utf8'));
         } catch {
           failures.push({
-            path: SUBMISSION_PART,
+            path: jsonPart,
             code: 'INVALID',
-            message: 'Part submission bukan JSON.',
+            message: `Part ${jsonPart} bukan JSON.`,
           });
         }
       }
