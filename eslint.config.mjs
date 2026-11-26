@@ -15,6 +15,8 @@ export default tseslint.config(
       '**/playwright-report/**',
       '**/test-results/**',
       'release/**',
+      // git worktrees of other branches (full checkouts) live here
+      '.claude/**',
       'design-system/**',
       'reference/**',
       'docs/**',

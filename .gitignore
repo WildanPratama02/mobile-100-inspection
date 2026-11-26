@@ -13,3 +13,11 @@ CLAUDE.local.md
 CLAUDE.md
 AGENT.md
 .claude/
+
+# Local files kept out of git (26 Nov 2026)
+/%ORCA_CLAUDE_USER_CONFIG_DIR%/
+/design-system/assets/BACKGRAOUND PWJ.png
+/docs/Dokumentasi-Lengkap-PSI-Inspection-Report.*
+/docs/Paket-Dokumentasi-PSI-Inspection-Report.zip
+/docs/Presentasi-PSI-Inspection-Report-4-Slide.pptx
+/docs/documentation/
