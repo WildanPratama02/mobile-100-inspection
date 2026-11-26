@@ -1,0 +1,10 @@
+[Unit]
+Description=M100 nightly backup
+After=postgresql.service
+
+[Service]
+Type=oneshot
+# root: reads .env and secrets/, writes BACKUP_DIR (0700 root:root).
+User=root
+WorkingDirectory=/opt/m100
+ExecStart=@NODE@ /opt/m100/current/api/dist/cli/backup.js

@@ -14,6 +14,12 @@ overrides:
   'glob@>=13.0.0 <14.0.2': '14.0.2'
   'glob@>=11.0.0 <12.0.0': '14.0.2'
 
+# The release is built on Windows for the Linux server: install the native @node-rs/argon2 binary of both.
+supportedArchitectures:
+  os: [current, linux]
+  cpu: [current, x64]
+  libc: [current, glibc]
+
 onlyBuiltDependencies:
   - '@nestjs/core'
   - esbuild

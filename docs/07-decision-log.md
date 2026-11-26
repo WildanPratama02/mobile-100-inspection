@@ -495,3 +495,21 @@ Submissions sealed before this ADR show "–" for Rework and Approved and the fi
 - Reports can change after the fact. Every change is recorded with a reason and the earlier versions stay readable, so a figure given out earlier can always be traced.
 - Doc 02 §7 "tablets never read photos back" no longer holds: a tablet reads the photos of its own corrected submissions.
 - Work: doc 08 Phase 9 (T9.1–T9.6).
+
+## ADR-025 — Production server is Linux (CentOS Stream 10, Nginx, systemd)
+
+**Status:** proposed, 26 Nov 2026. Supersedes the server parts of ADR-015 and ADR-016, the Windows-only rules of doc 03 §7 and the CLAUDE.md rules "the server is Windows" and "no bash scripts in `deploy/`" (for `deploy/linux/` only). Application code, schema, API contract, the address `https://m100.qdms.web.id`, ADR-018 and ADR-020 stay.
+
+**Context.** Production moves to `192.168.40.193`: CentOS Stream 10, PostgreSQL 18.4, nginx 1.26.3, Node.js v26.13.0, SELinux Enforcing, certbot 5.10.0, outbound access to the Cloudflare API and Lets Encrypt. Releases are built on the developer laptop (Windows) with `pnpm release`, uploaded with FileZilla (SFTP) and installed on the server.
+
+**Decision.**
+1. **Web server and TLS:** Nginx serves the PWA (`/`), the admin app (`/admin/`) and proxies `/v1/` to the API on `127.0.0.1:3110`. Certificates come from certbot with the `dns-cloudflare` plugin (no inbound port from the internet). Headers and cache rules equal `deploy/security-headers.json` and `deploy/cache-control.json`; `deploy/test/nginx.spec.ts` enforces it.
+2. **API process:** systemd unit `m100-api` as system user `m100`; nightly backup and weekly photo sweep as systemd timers; logs in journald.
+3. **Layout:** `/opt/m100/{.env, secrets/, photos/, releases/<version>/, current}`. An upgrade switches the `current` symlink; a rollback switches it back.
+4. **Release:** `pnpm release` builds a Linux x64 (glibc) `tar.gz` on Windows. `supportedArchitectures` in `pnpm-workspace.yaml` installs `@node-rs/argon2-linux-x64-gnu`; the release keeps only that binary. `pnpm release -- --target windows` still builds the old zip.
+5. **Bash only in `deploy/linux/`** (`install.sh`, `upgrade.sh`, `m100.sh`), with LF line endings. The "no bash" rule stays for `scripts/` and `deploy/windows/`.
+6. **SELinux stays Enforcing:** `httpd_can_network_connect` on; `httpd_sys_content_t` on `/opt/m100/releases` and the `current` link. firewalld opens http and https.
+7. **Node.js:** the project is tested on Node 22 LTS, the server runs Node 26. Accepted only after the checks in `docs/deploy-centos-nginx.md` section 0 pass on the server (admin login, Submit PO with photos, backup and restore). No code changes for Node 26.
+8. **Hostname and data:** `m100.qdms.web.id` stays so tablets keep their IndexedDB. Moving existing production data follows `docs/deploy-centos-nginx.md` section 10.
+
+**Consequences.** `docs/deploy-centos-nginx.md` is the runbook for this server; doc 03 section 7 and `phase5-recovery-runbook.md` are updated once this ADR is accepted. The Windows scripts and the Caddyfile stay until the Windows server is retired.

@@ -1,0 +1,9 @@
+[Unit]
+Description=M100 weekly photo sweep, Sunday 02:00
+
+[Timer]
+OnCalendar=Sun *-*-* 02:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

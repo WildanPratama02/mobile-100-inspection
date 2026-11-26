@@ -1,0 +1,23 @@
+[Unit]
+Description=PSI Inspection Report API (NestJS) on 127.0.0.1:3110
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=m100
+Group=m100
+WorkingDirectory=/opt/m100
+Environment=NODE_ENV=production
+# install.sh replaces @NODE@ with the output of `command -v node`.
+ExecStart=@NODE@ /opt/m100/current/api/dist/main.js
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=15
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/m100/photos
+
+[Install]
+WantedBy=multi-user.target

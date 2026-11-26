@@ -2,3 +2,6 @@
 *.png binary
 *.avif binary
 *.xlsx binary
+
+# Linux server files must keep LF
+deploy/linux/* text eol=lf

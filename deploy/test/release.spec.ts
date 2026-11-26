@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { DEPLOY_FILES, forbiddenPaths, releaseVersion } from '../build-release.mjs';
+import {
+  DEPLOY_FILES,
+  DEPLOY_FILES_LINUX,
+  forbiddenPaths,
+  isForeignArgon2,
+  releaseVersion,
+} from '../build-release.mjs';
 
 const deployDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -22,6 +28,19 @@ describe('build-release', () => {
     expect([...DEPLOY_FILES].sort()).toEqual(
       ['Caddyfile', 'security-headers.json', 'cache-control.json', ...windows].sort(),
     );
+  });
+
+  it('ships every file of deploy/linux', () => {
+    const linux = readdirSync(join(deployDir, 'linux')).map((f) => `linux/${f}`);
+    expect([...DEPLOY_FILES_LINUX].sort()).toEqual(
+      ['security-headers.json', 'cache-control.json', ...linux].sort(),
+    );
+  });
+
+  it('keeps only the linux-x64-gnu argon2 binary', () => {
+    expect(isForeignArgon2('argon2-linux-x64-gnu')).toBe(false);
+    expect(isForeignArgon2('argon2-win32-x64-msvc')).toBe(true);
+    expect(isForeignArgon2('argon2-linux-x64-musl')).toBe(true);
   });
 
   describe('forbiddenPaths', () => {

@@ -1,0 +1,12 @@
+[Unit]
+Description=M100 weekly sweep of orphan photos
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=m100
+Group=m100
+WorkingDirectory=/opt/m100
+ExecStart=@NODE@ /opt/m100/current/api/dist/cli/sweep-photos.js
+ProtectSystem=strict
+ReadWritePaths=/opt/m100/photos

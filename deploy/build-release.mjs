@@ -30,6 +30,28 @@ export const DEPLOY_FILES = [
   'windows/m100-caddy.xml',
 ];
 
+/** What the Linux server (CentOS + Nginx + systemd) needs from `deploy/`. */
+export const DEPLOY_FILES_LINUX = [
+  'security-headers.json',
+  'cache-control.json',
+  'linux/m100.conf',
+  'linux/m100-headers.conf',
+  'linux/m100-api.service',
+  'linux/m100-backup.service',
+  'linux/m100-backup.timer',
+  'linux/m100-sweep.service',
+  'linux/m100-sweep.timer',
+  'linux/env.example',
+  'linux/install.sh',
+  'linux/upgrade.sh',
+  'linux/m100.sh',
+];
+
+/** Native argon2 packages of every platform but linux-x64-gnu, dropped from a Linux release. */
+export function isForeignArgon2(name) {
+  return name.startsWith('argon2-') && name !== 'argon2-linux-x64-gnu';
+}
+
 /** Kept of the API package after `pnpm deploy`, which also copies sources and any local `.env`. */
 const API_ENTRIES = ['dist', 'node_modules', 'package.json'];
 
@@ -77,11 +99,14 @@ function git(...args) {
 }
 
 function main() {
-  if (process.platform !== 'win32') {
-    throw new Error(
-      'Build the release on Windows x64: the API ships native modules for the server',
-    );
+  // `pnpm release` builds for the Linux server (default); `pnpm release -- --target windows` for the old Windows one.
+  const targetArg = process.argv.indexOf('--target');
+  const target = targetArg > -1 ? process.argv[targetArg + 1] : 'linux';
+  if (target !== 'linux' && target !== 'windows') throw new Error('--target is linux or windows');
+  if (target === 'windows' && process.platform !== 'win32') {
+    throw new Error('A Windows release is built on Windows x64: the API ships native modules');
   }
+  const linux = target === 'linux';
   const skipBuild = process.argv.includes('--skip-build');
   const version = releaseVersion(
     new Date(),
@@ -89,7 +114,7 @@ function main() {
     git('status', '--porcelain') !== '',
   );
   const out = join(repo, 'release', version);
-  const zip = join(repo, 'release', `m100-${version}.zip`);
+  const zip = join(repo, 'release', `m100-${version}.${linux ? 'tar.gz' : 'zip'}`);
   rmSync(out, { recursive: true, force: true });
   rmSync(zip, { force: true });
   mkdirSync(out, { recursive: true });
@@ -111,6 +136,20 @@ function main() {
     if (!API_ENTRIES.includes(entry)) rmSync(join(apiOut, entry), { recursive: true, force: true });
   }
 
+  if (linux) {
+    // pnpm-workspace.yaml `supportedArchitectures` installs the linux-x64-gnu binary next to this machine's own;
+    // keep only the one the server loads.
+    const scope = join(apiOut, 'node_modules', '@node-rs');
+    if (!existsSync(join(scope, 'argon2-linux-x64-gnu'))) {
+      throw new Error(
+        '@node-rs/argon2-linux-x64-gnu missing: run `pnpm install` (supportedArchitectures)',
+      );
+    }
+    for (const name of readdirSync(scope)) {
+      if (isForeignArgon2(name)) rmSync(join(scope, name), { recursive: true, force: true });
+    }
+  }
+
   const copy = (from, to) => {
     const source = join(repo, from);
     if (!existsSync(source)) throw new Error(`${from} not found: did the build run?`);
@@ -121,7 +160,9 @@ function main() {
   copy('db/migrations', 'db/migrations');
   copy('reference/mapping', 'reference/mapping');
   copy('docs/phase5-recovery-runbook.md', 'docs/phase5-recovery-runbook.md');
-  for (const file of DEPLOY_FILES) copy(join('deploy', file), join('deploy', file));
+  if (linux) copy('docs/deploy-centos-nginx.md', 'docs/deploy-centos-nginx.md');
+  for (const file of linux ? DEPLOY_FILES_LINUX : DEPLOY_FILES)
+    copy(join('deploy', file), join('deploy', file));
   writeFileSync(join(out, 'VERSION'), `${version}\n`);
 
   const forbidden = forbiddenPaths(out);
@@ -129,8 +170,11 @@ function main() {
     throw new Error(`The release contains files that must never ship: ${forbidden.join(', ')}`);
   }
 
-  // Windows' own bsdtar writes zip archives (-a by the extension), which Expand-Archive reads.
-  const tar = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe');
+  // Windows' own bsdtar writes both formats (-a by the extension): zip for Expand-Archive, tar.gz for the Linux server.
+  const tar =
+    process.platform === 'win32'
+      ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe')
+      : 'tar';
   run(tar, ['-a', '-c', '-f', zip, '-C', out, '.']);
   process.stdout.write(
     `\nRelease ${version}\n  ${relative(repo, out)}\n  ${relative(repo, zip)}\n`,
