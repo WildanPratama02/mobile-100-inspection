@@ -498,7 +498,7 @@ Submissions sealed before this ADR show "–" for Rework and Approved and the fi
 
 ## ADR-025 — Production server is Linux (CentOS Stream 10, Nginx, systemd)
 
-**Status:** proposed, 26 Nov 2026. Supersedes the server parts of ADR-015 and ADR-016, the Windows-only rules of doc 03 §7 and the CLAUDE.md rules "the server is Windows" and "no bash scripts in `deploy/`" (for `deploy/linux/` only). Application code, schema, API contract, the address `https://m100.qdms.web.id`, ADR-018 and ADR-020 stay.
+**Status:** accepted, 26 Nov 2026. Supersedes the server parts of ADR-015 and ADR-016, the Windows-only rules of doc 03 §7 and the CLAUDE.md rules "the server is Windows" and "no bash scripts in `deploy/`" (for `deploy/linux/` only). Application code, schema, API contract, the address `https://m100.qdms.web.id`, ADR-018 and ADR-020 stay.
 
 **Context.** Production moves to `192.168.40.193`: CentOS Stream 10, PostgreSQL 18.4, nginx 1.26.3, Node.js v26.13.0, SELinux Enforcing, certbot 5.10.0, outbound access to the Cloudflare API and Lets Encrypt. Releases are built on the developer laptop (Windows) with `pnpm release`, uploaded with FileZilla (SFTP) and installed on the server.
 
