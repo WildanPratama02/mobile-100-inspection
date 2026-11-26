@@ -18,4 +18,4 @@ paths:
 - A database or photo-store error flips the matching readiness check (`DB`, `PHOTO_STORE`) and the request answers `503 DB_UNAVAILABLE` / `PHOTO_STORE_UNAVAILABLE` (doc 03 §5.7). A serialization failure or deadlock is retried once inside the request.
 - Tablet tokens (`aud` = `tablet`) and admin cookies (`aud` = `admin`) never work on each other's endpoints. Every admin change and every CLI change writes an `audit_log` row and, when tablets download it, bumps `settings.master_version`.
 - Never log device keys, tokens, passwords or photo bytes. Store only the SHA-256 of a device key and compare in constant time. Admin passwords are argon2id.
-- The server is Windows: build file paths with `node:path`, never assume case-sensitive file names, and write CLI tools in Node/TypeScript or PowerShell, never bash.
+- The production server is Linux (ADR-025), the old one and developer machines Windows: build file paths with `node:path`, never assume case-sensitive file names, and write CLI tools in Node/TypeScript. Bash only in `deploy/linux/`, PowerShell only in `deploy/windows/`.
