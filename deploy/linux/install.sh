@@ -13,6 +13,12 @@ BASE=/opt/m100
 NODE="$(command -v node || true)"
 [ -n "$NODE" ] || { echo "node not found in PATH." >&2; exit 1; }
 NODE="$(readlink -f "$NODE")"
+case "$NODE" in
+  /home/*|/root/*)
+    echo "Node at $NODE is a per-user install (nvm?). The service user m100 cannot run it and ProtectHome blocks it." >&2
+    echo "Install Node system-wide (/usr/bin/node) and run this script with sudo, not from an nvm shell." >&2
+    exit 1 ;;
+esac
 "$NODE" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' \
   || { echo "Node.js >= 22 required, found $("$NODE" -v)." >&2; exit 1; }
 echo "Node $("$NODE" -v) at $NODE, release $VERSION"
@@ -53,13 +59,12 @@ if command -v getenforce >/dev/null && [ "$(getenforce)" != "Disabled" ]; then
     dnf install -y policycoreutils-python-utils
   fi
   setsebool -P httpd_can_network_connect 1
-  if ! semanage fcontext -l | grep -q "^$BASE/releases"; then
-    semanage fcontext -a -t httpd_sys_content_t "$BASE/releases(/.*)?"
-  fi
+  # -a fails when the rule exists (a second run), then -m modifies it; no pipe, so pipefail cannot trip on grep -q.
+  semanage fcontext -a -t httpd_sys_content_t "$BASE/releases(/.*)?" 2>/dev/null \
+    || semanage fcontext -m -t httpd_sys_content_t "$BASE/releases(/.*)?"
   restorecon -R "$BASE/releases"
-  restorecon -h "$BASE/current"
-  # the symlink itself must be readable by nginx too
-  chcon -h -t httpd_sys_content_t "$BASE/current" || true
+  # the "current" link itself must be readable by nginx too (restorecon has no -h; chcon -h acts on the link)
+  chcon -h -t httpd_sys_content_t "$BASE/current"
 fi
 
 # 5. systemd units
