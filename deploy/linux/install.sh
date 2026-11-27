@@ -48,6 +48,10 @@ ln -sfn "$BASE/releases/$VERSION" "$BASE/current"
 
 # 4. SELinux: nginx reads the release, the API (unconfined service) needs nothing more.
 if command -v getenforce >/dev/null && [ "$(getenforce)" != "Disabled" ]; then
+  # semanage comes from policycoreutils-python-utils, not installed on a minimal CentOS Stream 10.
+  if ! command -v semanage >/dev/null; then
+    dnf install -y policycoreutils-python-utils
+  fi
   setsebool -P httpd_can_network_connect 1
   if ! semanage fcontext -l | grep -q "^$BASE/releases"; then
     semanage fcontext -a -t httpd_sys_content_t "$BASE/releases(/.*)?"

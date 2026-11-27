@@ -413,6 +413,7 @@ Port 80 untuk nama ini tidak dilayani dengan sengaja: tablet selalu membuka `htt
 ### 7.4 SELinux (bila `Enforcing`)
 
 ```bash
+dnf install -y policycoreutils-python-utils       # menyediakan semanage (install.sh memasangnya bila belum ada)
 setsebool -P httpd_can_network_connect 1          # nginx boleh ke 127.0.0.1:3110 (mungkin sudah aktif untuk proyek lama)
 semanage fcontext -a -t httpd_sys_content_t "/opt/m100/releases(/.*)?"
 restorecon -R /opt/m100/releases
